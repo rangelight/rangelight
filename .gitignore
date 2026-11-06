@@ -1,0 +1,10 @@
+# Environment
+.env
+*.env
+
+# Helm
+charts
+
+# Visual Sutdio Code
+.vscode
+

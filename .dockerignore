@@ -1,4 +1,7 @@
 # Image builds use the repo root as context; keep build output and history out of it.
 .git
 target
-node_modules
+**/node_modules
+# The agent image copies its src/ whole; its tests stay out.
+services/agent/**/*.test.ts
+services/agent/**/testdata

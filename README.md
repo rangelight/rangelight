@@ -89,6 +89,7 @@ volumes bind.
 scripts/check.sh all        # the whole gate; CI runs exactly these parts
 scripts/check.sh <part>     # size rules secrets scrub spec yaml rust go ts deploy hooks
 scripts/check.sh fmt        # format in place
+scripts/check.sh gen        # regenerate shared/ts/gen from api/jsonschema
 ```
 
 One Rust workspace, one Go module and one pnpm workspace live at the root. Every deployable is in

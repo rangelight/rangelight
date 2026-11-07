@@ -27,6 +27,7 @@
 /.github/workflows/                         @ArielLahiany
 /.yamllint.yaml                             @ArielLahiany
 /scripts/check.sh                           @ArielLahiany
+/scripts/check/                             @ArielLahiany
 /scripts/scrub-allow.txt                    @ArielLahiany
 /scripts/size-exceptions.txt                @ArielLahiany
 /CODEOWNERS                                 @ArielLahiany

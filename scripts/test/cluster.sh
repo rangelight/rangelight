@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Self-tests for scripts/cluster.sh that need no cluster: kubectl is a stub that records its calls.
-# Each test copies cluster.sh and deployments/dev/ into /tmp/rl-cluster-test.*.
+# Self-tests for scripts/cluster.sh that need no cluster: kubectl and helm are stubs that record their calls
+# (helm template runs the real helm). Each test copies cluster.sh, deployments/dev/ and the chart into
+# /tmp/rl-cluster-test.*.
 # Usage: scripts/test/cluster.sh [test_name...]   (no argument runs every test)
 set -euo pipefail
 
@@ -12,22 +13,32 @@ FAILED=0
 
 new_dir() {
   DIR="$(mktemp -d /tmp/rl-cluster-test.XXXXXX)"
-  mkdir -p "${DIR}/scripts" "${DIR}/deployments/dev" "${DIR}/bin"
+  mkdir -p "${DIR}/scripts" "${DIR}/deployments/dev" "${DIR}/deployments/helm" "${DIR}/bin"
   cp "${ROOT}/scripts/cluster.sh" "${DIR}/scripts/"
   cp "${ROOT}/deployments/dev/versions.env" "${DIR}/deployments/dev/"
+  cp -R "${ROOT}/deployments/helm/rangelight" "${DIR}/deployments/helm/"
   : >"${DIR}/calls"
-  # The stub knows one context, "dev", records every call, keeps what `apply` reads,
-  # and reports that no namespace exists.
+  # The kubectl stub knows one context, "dev", records every call, keeps what `apply` reads, reports that
+  # no namespace exists, serves the chart's ConfigMap rangelight-api, and says every pod Succeeded.
   cat >"${DIR}/bin/kubectl" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >>"${DIR}/calls"
 case "\$*" in
   "config get-contexts -o name") printf 'dev\n' ;;
-  *" apply -f -"*) cat >"${DIR}/applied" ;;
+  *" apply -f -"*) cat >>"${DIR}/applied" ;;
   *" get namespace "*) exit 1 ;;
+  *" get configmap rangelight-api "*) printf 'secret://rangelight-pg-app#uri nats://rangelight-nats.rangelight-system.svc:4222' ;;
+  *" get pod "*) printf 'Succeeded' ;;
+  *" logs "*) printf 'nats: error: no responders\n' ;;
 esac
 EOF
-  chmod +x "${DIR}/bin/kubectl"
+  # The helm stub records every call and runs the real helm only for `template`, which needs no cluster.
+  cat >"${DIR}/bin/helm" <<EOF
+#!/usr/bin/env bash
+printf 'helm %s\n' "\$*" >>"${DIR}/calls"
+[[ "\$1" != template ]] || exec "$(command -v helm)" "\$@"
+EOF
+  chmod +x "${DIR}/bin/kubectl" "${DIR}/bin/helm"
 }
 
 # run <command> [env assignments...]: run cluster.sh with the stub kubectl first on PATH.
@@ -87,8 +98,8 @@ test_unknown_context_fails_before_any_change() {
 test_every_cluster_call_names_the_context() {
   run up RANGELIGHT_KUBE_CONTEXT=dev
   expect_status 0
-  ! grep -vE -e '^config get-contexts -o name$' -e '^--context dev ' "${DIR}/calls" ||
-    fail "a kubectl call without --context dev"
+  ! grep -vE -e '^config get-contexts -o name$' -e '^--context dev ' -e '^helm --kube-context dev ' "${DIR}/calls" ||
+    fail "a kubectl or helm call without the context dev"
 }
 
 test_up_never_deletes_or_makes_a_cluster() {
@@ -130,14 +141,72 @@ test_images_are_pinned_by_tag_and_digest() {
 test_smoke_fails_without_rangelight_system() {
   run smoke RANGELIGHT_KUBE_CONTEXT=dev
   expect_status 1
-  expect_out "FAIL  namespace rangelight-system does not exist"
+  expect_out "namespace rangelight-system does not exist"
+  expect_no_call ' apply '
 }
 
-test_smoke_passes_with_rangelight_system() {
+# --- RAN-33 AC4: up installs the chart, smoke proves Postgres and JetStream ----------
+
+test_up_installs_the_chart_twice_into_rangelight_system() {
+  run up RANGELIGHT_KUBE_CONTEXT=dev
+  expect_status 0
+  [[ "$(grep -c '^helm --kube-context dev upgrade --install rangelight .*/deployments/helm/rangelight --namespace rangelight-system --wait ' "${DIR}/calls")" -eq 2 ]] ||
+    fail "up did not run helm upgrade --install twice"
+  [[ "$(grep -n ' apply -f -' "${DIR}/calls" | cut -d: -f1)" -lt "$(grep -n '^helm ' "${DIR}/calls" | head -1 | cut -d: -f1)" ]] ||
+    fail "up installed the chart before the namespace"
+}
+
+test_up_dry_run_changes_nothing_and_prints_the_install() {
+  run up RANGELIGHT_KUBE_CONTEXT=dev RANGELIGHT_DRY_RUN=true
+  expect_status 0
+  [[ "$(<"${DIR}/calls")" == $'config get-contexts -o name\nhelm template '* ]] || fail "dry run called the cluster: $(<"${DIR}/calls")"
+  expect_out 'pod-security.kubernetes.io/enforce: "restricted"'
+  expect_out 'kind: "Cluster"'
+  expect_out 'owner: "rl_api"'
+}
+
+test_smoke_runs_psql_and_jetstream_from_restricted_pods() {
   sed -i '/ get namespace /d' "${DIR}/bin/kubectl"
   run smoke RANGELIGHT_KUBE_CONTEXT=dev
   expect_status 0
   expect_out "PASS  namespace rangelight-system exists"
+  expect_out "PASS  psql 'select 1' with the Secret rangelight-pg-app"
+  expect_out "PASS  JetStream publish and consume on nats://rangelight-nats.rangelight-system.svc:4222"
+  [[ "$(grep -c '^kind: "Pod"$' "${DIR}/applied")" -eq 2 ]] || fail "smoke did not create two pods"
+  grep -qF -e "command: [\"sh\", \"-c\", \"[ \$(psql \$POSTGRES_URL -tAc 'select 1') = 1 ]\"]" "${DIR}/applied" ||
+    fail "the psql pod does not run select 1"
+  grep -qxF -e '              name: "rangelight-pg-app"' "${DIR}/applied" || fail "psql does not read the CNPG Secret"
+  grep -qxF -e '          value: "nats://rangelight-nats.rangelight-system.svc:4222"' "${DIR}/applied" || fail "nats pod without NATS_URL"
+  [[ "$(grep -cxF -e '    app.kubernetes.io/part-of: "rangelight"' "${DIR}/applied")" -eq 2 ]] ||
+    fail "a smoke pod without the part-of label the NetworkPolicies allow"
+  [[ "$(grep -cxF -e '    runAsNonRoot: true' "${DIR}/applied")" -eq 2 ]] || fail "a smoke pod that is not restricted"
+  # The clients run as uid 65532: both need a writable working directory and HOME (the live failure: stat .).
+  [[ "$(grep -cxF -e '      workingDir: "/tmp"' "${DIR}/applied")" -eq 2 ]] || fail "a smoke pod without workingDir /tmp"
+  [[ "$(grep -xF -A1 -e '        - name: "HOME"' "${DIR}/applied" | grep -cxF -e '          value: "/tmp"')" -eq 2 ]] ||
+    fail "a smoke pod without HOME=/tmp"
+  [[ "$(grep -xF -A1 -e '        - name: "tmp"' "${DIR}/applied" | grep -cxF -e '          mountPath: "/tmp"')" -eq 2 ]] ||
+    fail "a smoke pod without /tmp mounted"
+  [[ "$(grep -xF -A1 -e '    - name: "tmp"' "${DIR}/applied" | grep -cxF -e '      emptyDir: {}')" -eq 2 ]] ||
+    fail "a smoke pod whose /tmp is not an emptyDir"
+  grep -qF -e 'command: ["sh", "-c", "set -e; trap ' "${DIR}/applied" || fail "the nats script does not stop at the first failing step"
+  grep -qE -e '^--context dev -n rangelight-system delete pod rl-smoke-psql-[0-9a-f]+ rl-smoke-nats-[0-9a-f]+ ' "${DIR}/calls" ||
+    fail "smoke did not delete its pods"
+}
+
+test_smoke_fails_when_a_pod_fails() {
+  sed -i -e '/ get namespace /d' -e "s/printf 'Succeeded'/printf 'Failed'/" "${DIR}/bin/kubectl"
+  run smoke RANGELIGHT_KUBE_CONTEXT=dev
+  expect_status 1
+  expect_out "FAIL  JetStream publish and consume"
+  expect_out "nats: error: no responders"
+}
+
+test_smoke_refuses_a_settings_value_it_would_put_in_yaml() {
+  sed -i -e '/ get namespace /d' -e 's|nats://rangelight-nats|nats://x\"y|' "${DIR}/bin/kubectl"
+  run smoke RANGELIGHT_KUBE_CONTEXT=dev
+  expect_status 1
+  expect_out "RANGELIGHT_API_NATS_URL in ConfigMap rangelight-api is not a nats:// or tls:// URL"
+  expect_no_call ' apply '
 }
 
 # --- runner -----------------------------------------------------------------------

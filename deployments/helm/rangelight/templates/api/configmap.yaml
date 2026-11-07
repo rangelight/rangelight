@@ -1,0 +1,20 @@
+---
+# The api's connection settings (ADR 0049 §6): the Postgres URI as a secret reference, never a value.
+apiVersion: "v1"
+kind: "ConfigMap"
+metadata:
+  name: "rangelight-api"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "api" "component" "config") | nindent 4 }}
+data:
+  {{- if .Values.postgres.enabled }}
+  RANGELIGHT_API_POSTGRES_URL: "secret://rangelight-pg-app#uri"
+  {{- else }}
+  RANGELIGHT_API_POSTGRES_URL: {{ printf "secret://%s#%s" .Values.postgres.external.secretRef.name .Values.postgres.external.secretRef.key | quote }}
+  {{- end }}
+  {{- if .Values.nats.enabled }}
+  RANGELIGHT_API_NATS_URL: {{ printf "nats://%s.%s.svc:4222" .Values.nats.fullnameOverride .Release.Namespace | quote }}
+  {{- else }}
+  RANGELIGHT_API_NATS_URL: {{ .Values.nats.external.url | quote }}
+  {{- end }}

@@ -14,3 +14,8 @@ rules:
     check-keys: false
   line-length:
     max: 160
+# Helm templates are YAML only once rendered: `scripts/check.sh deploy` lints what they render.
+# Chart.lock is written by `helm dependency update`.
+ignore: |
+  deployments/helm/rangelight/templates/
+  deployments/helm/rangelight/Chart.lock

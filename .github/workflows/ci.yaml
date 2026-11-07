@@ -240,8 +240,10 @@ jobs:
           setup_only: true
       - run: "pipx install check-jsonschema==0.38.2"
       - run: "pipx install yamllint==1.38.0"
-      - if: "hashFiles('deployments/helm/rangelight/Chart.yaml') != ''"
-        run: "go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 && echo \"$(go env GOPATH)/bin\" >> \"${GITHUB_PATH}\""
+      - uses: "azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310"  # v5.0.1
+        with:
+          version: "v3.22.0"
+      - run: "go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 && echo \"$(go env GOPATH)/bin\" >> \"${GITHUB_PATH}\""
       - run: "scripts/check.sh deploy"
 
   hooks:

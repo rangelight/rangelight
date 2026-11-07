@@ -1,0 +1,19 @@
+---
+# Rangelight on any Kubernetes cluster (ADR 0009, 0035, 0040). Components live in templates/<component>/.
+apiVersion: "v2"
+name: "rangelight"
+description: "Rangelight: agent sessions on your own cluster"
+type: "application"
+version: "0.1.0"
+kubeVersion: ">=1.32.0-0"
+# The bundled Postgres operator and NATS (ADR 0009): vendored in charts/ and locked in Chart.lock.
+# After a version bump: helm dependency update deployments/helm/rangelight
+dependencies:
+  - name: "cloudnative-pg"
+    version: "0.29.1"
+    repository: "https://cloudnative-pg.github.io/charts"
+    condition: "postgres.enabled"
+  - name: "nats"
+    version: "2.15.1"
+    repository: "https://nats-io.github.io/k8s/helm/charts/"
+    condition: "nats.enabled"

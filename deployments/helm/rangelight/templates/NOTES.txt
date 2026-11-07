@@ -1,0 +1,6 @@
+{{- if and .Values.postgres.enabled (not (.Capabilities.APIVersions.Has "postgresql.cnpg.io/v1/Cluster")) }}
+The CloudNativePG operator is installing. Once it is ready, run the same `helm upgrade --install` again:
+that creates the Postgres cluster rangelight-pg (scripts/cluster.sh up does both).
+{{- else }}
+Rangelight's dependencies are installed in {{ .Release.Namespace }}. The api's settings: ConfigMap rangelight-api.
+{{- end }}

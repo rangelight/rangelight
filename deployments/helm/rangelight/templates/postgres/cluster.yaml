@@ -1,0 +1,36 @@
+{{- /* The CRD comes with the operator: the first install creates it, the next `helm upgrade` creates the cluster. */ -}}
+{{- if and .Values.postgres.enabled (.Capabilities.APIVersions.Has "postgresql.cnpg.io/v1/Cluster") }}
+---
+apiVersion: "postgresql.cnpg.io/v1"
+kind: "Cluster"
+metadata:
+  name: "rangelight-pg"
+  namespace: {{ .Release.Namespace | quote }}
+  # Helm never deletes the database: not on a render without the CRD, not on postgres.enabled=false, not on
+  # uninstall. CloudNativePG would delete its volumes with it. To drop it: kubectl delete cluster rangelight-pg.
+  annotations:
+    helm.sh/resource-policy: "keep"
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "postgres" "component" "database") | nindent 4 }}
+spec:
+  instances: 1
+  imageName: {{ .Values.postgres.image | quote }}
+  # The operator generates the owner's password into the Secret "rangelight-pg-app"; there is no superuser access.
+  enableSuperuserAccess: false
+  bootstrap:
+    initdb:
+      database: "api"
+      owner: "rl_api"
+  storage:
+    size: {{ .Values.postgres.storage | quote }}
+  resources:
+    {{- range $kind, $list := .Values.postgres.resources }}
+    {{ $kind }}:
+      {{- range $name, $quantity := $list }}
+      {{ $name }}: {{ $quantity | quote }}
+      {{- end }}
+    {{- end }}
+  inheritedMetadata:
+    labels:
+      {{- include "rangelight.labels" (dict "ctx" $ "name" "postgres" "component" "database") | nindent 6 }}
+{{- end }}

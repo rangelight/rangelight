@@ -1,0 +1,14 @@
+# The relay's defaults (ADR 0049 §6). Override in /etc/rangelight/relay.toml or with
+# RANGELIGHT_RELAY_<KEY>, for example RANGELIGHT_RELAY_RUNNER=prod-eu-1.
+
+# `tracing` filter directives.
+log = "info"
+# The Postgres URL, as a secret reference: the mounted Secret file holds the whole URL.
+database_url = "secret://postgres#url"
+nats_url = "nats://nats:4222"
+# The org's NATS subject token (ADR 0021): subjects are rl.<org>.…
+org = "default"
+# The runner every session's desired state goes to, until admission places sessions (ADR 0018).
+runner = "default"
+# JetStream replicas of the desired-state stream: 1 in `lean`, 3 in `scale` (ADR 0021).
+stream_replicas = 1

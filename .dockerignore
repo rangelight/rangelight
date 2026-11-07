@@ -1,0 +1,4 @@
+# Image builds use the repo root as context; keep build output and history out of it.
+.git
+target
+node_modules

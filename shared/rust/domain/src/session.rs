@@ -1,0 +1,169 @@
+use std::fmt;
+use std::time::SystemTime;
+
+use uuid::Uuid;
+
+use crate::{DomainError, Ticket};
+
+/// A session's id, a UUIDv7.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SessionId(pub Uuid);
+
+/// An event's id, a UUIDv7. It is also the `Nats-Msg-Id` of every message published for the
+/// event, so consumers dedupe on it (ADR 0031).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EventId(pub Uuid);
+
+/// Where a session's runtime should be (ADR 0007): `Hot` runs pods, `Warm` keeps the namespace
+/// with zero pods, `Cold` keeps nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    /// Pods running.
+    Hot,
+    /// Hibernated: namespace kept, zero pods, rebuildable (ADR 0010).
+    Warm,
+    /// Torn down. Final.
+    Cold,
+}
+
+impl State {
+    /// The stored name: `hot`, `warm` or `cold`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            State::Hot => "hot",
+            State::Warm => "warm",
+            State::Cold => "cold",
+        }
+    }
+
+    /// Parses a stored name.
+    ///
+    /// # Errors
+    /// [`DomainError::UnknownState`] for anything but `hot`, `warm` or `cold`.
+    pub fn parse(name: &str) -> Result<State, DomainError> {
+        match name {
+            "hot" => Ok(State::Hot),
+            "warm" => Ok(State::Warm),
+            "cold" => Ok(State::Cold),
+            _ => Err(DomainError::UnknownState(name.to_owned())),
+        }
+    }
+
+    /// The state machine: hot and warm move to each other (hibernate, wake) and to cold
+    /// (teardown); cold is final; staying in the same state is not a change.
+    ///
+    /// # Errors
+    /// [`DomainError::Transition`] when the move isn't allowed.
+    pub fn change_to(self, to: State) -> Result<State, DomainError> {
+        match (self, to) {
+            (State::Hot, State::Warm | State::Cold) | (State::Warm, State::Hot | State::Cold) => {
+                Ok(to)
+            }
+            _ => Err(DomainError::Transition { from: self, to }),
+        }
+    }
+}
+
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The command that creates a session for a ticket. Sessions start hot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewSession {
+    /// The new session's id.
+    pub id: SessionId,
+    /// The id of its first event.
+    pub event: EventId,
+    /// When the command was issued.
+    pub at: SystemTime,
+    /// The ticket asking for the session.
+    pub ticket: Ticket,
+}
+
+impl NewSession {
+    /// The session's namespace, `rl-<ticket key>` (ADR 0051).
+    #[must_use]
+    pub fn namespace(&self) -> String {
+        format!("rl-{}", self.ticket.key().to_ascii_lowercase())
+    }
+
+    /// What this command records.
+    #[must_use]
+    pub fn change(&self) -> Change {
+        Change::Created {
+            ticket_id: self.ticket.id().to_owned(),
+            ticket_key: self.ticket.key().to_owned(),
+            title: self.ticket.title().to_owned(),
+            namespace: self.namespace(),
+            state: State::Hot,
+        }
+    }
+}
+
+/// The command that moves a session to another state. The store checks it against the current
+/// state, inside the command's transaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChangeState {
+    /// The session to change.
+    pub session: SessionId,
+    /// The id of the event it appends.
+    pub event: EventId,
+    /// When the command was issued.
+    pub at: SystemTime,
+    /// The state to move to.
+    pub to: State,
+}
+
+impl ChangeState {
+    /// What this command records.
+    #[must_use]
+    pub fn change(&self) -> Change {
+        Change::StateChanged { state: self.to }
+    }
+}
+
+/// What a command changed: an event's payload, before its canonical encoding (ADR 0029).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Change {
+    /// A session was created for a ticket.
+    Created {
+        /// The tracker's id of the ticket.
+        ticket_id: String,
+        /// The human key, for example `RAN-34`.
+        ticket_key: String,
+        /// The ticket's title when the session was created.
+        title: String,
+        /// The session's namespace.
+        namespace: String,
+        /// The first state, always hot.
+        state: State,
+    },
+    /// A session moved to another state.
+    StateChanged {
+        /// The new state.
+        state: State,
+    },
+}
+
+impl Change {
+    /// The event type stored next to the payload.
+    #[must_use]
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Change::Created { .. } => "session.created",
+            Change::StateChanged { .. } => "session.state_changed",
+        }
+    }
+
+    /// The session's state after this change.
+    #[must_use]
+    pub fn state(&self) -> State {
+        match self {
+            Change::Created { state, .. } | Change::StateChanged { state } => *state,
+        }
+    }
+}

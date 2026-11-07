@@ -1,0 +1,22 @@
+[package]
+name = "rl-config"
+description = "The config loader (defaults, mounted file, RANGELIGHT_<SVC>_* env) and secret references (ADR 0049 §6)."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+figment.workspace = true
+secrecy.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+figment = { workspace = true, features = ["test"] }
+tempfile.workspace = true
+
+[lints]
+workspace = true

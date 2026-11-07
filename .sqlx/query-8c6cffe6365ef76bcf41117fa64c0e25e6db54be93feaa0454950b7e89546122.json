@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE outbox SET sent_at = now() WHERE id = $1 AND sent_at IS NULL\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c6cffe6365ef76bcf41117fa64c0e25e6db54be93feaa0454950b7e89546122"
+}

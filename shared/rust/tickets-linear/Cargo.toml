@@ -1,0 +1,30 @@
+[package]
+name = "rl-tickets-linear"
+description = "The Linear adapter for the TicketSource seam: GraphQL, label rangelight."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+rl-app.workspace = true
+rl-config.workspace = true
+rl-domain.workspace = true
+rustls.workspace = true
+secrecy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+rl-testkit.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

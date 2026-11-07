@@ -7,6 +7,7 @@ types: code generated from them is never edited by hand or re-declared
 | Contract | File | Audience |
 |---|---|---|
 | Runner protocol: control plane ↔ runner, protobuf over NATS | `proto/rangelight/runner/v1alpha1/runner.proto` | public |
+| Session API: Connect-RPC `SessionService`, and the session event payload | `proto/rangelight/session/v1alpha1/session.proto` | public |
 | Receipt predicate: `predicateType` `https://rangelight.dev/receipt/v1alpha1` | `jsonschema/receipt-predicate.v1alpha1.schema.json` | public |
 | `rangelight.yaml`: the repo's preview profile, `apiVersion: rangelight.dev/v1alpha1` | `jsonschema/rangelight.v1alpha1.schema.json` | public |
 | Agent event: the typed messages a lane may send (`ask`, `worker_done`, `progress`, `compacted`) | `jsonschema/agent-event.v1alpha1.schema.json` | internal, versioned |
@@ -47,6 +48,11 @@ pinned by the root `go.mod`.
 | `rl.<org>.runner.<runner>.cmd` | CP → runner | request/reply | `Command` → `CommandResult` |
 | `rl.<org>.runner.<runner>.gate` | runner → CP | JetStream, ordered per session | `GateResult` |
 
+The relay publishes `SessionDesired` with `Envelope.message_id` and `Nats-Msg-Id` set to the id of
+the event that produced it, and `generation` set to that event's `seq`. Each committed session
+event also fans out, as a `rangelight.session.v1alpha1.Event` on the core NATS subject
+`rl.<org>.session.<session>.events`, to the api's `WatchSession` streams.
+
 The control plane is the source of truth: the runner ignores a `SessionDesired.generation` older than
 the one it has seen. `credential_refs` carries references, never secret values (ADR 0004). The profile
 is read from the approved base branch, never the session branch (ADR 0041). Control plane N accepts
@@ -61,3 +67,7 @@ frozen (ADR 0027). Receipt predicate versions are never removed, so receipts ver
 
 - **v1alpha1** (RAN-15): first version of all four contracts, from the design drafts. Runner protocol
   enum values carry their enum's prefix (`PHASE_RUNNING`, not `RUNNING`), as `buf lint` requires.
+- **v1alpha1** (RAN-34): `rangelight.session.v1alpha1`: `SessionService` (`ListSessions`,
+  server-streaming `WatchSession`, which ends with `ABORTED` on a seq gap), and `Change`, whose
+  deterministic encoding is the payload of the session event chain. The chain hashes
+  `prev_hash ‖ event id ‖ at (µs) ‖ payload` (ADR 0029; encoding in `shared/rust/chain`).

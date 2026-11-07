@@ -63,6 +63,11 @@ jobs:
               - "clippy.toml"
               - "deny.toml"
               - "db/**"
+              - ".sqlx/**"
+              - "configs/**"
+              - "api/proto/**"
+              - "api/buf.yaml"
+              - "scripts/test/services.sh"
             go:
               - *shared
               - "**/*.go"
@@ -192,6 +197,16 @@ jobs:
         uses: "taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2"  # v2.90.2
         with:
           tool: "cargo-nextest,cargo-deny,cargo-machete"
+      # sqlx-cli has no prebuilt binary there; the version matches sqlx in Cargo.toml.
+      - if: "hashFiles('**/*.rs') != ''"
+        run: "cargo install --locked sqlx-cli@0.9.0 --no-default-features --features postgres"
+      # rl-proto's build script compiles api/proto with buf; the version matches BUF_VERSION.
+      - if: "hashFiles('**/*.rs') != ''"
+        uses: "bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6"  # v1.7.0
+        with:
+          version: "1.75.0"
+          setup_only: true
+      # Postgres and NATS come from scripts/test/services.sh: pinned, checksum-verified binaries.
       - run: "scripts/check.sh rust"
 
   go:

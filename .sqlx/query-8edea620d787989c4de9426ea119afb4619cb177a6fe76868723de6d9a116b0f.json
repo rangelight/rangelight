@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- A new session, unless its ticket already has one: then no row comes back.\nINSERT INTO sessions (id, tracker, ticket_id, ticket_key, title, namespace, state, generation, created_at, updated_at)\nVALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $8)\nON CONFLICT (tracker, ticket_id) DO NOTHING\nRETURNING id\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8edea620d787989c4de9426ea119afb4619cb177a6fe76868723de6d9a116b0f"
+}

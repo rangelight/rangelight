@@ -8,7 +8,6 @@ shopt -s inherit_errexit
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMMANDS=(up down preflight smoke)
 SYSTEM_NS=rangelight-system
-OWNER_ONLY_RE='rangelight-(gateway|runner)'
 GUARD_POLICY=rangelight-agent-guard
 PROBE_TIMEOUT=150
 PREFLIGHT_NS=""
@@ -43,28 +42,22 @@ load_versions() {
   source "${ROOT}/deployments/dev/versions.env"
 }
 
-# The Zot manifest with its placeholders filled. Refuses anything aimed at an owner-only namespace.
-# shellcheck disable=SC2016 # the placeholders are literal text, not expansions
-render_zot() {
-  local manifest
-  manifest="$(<"${ROOT}/deployments/dev/zot.yaml")"
-  manifest="${manifest//'${SYSTEM_NS}'/${SYSTEM_NS}}"
-  manifest="${manifest//'${ZOT_IMAGE}'/${ZOT_IMAGE}}"
-  [[ "${manifest}" != *'${'* ]] || die "deployments/dev/zot.yaml has an unknown placeholder"
-  ! grep -qE "${OWNER_ONLY_RE}" <<<"${manifest}" || die "deployments/dev/zot.yaml names an owner-only namespace"
-  printf '%s\n' "${manifest}"
-}
-
 # --- up, down, smoke -------------------------------------------------------------
 
 up() {
   require_context
-  load_versions
-  local manifest
-  manifest="$(render_zot)"
-  k apply -f - <<<"${manifest}"
-  k -n "${SYSTEM_NS}" rollout status deployment/zot --timeout=300s
-  printf 'up: Zot is running in %s on context %s\n' "${SYSTEM_NS}" "${RANGELIGHT_KUBE_CONTEXT}"
+  k apply -f - <<EOF
+---
+apiVersion: "v1"
+kind: "Namespace"
+metadata:
+  name: "${SYSTEM_NS}"
+  labels:
+    pod-security.kubernetes.io/enforce: "restricted"
+    app.kubernetes.io/part-of: "rangelight"
+    app.kubernetes.io/managed-by: "cluster.sh"
+EOF
+  printf 'up: %s is ready on context %s\n' "${SYSTEM_NS}" "${RANGELIGHT_KUBE_CONTEXT}"
 }
 
 down() {
@@ -73,36 +66,12 @@ down() {
   printf 'down: %s removed (the cluster itself is left alone)\n' "${SYSTEM_NS}"
 }
 
-# zot_status: the HTTP status of Zot's /v2/, through a port-forward ("000" if unreachable).
-zot_status() {
-  local log pid port="" code="000" _
-  log="$(mktemp /tmp/rl-cluster-pf.XXXXXX)"
-  k -n "${SYSTEM_NS}" port-forward service/zot :5000 >"${log}" 2>&1 &
-  pid=$!
-  for _ in $(seq 1 50); do
-    port="$(sed -nE 's/^Forwarding from 127\.0\.0\.1:([0-9]+) .*/\1/p' "${log}" | head -n 1)"
-    if [[ -n "${port}" ]] || ! kill -0 "${pid}" 2>/dev/null; then break; fi
-    sleep 0.2
-  done
-  if [[ -n "${port}" ]]; then
-    code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "http://127.0.0.1:${port}/v2/" || true)"
-  fi
-  kill "${pid}" 2>/dev/null || true
-  wait "${pid}" 2>/dev/null || true
-  rm -f "${log}"
-  printf '%s' "${code:-000}"
-}
-
 smoke() {
   require_context
-  local code
   if k get namespace "${SYSTEM_NS}" >/dev/null 2>&1; then
     report PASS "namespace ${SYSTEM_NS} exists"
-    code="$(zot_status)"
-    if [[ "${code}" == 200 ]]; then report PASS "Zot /v2/ returns 200"; else report FAIL "Zot /v2/ returns ${code}, want 200"; fi
   else
     report FAIL "namespace ${SYSTEM_NS} does not exist (run: script/cluster.sh up)"
-    report FAIL "Zot /v2/ not reachable (not installed)"
   fi
   [[ "${FAILS}" -eq 0 ]] || die "smoke: ${FAILS} check(s) failed"
 }

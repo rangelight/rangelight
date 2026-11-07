@@ -1,6 +1,6 @@
 ---
 # Buf workspace for the contracts (ADR 0049 §2.3). Lint and breaking rules are Buf's defaults;
-# `script/check.sh spec` runs `buf format`, `buf lint`, `buf breaking` against main and checks that
+# `scripts/check.sh spec` runs `buf format`, `buf lint`, `buf breaking` against main and checks that
 # the generated Go code is current.
 version: "v2"
 modules:

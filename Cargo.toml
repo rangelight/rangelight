@@ -1,8 +1,11 @@
 # The Rust workspace (ADR 0049 §3). Crates are created when first needed, not up front.
 [workspace]
 resolver = "3"
-# Cargo needs at least one crate to load this; until then `script/check.sh rust` skips.
-members = ["crates/*", "services/*"]
+# Libraries in shared/rust/, binaries in services/. Cargo needs at least one crate to load this;
+# until then `scripts/check.sh rust` skips.
+members = ["shared/rust/*", "services/*"]
+# The services that aren't Rust.
+exclude = ["services/runner", "services/agent", "services/web", "services/git-mirror"]
 
 [workspace.package]
 edition = "2024"

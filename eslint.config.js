@@ -1,4 +1,4 @@
-// ESLint flat config for agent/ and web/ (ADR 0049 §5, limits from §7).
+// ESLint flat config for services/agent/ and services/web/ (ADR 0049 §5, limits from §7).
 import js from "@eslint/js";
 import prettier from "eslint-config-prettier";
 import boundaries from "eslint-plugin-boundaries";
@@ -19,15 +19,18 @@ export default defineConfig(
     files: ["**/*.{ts,tsx}"],
     plugins: { boundaries, sonarjs },
     settings: {
-      "import/resolver": { typescript: { project: ["agent/tsconfig.json", "web/tsconfig.json"] } },
+      "import/resolver": {
+        typescript: { project: ["services/agent/tsconfig.json", "services/web/tsconfig.json"] },
+      },
       "boundaries/elements": [
         { type: "gen", pattern: "**/gen/**" },
-        { type: "agent", pattern: "agent/src/**" },
-        { type: "web", pattern: "web/src/**" },
+        { type: "agent", pattern: "services/agent/src/**" },
+        { type: "web", pattern: "services/web/src/**" },
       ],
     },
     rules: {
-      // agent/ and web/ never import each other; both may import generated contract types.
+      // services/agent/ and services/web/ never import each other; both may import generated
+      // contract types.
       "boundaries/dependencies": [
         "error",
         {
@@ -52,7 +55,7 @@ export default defineConfig(
     },
   },
   // The agent's event writer is its one console sink.
-  { files: ["agent/src/events.ts"], rules: { "no-console": "off" } },
+  { files: ["services/agent/src/events.ts"], rules: { "no-console": "off" } },
   // Test files don't count towards file length (ADR 0049 §7).
   { files: ["**/*.test.{ts,tsx}", "**/tests/**"], rules: { "max-lines": "off" } },
   { files: ["**/*.js"], extends: [tseslint.configs.disableTypeChecked] },

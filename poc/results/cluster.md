@@ -3,12 +3,12 @@
 - Date: 2026-11-07
 - Cluster: the owner's single-node dev cluster. RKE2 v1.37.0, containerd 2.3, Cilium, the local-path
   StorageClass as the default. It was used as it was, with no cluster created or deleted.
-- Commands: `RANGELIGHT_KUBE_CONTEXT=<context> script/cluster.sh <command>`.
+- Commands: `RANGELIGHT_KUBE_CONTEXT=<context> scripts/cluster.sh <command>`.
   Versions are pinned in `deployments/dev/versions.env`.
 
 ## Preflight
 
-`script/cluster.sh preflight` exited 0:
+`scripts/cluster.sh preflight` exited 0:
 
 ```text
 PASS  Kubernetes 1.37 (>= 1.32)
@@ -39,15 +39,15 @@ How each line is proven:
 Before `up` (exit 1):
 
 ```text
-FAIL  namespace rangelight-system does not exist (run: script/cluster.sh up)
+FAIL  namespace rangelight-system does not exist (run: scripts/cluster.sh up)
 cluster.sh: smoke: 1 check(s) failed
 ```
 
-`script/cluster.sh up && script/cluster.sh smoke` (exit 0):
+`scripts/cluster.sh up && scripts/cluster.sh smoke` (exit 0):
 
 ```text
 PASS  namespace rangelight-system exists
 ```
 
 There is no registry until a ticket needs one (RAN-32). The Zot that RAN-16 installed was removed
-with `script/cluster.sh down`; `kubectl get all,pvc -n rangelight-system` now shows no resources.
+with `scripts/cluster.sh down`; `kubectl get all,pvc -n rangelight-system` now shows no resources.

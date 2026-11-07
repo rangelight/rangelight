@@ -2,7 +2,7 @@
 //
 // An embed directive can't reach outside the module, so this directory holds a byte-for-byte copy of
 // api/jsonschema/rangelight.v1alpha1.schema.json. Never edit it here: change api/ and copy it
-// over; `script/check.sh spec` fails when the two differ.
+// over; `scripts/check.sh spec` fails when the two differ.
 package schema
 
 import _ "embed"

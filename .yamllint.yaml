@@ -1,0 +1,16 @@
+---
+# One YAML style (ADR 0049, amendment "layout and style from day one"). Run by `scripts/check.sh yaml`.
+extends: "default"
+
+rules:
+  document-start:
+    present: true
+  quoted-strings:
+    quote-type: "double"
+    required: true
+  truthy:
+    allowed-values: ["true", "false"]
+    # GitHub Actions' `on:` is a key, not a boolean.
+    check-keys: false
+  line-length:
+    max: 160

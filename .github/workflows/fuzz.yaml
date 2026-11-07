@@ -1,6 +1,7 @@
+---
 # Nightly fuzzing (ADR 0049 §8). No targets exist yet; the job fails once targets exist and
 # nothing runs them, so a fuzz target can't be added and silently never run.
-name: fuzz
+name: "fuzz"
 
 on:
   schedule:
@@ -8,19 +9,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: "read"
 
 jobs:
   fuzz:
-    runs-on: ubuntu-24.04
+    runs-on: "ubuntu-24.04"
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
         with:
           persist-credentials: false
-      - name: Find fuzz targets
+      - name: "Find fuzz targets"
         run: |
-          if [[ -d control-plane/fuzz ]] || git grep -q -E '^func Fuzz[A-Z]' -- '*_test.go'; then
+          if [[ -d fuzz ]] || git grep -q -E '^func Fuzz[A-Z]' -- '*_test.go'; then
             echo "fuzz targets exist but this workflow does not run them yet" >&2
             exit 1
           fi

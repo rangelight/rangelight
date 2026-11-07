@@ -1,0 +1,271 @@
+---
+# One job per part of scripts/check.sh, path-filtered on pull requests; everything runs on main.
+# Each job runs only `scripts/check.sh <part>`, exactly as a developer does (ADR 0049, ADR 0050 §2).
+name: "ci"
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+  merge_group:
+
+permissions:
+  contents: "read"
+
+concurrency:
+  group: "ci-${{ github.ref }}"
+  cancel-in-progress: "${{ github.event_name == 'pull_request' }}"
+
+jobs:
+  changes:
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 5
+    permissions:
+      contents: "read"
+      pull-requests: "read"
+    outputs:
+      spec: "${{ github.event_name != 'pull_request' || steps.filter.outputs.spec == 'true' }}"
+      yaml: "${{ github.event_name != 'pull_request' || steps.filter.outputs.yaml == 'true' }}"
+      rust: "${{ github.event_name != 'pull_request' || steps.filter.outputs.rust == 'true' }}"
+      go: "${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}"
+      ts: "${{ github.event_name != 'pull_request' || steps.filter.outputs.ts == 'true' }}"
+      deploy: "${{ github.event_name != 'pull_request' || steps.filter.outputs.deploy == 'true' }}"
+      hooks: "${{ github.event_name != 'pull_request' || steps.filter.outputs.hooks == 'true' }}"
+    steps:
+      - id: "filter"
+        if: "github.event_name == 'pull_request'"
+        uses: "dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d"  # v4.0.3
+        with:
+          # A change to CI or to the checks themselves runs every part.
+          filters: |
+            shared: &shared
+              - ".github/workflows/ci.yaml"
+              - "scripts/check.sh"
+            spec:
+              - *shared
+              - "api/**"
+              - "go.mod"
+              - "go.sum"
+              - "shared/go/gen/**"
+              - "services/runner/internal/session/schema/**"
+            yaml:
+              - *shared
+              - "**/*.yaml"
+              - "**/*.yml"
+              - ".yamllint.yaml"
+            rust:
+              - *shared
+              - "**/*.rs"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "rust-toolchain.toml"
+              - "rustfmt.toml"
+              - "clippy.toml"
+              - "deny.toml"
+              - "db/**"
+            go:
+              - *shared
+              - "**/*.go"
+              - "go.mod"
+              - "go.sum"
+              - ".golangci.yaml"
+            ts:
+              - *shared
+              - "services/agent/**"
+              - "services/web/**"
+              - "shared/ts/**"
+              - "package.json"
+              - "pnpm-lock.yaml"
+              - "pnpm-workspace.yaml"
+              - "tsconfig.base.json"
+              - "eslint.config.js"
+              - ".prettierrc"
+              - ".nvmrc"
+            deploy:
+              - *shared
+              - "scripts/**"
+              - "deployments/**"
+              - "build/**"
+              - "services/git-mirror/**"
+              - "**/*.sh"
+            hooks:
+              - *shared
+              - "services/git-mirror/**"
+
+  size:
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 5
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          persist-credentials: false
+      - run: "scripts/check.sh size"
+
+  rules:
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 5
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          persist-credentials: false
+      - run: "scripts/check.sh rules"
+
+  secrets:
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: "Install gitleaks (checksum-verified)"
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" gitleaks
+          echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
+      - run: "scripts/check.sh secrets"
+
+  scrub:
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 5
+    env:
+      RANGELIGHT_SCRUB_PATTERN: "${{ secrets.SCRUB_PATTERN }}"
+      # Fork PRs get no secrets, so only they may skip; everywhere else a missing pattern fails.
+      RANGELIGHT_SCRUB_REQUIRED: "${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}"
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          persist-credentials: false
+      - run: "scripts/check.sh scrub"
+
+  spec:
+    needs: "changes"
+    if: "needs.changes.outputs.spec == 'true'"
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 10
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          # Full history, so `buf breaking` can read origin/main (ADR 0027).
+          fetch-depth: 0
+          persist-credentials: false
+      # Versions match BUF_VERSION and CHECK_JSONSCHEMA_VERSION in scripts/check.sh, which checks them.
+      # The runner's preinstalled Go fetches the toolchain and protoc-gen-go pinned in go.mod.
+      - uses: "bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6"  # v1.7.0
+        with:
+          version: "1.75.0"
+          setup_only: true
+      - run: "pipx install check-jsonschema==0.38.2"
+      - run: "scripts/check.sh spec"
+
+  yaml:
+    needs: "changes"
+    if: "needs.changes.outputs.yaml == 'true'"
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 5
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          persist-credentials: false
+      # The version matches YAMLLINT_VERSION in scripts/check.sh, which checks it.
+      - run: "pipx install yamllint==1.38.0"
+      - run: "scripts/check.sh yaml"
+
+  rust:
+    needs: "changes"
+    if: "needs.changes.outputs.rust == 'true'"
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 30
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          persist-credentials: false
+      - if: "hashFiles('**/*.rs') != ''"
+        uses: "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"  # v2.9.3
+      - if: "hashFiles('**/*.rs') != ''"
+        uses: "taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2"  # v2.90.2
+        with:
+          tool: "cargo-nextest,cargo-deny,cargo-machete"
+      - run: "scripts/check.sh rust"
+
+  go:
+    needs: "changes"
+    if: "needs.changes.outputs.go == 'true'"
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 20
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          persist-credentials: false
+      # The runner's preinstalled Go fetches the toolchain pinned in go.mod.
+      - run: "scripts/check.sh go"
+
+  ts:
+    needs: "changes"
+    if: "needs.changes.outputs.ts == 'true'"
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 20
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          persist-credentials: false
+      - if: "hashFiles('pnpm-lock.yaml') != ''"
+        uses: "pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115"  # v6.1.1
+      - if: "hashFiles('pnpm-lock.yaml') != ''"
+        uses: "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1"  # v7.1.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+      - run: "scripts/check.sh ts"
+
+  deploy:
+    needs: "changes"
+    if: "needs.changes.outputs.deploy == 'true'"
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 10
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          persist-credentials: false
+      # The self-tests in scripts/test/ run the spec and yaml parts too, so they need their tools.
+      - uses: "bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6"  # v1.7.0
+        with:
+          version: "1.75.0"
+          setup_only: true
+      - run: "pipx install check-jsonschema==0.38.2"
+      - run: "pipx install yamllint==1.38.0"
+      - if: "hashFiles('deployments/helm/rangelight/Chart.yaml') != ''"
+        run: "go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 && echo \"$(go env GOPATH)/bin\" >> \"${GITHUB_PATH}\""
+      - run: "scripts/check.sh deploy"
+
+  hooks:
+    needs: "changes"
+    if: "needs.changes.outputs.hooks == 'true'"
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 10
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          persist-credentials: false
+      - run: "scripts/check.sh hooks"
+
+  # The one required check: every part passed, or was skipped because its paths didn't change.
+  gate:
+    if: "always()"
+    needs: ["changes", "size", "rules", "secrets", "scrub", "spec", "yaml", "rust", "go", "ts", "deploy", "hooks"]
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: "${{ join(needs.*.result, ' ') }}"
+        run: |
+          echo "results: ${RESULTS}"
+          for result in ${RESULTS}; do
+            case "${result}" in success | skipped) ;; *) exit 1 ;; esac
+          done

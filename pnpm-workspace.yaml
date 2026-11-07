@@ -1,3 +1,4 @@
+---
 packages:
-  - agent
-  - web
+  - "services/agent"
+  - "services/web"

@@ -26,7 +26,7 @@ RAN-<n>, and the ADR(s) this implements or changes: ADR <nnnn>
 
 ## Checklist
 
-- [ ] `script/check.sh all` passes locally
+- [ ] `scripts/check.sh all` passes locally
 - [ ] Commits are signed, signed off (`git commit -s`) and follow Conventional Commits
 - [ ] No `TODO` without a ticket; any `lint:` exception is explained
 - [ ] AI-assisted: disclosed here, with the accountable human signing off

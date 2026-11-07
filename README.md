@@ -11,27 +11,31 @@ components arrive with their tickets.
 
 | Path | What |
 |---|---|
+| `services/<name>/` | Every deployable, any language: `api`, `relay`, `gateway`, `rld` (Rust), `runner` (Go), `agent`, `web` (TypeScript), `git-mirror` |
+| `shared/<lang>/<name>/` | Libraries: `shared/rust/*` (packages `rl-<name>`), `shared/go/*` (generated protobuf in `shared/go/gen/`), `shared/ts/*` |
 | `api/` | Protobuf and JSON Schemas (Buf), the only source of cross-language types |
-| `control-plane/` | Rust workspace: `crates/rl-*` libraries, `services/*` binaries, `queries/`, `migrations/` |
-| `runner/` | Go module, the Kubernetes runner |
-| `agent/`, `web/` | TypeScript: the agent entrypoints and the Workbench |
-| `charts/rangelight/` | The Helm chart |
-| `build/package/docker/<service>/` | One Dockerfile per image |
-| `script/` | Developer commands (Bash) and their self-tests |
+| `db/` | SQL: `migrations/` and `queries/<area>/` |
+| `deployments/` | `dev/` (the dev environment) and `helm/rangelight/` (the Helm chart) |
+| `build/` | `package/docker/<service>/Dockerfile` (one per image) and `ci/` helpers |
+| `scripts/` | Developer commands (Bash) and their self-tests |
 | `docs/` | Architecture decisions (`docs/architecture/adr/`) and engineering notes |
 
-The full layout and its rules are [ADR 0049](docs/architecture/adr/0049-engineering-standard.md).
+The root holds the one Rust workspace (`Cargo.toml`), the one Go module (`go.mod`) and the one pnpm
+workspace (`pnpm-workspace.yaml`).
+
+The full layout and its rules are [ADR 0049](docs/architecture/adr/0049-engineering-standard.md)
+(see its 2026-11-07 amendment).
 
 ## Commands
 
 ```sh
-script/check.sh all        # the whole local gate; CI runs the same parts
-script/check.sh <part>     # one part: size rules secrets scrub spec rust go ts deploy hooks
-script/check.sh fmt        # format every component in place
-script/test/check.sh       # self-tests of the checks
+scripts/check.sh all        # the whole local gate; CI runs the same parts
+scripts/check.sh <part>     # one part: size rules secrets scrub spec yaml rust go ts deploy hooks
+scripts/check.sh fmt        # format every component in place
+scripts/test/check.sh       # self-tests of the checks
 ```
 
-There is no `make`, `just` or `task`: every command is a function in a Bash file in `script/`.
+There is no `make`, `just` or `task`: every command is a function in a Bash file in `scripts/`.
 
 ## Contributing
 

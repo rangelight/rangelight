@@ -5,23 +5,24 @@
 /api/                                       @ArielLahiany
 
 # Signer: receipts, the event chain and the Signer seam
-/control-plane/crates/rl-receipt/           @ArielLahiany
-/control-plane/crates/rl-chain/             @ArielLahiany
+/shared/rust/receipt/                       @ArielLahiany
+/shared/rust/chain/                         @ArielLahiany
 
 # Gateway and the per-session sidecar
-/control-plane/services/gateway/            @ArielLahiany
-/control-plane/services/rld/                @ArielLahiany
+/services/gateway/                          @ArielLahiany
+/services/rld/                              @ArielLahiany
 
 # Policy and auth: Cedar authorisation, and the schema with its RLS and grants
-/control-plane/crates/rl-policy/            @ArielLahiany
-/control-plane/migrations/                  @ArielLahiany
+/shared/rust/policy/                        @ArielLahiany
+/db/migrations/                             @ArielLahiany
 
 # The git mirror's push hooks
-/git-mirror/hooks/                          @ArielLahiany
+/services/git-mirror/hooks/                 @ArielLahiany
 
 # The gate itself: CI, the checks, and this file
 /.github/workflows/                         @ArielLahiany
-/script/check.sh                            @ArielLahiany
-/script/scrub-allow.txt                     @ArielLahiany
-/script/size-exceptions.txt                 @ArielLahiany
+/.yamllint.yaml                             @ArielLahiany
+/scripts/check.sh                           @ArielLahiany
+/scripts/scrub-allow.txt                    @ArielLahiany
+/scripts/size-exceptions.txt                @ArielLahiany
 /CODEOWNERS                                 @ArielLahiany

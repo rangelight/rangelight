@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Self-tests for script/metrics.sh, against fake `gh` and `curl` that answer from fixtures.
+# Self-tests for scripts/metrics.sh, against fake `gh` and `curl` that answer from fixtures.
 # No network and no credentials: the Linear key below is a placeholder the fake never checks.
-# Usage: script/test/metrics.sh
+# Usage: scripts/test/metrics.sh
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
@@ -59,7 +59,7 @@ run() {
   shift
   STATUS=0
   OUT="$(env -u LINEAR_API_KEY PATH="${DIR}/bin:${PATH}" FIXTURES="${DIR}/fx" "$@" \
-    bash "${ROOT}/script/metrics.sh" "${command}" 2>&1)" || STATUS=$?
+    bash "${ROOT}/scripts/metrics.sh" "${command}" 2>&1)" || STATUS=$?
 }
 
 fail() {
@@ -84,7 +84,7 @@ main() {
   expect_out "LINEAR_API_KEY is not set"
   run nope
   expect_status 2
-  expect_out "usage: script/metrics.sh"
+  expect_out "usage: scripts/metrics.sh"
   rm -rf "${DIR}"
   if [[ "${FAILED}" -ne 0 ]]; then
     printf 'metrics self-tests: FAILED\n'

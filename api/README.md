@@ -21,11 +21,11 @@ An example's first name segment picks its schema: `receipt.*`, `rangelight.*`, `
 ## Check and generate
 
 ```sh
-script/check.sh spec    # from the repo root: everything below
+scripts/check.sh spec    # from the repo root: everything below
 cd api && buf generate # after a proto change; writes shared/go/gen/, which is committed
 ```
 
-`script/check.sh spec` fails when a contract file is missing, a schema isn't valid against its
+`scripts/check.sh spec` fails when a contract file is missing, a schema isn't valid against its
 metaschema, an example doesn't validate or an invalid example does, a schema lacks a valid or an
 invalid example, `buf format` or `buf lint` complains, `buf breaking` finds a break against `main`,
 `shared/go/gen/` isn't what `buf generate` writes, or a schema copy in

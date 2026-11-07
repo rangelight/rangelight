@@ -8,7 +8,7 @@ How the Rangelight team uses Linear. The decisions are [ADR 0050](../architectur
 - Team key `RAN`: tickets are `RAN-<n>`, and code markers are `TODO(RAN-<n>): ...`.
 - Every ticket is in a project, and every project has a target gate (an adoption gate, ADR 0044),
   not only a date.
-- Weekly cycles, with a 30-minute review of the numbers from `script/metrics.sh weekly`.
+- Weekly cycles, with a 30-minute review of the numbers from `scripts/metrics.sh weekly`.
 
 ## Labels
 
@@ -16,7 +16,7 @@ One small set. The names are flat (no label groups), so tools read `kind/feature
 
 | Label | Use |
 |---|---|
-| `area/<component>` | `area/spec`, `area/control-plane`, `area/runner`, `area/agent`, `area/web`, `area/chart`, `area/git-mirror`, `area/ci`, `area/docs` |
+| `area/<component>` | `area/api`, `area/control-plane`, `area/runner`, `area/agent`, `area/web`, `area/chart`, `area/git-mirror`, `area/ci`, `area/docs` |
 | `kind/feature` | new behaviour |
 | `kind/bug` | wrong behaviour, with a reproduction |
 | `kind/spike` | time-boxed research; the output is a document |

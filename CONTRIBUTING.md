@@ -6,8 +6,8 @@ Thanks for helping. The engineering standard is
 
 ## Before you open a pull request
 
-1. **Run the gate.** `script/check.sh all` is exactly what CI runs. It must exit 0.
-   One part at a time: `script/check.sh <part>` (run `script/check.sh` to list them).
+1. **Run the gate.** `scripts/check.sh all` is exactly what CI runs. It must exit 0.
+   One part at a time: `scripts/check.sh <part>` (run `scripts/check.sh` to list them).
 2. **Ship the tests with the change.** Every branch, parser, money path or security path has a test
    that fails if it breaks. Acceptance tests are named after the ticket's criteria (`AC1`, `AC2`, ...).
 3. **Keep it small.** One concern per pull request, aiming under 400 changed lines excluding

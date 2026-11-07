@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Self-tests for script/cluster.sh that need no cluster: kubectl is a stub that records its calls.
+# Self-tests for scripts/cluster.sh that need no cluster: kubectl is a stub that records its calls.
 # Each test copies cluster.sh and deployments/dev/ into /tmp/rl-cluster-test.*.
-# Usage: script/test/cluster.sh [test_name...]   (no argument runs every test)
+# Usage: scripts/test/cluster.sh [test_name...]   (no argument runs every test)
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
@@ -12,8 +12,8 @@ FAILED=0
 
 new_dir() {
   DIR="$(mktemp -d /tmp/rl-cluster-test.XXXXXX)"
-  mkdir -p "${DIR}/script" "${DIR}/deployments/dev" "${DIR}/bin"
-  cp "${ROOT}/script/cluster.sh" "${DIR}/script/"
+  mkdir -p "${DIR}/scripts" "${DIR}/deployments/dev" "${DIR}/bin"
+  cp "${ROOT}/scripts/cluster.sh" "${DIR}/scripts/"
   cp "${ROOT}/deployments/dev/versions.env" "${DIR}/deployments/dev/"
   : >"${DIR}/calls"
   # The stub knows one context, "dev", records every call, keeps what `apply` reads,
@@ -36,7 +36,7 @@ run() {
   shift
   STATUS=0
   OUT="$(env -u RANGELIGHT_KUBE_CONTEXT PATH="${DIR}/bin:${PATH}" "$@" \
-    bash "${DIR}/script/cluster.sh" ${command:+"${command}"} 2>&1)" || STATUS=$?
+    bash "${DIR}/scripts/cluster.sh" ${command:+"${command}"} 2>&1)" || STATUS=$?
 }
 
 fail() {
@@ -95,7 +95,7 @@ test_up_never_deletes_or_makes_a_cluster() {
   run up RANGELIGHT_KUBE_CONTEXT=dev
   expect_status 0
   expect_no_call ' delete '
-  ! grep -qE -e '\b(k3d|minikube|eksctl)\b|\bkind (create|delete)\b|cluster (create|delete)' "${DIR}/script/cluster.sh" ||
+  ! grep -qE -e '\b(k3d|minikube|eksctl)\b|\bkind (create|delete)\b|cluster (create|delete)' "${DIR}/scripts/cluster.sh" ||
     fail "cluster.sh can create or delete a cluster"
 }
 
@@ -121,7 +121,7 @@ test_images_are_pinned_by_tag_and_digest() {
     }
   done < <(grep -E '^[A-Z_]+_IMAGE=' "${DIR}/deployments/dev/versions.env")
   [[ "${bad}" -eq 0 ]] || fail "an image is not pinned by tag and digest"
-  OUT="$(grep -rniE -e '[:= ]latest\b' "${DIR}/deployments/dev" "${DIR}/script/cluster.sh" || true)"
+  OUT="$(grep -rniE -e '[:= ]latest\b' "${DIR}/deployments/dev" "${DIR}/scripts/cluster.sh" || true)"
   [[ -z "${OUT}" ]] || fail "a 'latest' reference"
 }
 

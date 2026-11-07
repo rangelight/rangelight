@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The dev environment on an existing cluster (RAN-16; ADR 0040, 0042).
 # It never creates or deletes a cluster, and never touches the owner-only namespaces.
-# Usage: RANGELIGHT_KUBE_CONTEXT=<context> script/cluster.sh <up|down|preflight|smoke>
+# Usage: RANGELIGHT_KUBE_CONTEXT=<context> scripts/cluster.sh <up|down|preflight|smoke>
 set -euo pipefail
 shopt -s inherit_errexit
 
@@ -71,7 +71,7 @@ smoke() {
   if k get namespace "${SYSTEM_NS}" >/dev/null 2>&1; then
     report PASS "namespace ${SYSTEM_NS} exists"
   else
-    report FAIL "namespace ${SYSTEM_NS} does not exist (run: script/cluster.sh up)"
+    report FAIL "namespace ${SYSTEM_NS} does not exist (run: scripts/cluster.sh up)"
   fi
   [[ "${FAILS}" -eq 0 ]] || die "smoke: ${FAILS} check(s) failed"
 }
@@ -294,7 +294,7 @@ EOF
 # --- dispatcher -----------------------------------------------------------------
 
 usage() {
-  printf 'usage: RANGELIGHT_KUBE_CONTEXT=<context> script/cluster.sh <command>\ncommands: %s\n' "${COMMANDS[*]}" >&2
+  printf 'usage: RANGELIGHT_KUBE_CONTEXT=<context> scripts/cluster.sh <command>\ncommands: %s\n' "${COMMANDS[*]}" >&2
 }
 
 main() {

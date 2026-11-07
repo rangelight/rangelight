@@ -229,3 +229,35 @@ An exception needs a `// lint: <rule> because <reason>` comment on the line and 
 - **No `just`, `make` or `task`.** If a runner is ever added, it only calls these files and holds no logic.
 - Files baked into images (for example `git-mirror/hooks/*`, `git-mirror/sync.sh`) and one-off POC checks (`poc/checks/*`) stay with their component.
 - Owner's decision, 2026-11-07: task-runner files must not become bloated; plain Bash functions with clear syntax are the entry point, and a runner may at most wrap them.
+
+## Amendment (2026-11-07, layout and style from day one)
+
+Owner decision. Rangelight follows [golang-standards/project-layout](https://github.com/golang-standards/project-layout) for its cross-cutting directories, and one YAML style everywhere.
+
+- **Layout changes to §1** (this replaces §1's component directories):
+  - **`services/<name>/` holds every deployable, whatever its language**: `api`, `relay`, `gateway` and `rld` (Rust), `runner` (Go), `agent` and `web` (TypeScript), and `git-mirror`. A service's private code lives inside it, for example `services/runner/internal/<feature>/`.
+  - **`shared/<lang>/<name>/`** holds libraries: `shared/rust/<name>` (packages keep their `rl-<name>` names), `shared/go/<name>`, and `shared/ts/<name>` when needed.
+  - There's one Rust workspace (a root `Cargo.toml`), one Go module (a root `go.mod`, `github.com/rangelight/rangelight`), and one pnpm workspace.
+  - `spec/` becomes `api/`. SQL moves to `db/migrations/` and `db/queries/<area>/`.
+  - `deploy/dev/` becomes `deployments/dev/`, and `charts/rangelight/` becomes `deployments/helm/rangelight/`.
+  - `config/` becomes `configs/`.
+  - Developer commands live in **`scripts/`** (plural; this corrects the earlier amendment's `script/`).
+  - CI helper scripts live in `build/ci/`. Workflows stay in `.github/workflows/`, where GitHub requires them.
+  - End-to-end tests and shared test data live in `test/`. Unit tests stay next to the code.
+  - The top-level `control-plane/`, `runner/` and `agent/` directories are gone. There's no `cmd/` (`services/<name>` is the binary) and no `pkg/` (Rangelight publishes no Go library API).
+- **Standalone:** Rangelight never assumes a cluster add-on such as cert-manager, a Postgres operator, Argo CD or a storage driver. It brings what it needs (ADR 0009) or detects it by behaviour (the preflight).
+- **YAML:**
+  - Every file starts with `---` and ends in `.yaml`, never `.yml`.
+  - String values are double-quoted, including list items and flow lists. Keys stay bare, and so do booleans and numbers, unless the field's type is a string.
+  - Kubernetes objects carry `app.kubernetes.io/name`, `component`, `part-of: "rangelight"` and `managed-by`.
+  - Enforced by `yamllint` in `script/check.sh yaml`.
+- **How code is written ("ponytail"):** stop at the first rung that holds:
+  1. Does it need to exist at all?
+  2. Is it already in this repo?
+  3. Does the standard library do it?
+  4. Does a native platform feature cover it?
+  5. Does an existing dependency do it?
+  6. Can it be one line?
+  7. Only then, write the minimum code that works.
+
+  No abstraction with one implementation, no scaffolding "for later", no config for a constant. Fewest files; shortest working diff. Never cut validation at trust boundaries, error handling that prevents data loss, or security. Every non-trivial branch leaves one small test.

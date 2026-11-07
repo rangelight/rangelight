@@ -1,0 +1,62 @@
+---
+# On every merge to main, build each build/package/docker/<service>/Dockerfile once and push it to
+# ghcr.io/rangelight/<service>:<commit sha> (ADR 0050 §1, ADR 0035).
+name: "images"
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: "read"
+
+concurrency:
+  group: "images-${{ github.sha }}"
+
+jobs:
+  discover:
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 5
+    outputs:
+      services: "${{ steps.find.outputs.services }}"
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          persist-credentials: false
+      - id: "find"
+        run: |
+          services="$(find build/package/docker -mindepth 2 -maxdepth 2 -name Dockerfile 2>/dev/null |
+            awk -F/ '{ print $(NF-1) }' | sort | jq -R . | jq -cs .)"
+          echo "services=${services:-[]}" >> "${GITHUB_OUTPUT}"
+          echo "services: ${services:-[]}"
+
+  build:
+    needs: "discover"
+    if: "needs.discover.outputs.services != '[]'"
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 30
+    permissions:
+      contents: "read"
+      packages: "write"
+    strategy:
+      fail-fast: false
+      matrix:
+        service: "${{ fromJSON(needs.discover.outputs.services) }}"
+    steps:
+      - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069"  # v4.4.1
+      - uses: "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550"  # v4.8.0
+        with:
+          registry: "ghcr.io"
+          username: "${{ github.actor }}"
+          password: "${{ github.token }}"
+      - uses: "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc"  # v7.4.0
+        with:
+          context: "."
+          file: "build/package/docker/${{ matrix.service }}/Dockerfile"
+          push: true
+          tags: "ghcr.io/rangelight/${{ matrix.service }}:${{ github.sha }}"
+          cache-from: "type=gha,scope=${{ matrix.service }}"
+          cache-to: "type=gha,mode=max,scope=${{ matrix.service }}"

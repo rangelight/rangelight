@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # The whole local gate, and exactly what CI runs (ADR 0049, amendment 2026-11-07).
-# Usage: script/check.sh <part>    Run without a part to list them.
+# Usage: scripts/check.sh <part>    Run without a part to list them.
 set -euo pipefail
 shopt -s inherit_errexit
 
 ROOT="$(git rev-parse --show-toplevel)"
-PARTS=(size rules secrets scrub spec rust go ts deploy hooks fmt all)
+PARTS=(size rules secrets scrub spec yaml rust go ts deploy hooks fmt all)
 GOLANGCI_LINT="github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0"
 GOVULNCHECK="golang.org/x/vuln/cmd/govulncheck@v1.9.0"
 BUF_VERSION="1.75.0"
 CHECK_JSONSCHEMA_VERSION="0.38.2"
+YAMLLINT_VERSION="1.38.0"
 # Built from parts so the rules part never matches its own source.
 TAG="TO""DO"
 
@@ -61,7 +62,7 @@ size_counted() {
     *) return 1 ;;
   esac
   case "/$1" in
-    */tests/* | */gen/* | */rl-proto/* | */.sqlx/* | */tests.rs | *_test.go | *.test.ts) return 1 ;;
+    */tests/* | */gen/* | */shared/rust/proto/* | */.sqlx/* | */tests.rs | *_test.go | *.test.ts) return 1 ;;
   esac
 }
 
@@ -69,7 +70,7 @@ size() {
   local f n limit label bad=0
   while IFS= read -r f; do
     size_counted "${f}" || continue
-    listed "${f}" script/size-exceptions.txt && continue
+    listed "${f}" scripts/size-exceptions.txt && continue
     n="$(awk 'END { print NR }' "${f}")"
     limit=400
     label="limit"
@@ -95,28 +96,28 @@ rules() {
   local f out env=() sql=() todo=() colour=()
   while IFS= read -r f; do
     case "${f}" in
-      control-plane/crates/rl-config/* | services/*/internal/config/* | agent/src/config.ts) ;;
+      shared/rust/config/* | services/runner/internal/config/* | services/agent/src/config.ts) ;;
       *.rs | *.go | *.ts | *.tsx) env+=("${f}") ;;
     esac
     case "${f}" in *.rs) sql+=("${f}") ;; esac
     case "${f}" in
       docs/architecture/adr/*) ;;
-      *.rs | *.go | *.ts | *.tsx | *.js | *.sh | *.sql | *.toml | *.yml | *.yaml | *.css | *.proto) todo+=("${f}") ;;
+      *.rs | *.go | *.ts | *.tsx | *.js | *.sh | *.sql | *.toml | *.yaml | *.css | *.proto) todo+=("${f}") ;;
     esac
     case "${f}" in
-      web/src/styles/tokens.css) ;;
-      web/*.ts | web/*.tsx | web/*.css | web/*.html) colour+=("${f}") ;;
+      services/web/src/styles/tokens.css) ;;
+      services/web/*.ts | services/web/*.tsx | services/web/*.css | services/web/*.html) colour+=("${f}") ;;
     esac
   done < <(repo_files)
   out="$(
     scan "environment read outside a config module (ADR 0049 §6)" "${ENV_RE}" "${env[@]}"
-    scan "SQL in a Rust string literal; use queries/*.sql (ADR 0049 §2.4)" "${SQL_RE}" "${sql[@]}"
+    scan "SQL in a Rust string literal; use db/queries/*.sql (ADR 0049 §2.4)" "${SQL_RE}" "${sql[@]}"
     if [[ ${#todo[@]} -gt 0 ]]; then
       { grep -nHE -e "\b${TAG}\b" -- "${todo[@]}" || true; } |
         sed -E "s/${TAG}\(RAN-[1-9][0-9]*\)//g" | { grep -E "\b${TAG}\b" || true; } |
         located "${TAG} without a ticket, write ${TAG}(RAN-<n>) (ADR 0049 §10)"
     fi
-    scan "raw colour outside web/src/styles/tokens.css (ADR 0049 §5.1)" "${COLOUR_RE}" "${colour[@]}"
+    scan "raw colour outside services/web/src/styles/tokens.css (ADR 0049 §5.1)" "${COLOUR_RE}" "${colour[@]}"
   )"
   if [[ -n "${out}" ]]; then
     printf '%s\n' "${out}"
@@ -163,7 +164,7 @@ scrub() {
     rest="${hit#*:}"
     n="${rest%%:*}"
     line="${rest#*:}"
-    listed "${line}" script/scrub-allow.txt && continue
+    listed "${line}" scripts/scrub-allow.txt && continue
     # Location only: the matched text would publish what the scrub protects.
     printf '%s:%s\n' "${file}" "${n}"
     bad=1
@@ -280,19 +281,35 @@ spec() {
   ok spec
 }
 
+# --- yaml: one YAML style (ADR 0049, amendment "layout and style from day one") ------
+
+yaml() {
+  local files=() bad=0 f
+  need yamllint
+  # Never empty: .yamllint.yaml itself is YAML.
+  mapfile -t files < <(repo_files | grep -E '\.ya?ml$')
+  [[ "$(yamllint --version)" == "yamllint ${YAMLLINT_VERSION}" ]] ||
+    { printf 'yaml: need yamllint %s, have %s\n' "${YAMLLINT_VERSION}" "$(yamllint --version)" >&2; failed "yaml (tool version)"; }
+  for f in "${files[@]}"; do
+    [[ "${f}" == *.yml ]] || continue
+    printf '%s: rename to .yaml\n' "${f}"
+    bad=1
+  done
+  yamllint --strict --config-file .yamllint.yaml -- "${files[@]}" || bad=1
+  [[ "${bad}" -eq 0 ]] || failed yaml
+  ok yaml
+}
+
 # --- per-component parts --------------------------------------------------------
 
 rust() {
-  has_files '^control-plane/.*\.rs$' || { skip rust; return 0; }
+  has_files '\.rs$' || { skip rust; return 0; }
   need cargo cargo-nextest cargo-deny cargo-machete
-  (
-    cd control-plane
-    cargo fmt --all --check
-    cargo clippy --workspace --all-targets --locked -- -D warnings
-    cargo nextest run --workspace --locked --no-tests=pass
-    cargo deny check
-    cargo machete
-  )
+  cargo fmt --all --check
+  cargo clippy --workspace --all-targets --locked -- -D warnings
+  cargo nextest run --workspace --locked --no-tests=pass
+  cargo deny check
+  cargo machete
   ok rust
 }
 
@@ -308,7 +325,7 @@ go() {
 }
 
 ts() {
-  has_files '^(agent|web)/.*\.tsx?$' || { skip ts; return 0; }
+  has_files '^services/(agent|web)/.*\.tsx?$' || { skip ts; return 0; }
   need pnpm
   pnpm install --frozen-lockfile
   pnpm exec prettier --check .
@@ -322,22 +339,22 @@ ts() {
 deploy() {
   need shellcheck
   local scripts=() t
-  mapfile -t scripts < <(repo_files | grep -E '\.sh$|^git-mirror/hooks/[^/]+$')
+  mapfile -t scripts < <(repo_files | grep -E '\.sh$|^services/git-mirror/hooks/[^/]+$')
   shellcheck -x -- "${scripts[@]}"
-  if has_files '^charts/rangelight/Chart\.yaml$'; then
+  if has_files '^deployments/helm/rangelight/Chart\.yaml$'; then
     need helm kubeconform
-    helm lint --strict charts/rangelight
-    helm template rangelight charts/rangelight | kubeconform -strict -summary
+    helm lint --strict deployments/helm/rangelight
+    helm template rangelight deployments/helm/rangelight | kubeconform -strict -summary
   fi
-  for t in script/test/*.sh; do bash "${t}"; done
+  for t in scripts/test/*.sh; do bash "${t}"; done
   ok deploy
 }
 
 hooks() {
-  has_files '^git-mirror/' || { skip hooks; return 0; }
+  has_files '^services/git-mirror/' || { skip hooks; return 0; }
   local tests=() t
-  mapfile -t tests < <(repo_files | grep -E '^git-mirror/test/[^/]+\.sh$')
-  [[ ${#tests[@]} -gt 0 ]] || { printf 'git-mirror/ has no tests in git-mirror/test/\n' >&2; failed hooks; }
+  mapfile -t tests < <(repo_files | grep -E '^services/git-mirror/test/[^/]+\.sh$')
+  [[ ${#tests[@]} -gt 0 ]] || { printf 'services/git-mirror/ has no tests in services/git-mirror/test/\n' >&2; failed hooks; }
   for t in "${tests[@]}"; do bash "${t}"; done
   ok hooks
 }
@@ -345,17 +362,17 @@ hooks() {
 # Rewrites files in place; not part of `all` (each part checks formatting itself).
 fmt() {
   local did=0
-  if has_files '^control-plane/.*\.rs$'; then (cd control-plane && cargo fmt --all); did=1; fi
+  if has_files '\.rs$'; then cargo fmt --all; did=1; fi
   if has_files '\.go$'; then GOTOOLCHAIN="$(go_toolchain)" command go run "${GOLANGCI_LINT}" fmt; did=1; fi
-  if has_files '^(agent|web)/.*\.tsx?$'; then pnpm exec prettier --write .; did=1; fi
+  if has_files '^services/(agent|web)/.*\.tsx?$'; then pnpm exec prettier --write .; did=1; fi
   [[ "${did}" -eq 1 ]] || { skip fmt; return 0; }
   ok fmt
 }
 
 all() {
   local part bad=()
-  for part in size rules secrets scrub spec rust go ts deploy hooks; do
-    bash "${ROOT}/script/check.sh" "${part}" || bad+=("${part}")
+  for part in size rules secrets scrub spec yaml rust go ts deploy hooks; do
+    bash "${ROOT}/scripts/check.sh" "${part}" || bad+=("${part}")
   done
   [[ ${#bad[@]} -eq 0 ]] || failed "all (${bad[*]})"
   ok all
@@ -364,7 +381,7 @@ all() {
 # --- dispatcher -----------------------------------------------------------------
 
 usage() {
-  printf 'usage: script/check.sh <part>\nparts: %s\n' "${PARTS[*]}" >&2
+  printf 'usage: scripts/check.sh <part>\nparts: %s\n' "${PARTS[*]}" >&2
 }
 
 main() {

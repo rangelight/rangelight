@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The five numbers of the weekly review (ADR 0050 §9), from GitHub and Linear.
-# Usage: script/metrics.sh <command>
+# Usage: scripts/metrics.sh <command>
 #   weekly                        all five, for the last RANGELIGHT_METRICS_DAYS days (default 7)
 #   ci_p90 red_merges cycle_time owner_waits flaky_reruns    one number each
 # Needs gh (logged in), jq and curl. The Linear numbers read LINEAR_API_KEY from the environment.
@@ -56,7 +56,7 @@ ci_p90() {
   need gh jq
   local p90
   p90="$(gh api --paginate \
-    "repos/${REPO}/actions/workflows/ci.yml/runs?status=completed&created=>=$(since)" \
+    "repos/${REPO}/actions/workflows/ci.yaml/runs?status=completed&created=>=$(since)" \
     --jq '.workflow_runs[] | (.updated_at | fromdate) - (.run_started_at | fromdate)' | percentile 90)"
   if [[ "${p90}" == "n/a" ]]; then
     printf 'ci_p90: n/a (no runs)\n'
@@ -114,7 +114,7 @@ flaky_reruns() {
   need gh jq
   local n
   n="$(gh api --paginate \
-    "repos/${REPO}/actions/workflows/ci.yml/runs?status=success&created=>=$(since)" \
+    "repos/${REPO}/actions/workflows/ci.yaml/runs?status=success&created=>=$(since)" \
     --jq '.workflow_runs[] | select(.run_attempt > 1) | .id' | wc -l)"
   printf 'flaky_reruns: %d (target 0)\n' "${n}"
 }
@@ -131,7 +131,7 @@ weekly() {
 # --- dispatcher -----------------------------------------------------------------
 
 usage() {
-  printf 'usage: script/metrics.sh <command>\ncommands: %s\n' "${COMMANDS[*]}" >&2
+  printf 'usage: scripts/metrics.sh <command>\ncommands: %s\n' "${COMMANDS[*]}" >&2
 }
 
 main() {

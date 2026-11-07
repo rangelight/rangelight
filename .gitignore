@@ -16,7 +16,7 @@ coverage/
 *.tsbuildinfo
 
 # Go
-runner/bin/
+services/runner/bin/
 
 # Editors and OS
 .idea/

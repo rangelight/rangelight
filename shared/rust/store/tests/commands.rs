@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use rl_app::{IdGen, change_state, intake};
 use rl_chain::{Link, Record};
-use rl_domain::{INTAKE_LABEL, NewSession, SessionId, State};
+use rl_domain::{EventId, INTAKE_LABEL, NewSession, Phase, ReportPhase, SessionId, State};
 use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::change::Kind;
 use rl_store::{ChainEvent, SessionRow, Store, StoreError};
 use rl_testkit::{Database, FakeTickets, FixedClock, SeqIds, ticket};
@@ -17,7 +17,10 @@ fn clock() -> FixedClock {
 
 async fn new_session(n: u32, ids: &SeqIds) -> NewSession {
     let source = FakeTickets(vec![ticket(n, &[INTAKE_LABEL])]);
-    intake(&source, &clock(), ids).await.unwrap().remove(0)
+    intake(&source, &rl_testkit::workspace(), &clock(), ids)
+        .await
+        .unwrap()
+        .remove(0)
 }
 
 async fn create(store: &Store, command: &NewSession) -> bool {
@@ -54,6 +57,7 @@ fn replay(chain: &[ChainEvent]) -> (State, u64) {
         let to = match rl_chain::decode(&event.payload).unwrap().kind.unwrap() {
             Kind::Created(created) => created.state,
             Kind::StateChanged(changed) => changed.state,
+            Kind::PhaseChanged(_) => continue,
         };
         state = Some(to.as_known().unwrap());
     }
@@ -268,4 +272,52 @@ async fn a_failed_row_holds_back_only_its_session() {
         [second.id],
         "the first session's later event waits too"
     );
+}
+
+/// Review M3: a late report (an older `message_id`) is recorded once, as an event, but doesn't undo
+/// the phase a newer report set; the generation still moves on.
+#[tokio::test]
+async fn a_late_report_never_undoes_a_newer_phase() {
+    let store = rl_testkit::store("store::late_report").await;
+    let ids = SeqIds::default();
+    let command = new_session(1, &ids).await;
+    assert!(create(&store, &command).await);
+    let (earlier, later) = (uuid::Uuid::now_v7(), uuid::Uuid::now_v7());
+    let report = |message_id, phase| ReportPhase {
+        session: command.id,
+        event: EventId(ids.new_id()),
+        at: clock().0,
+        message_id,
+        sent_at: None,
+        phase,
+        message: String::new(),
+        observed_generation: 1,
+    };
+    assert!(
+        store
+            .report_phase(&report(later, Phase::Running))
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .report_phase(&report(earlier, Phase::Starting))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .report_phase(&report(earlier, Phase::Starting))
+            .await
+            .unwrap(),
+        "once"
+    );
+    let row = store.list_sessions(1).await.unwrap().remove(0);
+    assert_eq!((row.phase, row.generation), (Some(Phase::Running), 3));
+    assert_eq!(
+        store.chain(command.id).await.unwrap().len(),
+        3,
+        "both reports are events"
+    );
+    assert_replays(&store).await;
 }

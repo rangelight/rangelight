@@ -12,7 +12,14 @@ use uuid::Uuid;
 async fn intake_creates_one_command_per_listed_ticket() {
     let source = FakeTickets(vec![ticket(1, &[INTAKE_LABEL]), ticket(2, &["bug"])]);
     let clock = FixedClock(SystemTime::UNIX_EPOCH);
-    let commands = intake(&source, &clock, &SeqIds::default()).await.unwrap();
+    let commands = intake(
+        &source,
+        &rl_testkit::workspace(),
+        &clock,
+        &SeqIds::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(commands.len(), 1);
     assert_eq!(commands[0].ticket.id(), "issue-1");
     assert_eq!(commands[0].at, SystemTime::UNIX_EPOCH);

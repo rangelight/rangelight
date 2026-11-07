@@ -15,20 +15,35 @@ pub fn token(value: &str) -> Result<&str, DomainError> {
     Ok(value)
 }
 
-/// The JetStream subject a runner reads its desired sessions from (api/README.md).
+/// The JetStream subject of one session's desired state at its runner (api/README.md). The stream
+/// keeps one message per subject, so it holds each session's latest desired state, and a cold one
+/// is its tombstone.
 #[must_use]
-pub fn runner_desired(org: &str, runner: &str) -> String {
-    format!("rl.{org}.runner.{runner}.desired")
+pub fn runner_desired(org: &str, runner: &str, session: SessionId) -> String {
+    format!("rl.{org}.runner.{runner}.desired.{}", session.0)
 }
 
-/// The subjects of every runner's desired sessions in an org: what the stream captures.
+/// The subjects of every session's desired state at every runner in an org: what the stream
+/// captures.
 #[must_use]
 pub fn runners_desired(org: &str) -> String {
-    format!("rl.{org}.runner.*.desired")
+    format!("rl.{org}.runner.*.desired.*")
 }
 
 /// The core NATS subject a session's committed events fan out on (ADR 0021, ADR 0033).
 #[must_use]
 pub fn session_events(org: &str, session: SessionId) -> String {
     format!("rl.{org}.session.{}.events", session.0)
+}
+
+/// The JetStream subject a runner reports its sessions' status on (api/README.md).
+#[must_use]
+pub fn runner_status(org: &str, runner: &str) -> String {
+    format!("rl.{org}.runner.{runner}.status")
+}
+
+/// The subjects of every runner's status in an org: what the status stream captures.
+#[must_use]
+pub fn runners_status(org: &str) -> String {
+    format!("rl.{org}.runner.*.status")
 }

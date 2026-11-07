@@ -37,7 +37,8 @@ import (
 )
 
 // The envtest suite: a real API server and etcd, the chart's Session CRD, a stand-in for Cilium's
-// CRD, and a git mirror stand-in: the real `git http-backend` behind net/http/cgi. The chart's own
+// CRD, a real nats-server with JetStream (in-process, pinned by go.mod) holding the streams the
+// relay and the api create, and a git mirror stand-in: the real `git http-backend` behind net/http/cgi. The chart's own
 // RBAC and admission policy (rendered by helm) are applied, and the runner runs as its
 // ServiceAccount, so every test also proves that those permissions are enough, and no more.
 // setup-envtest (pinned by go.mod's tool directive) downloads the API server and etcd of
@@ -50,15 +51,19 @@ const (
 	runnerToken       = "the-runner-test-token"
 	chart             = "../../../../deployments/helm/rangelight"
 	testImage         = "ghcr.io/rangelight/agent:test@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	org               = "test"
+	runnerID          = "r1"
 )
 
 var (
 	k8s       client.Client // uncached, as an admin, for the tests' own reads and writes
+	watcher   client.WithWatch
 	asRunner  client.Client // uncached, as the runner's ServiceAccount
 	clientset *kubernetes.Clientset
 	mgr       manager.Manager
 	mirror    *testMirror
 	options   Options
+	broker    *testNATS
 )
 
 func TestMain(m *testing.M) {
@@ -103,6 +108,10 @@ func run(m *testing.M) (int, error) {
 		return 1, err
 	}
 	defer mirror.Close()
+	if broker, err = newTestNATS(); err != nil {
+		return 1, err
+	}
+	defer broker.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := clients(ctx, cfg); err != nil {
@@ -124,6 +133,9 @@ func clients(ctx context.Context, cfg *rest.Config) error {
 		return fmt.Errorf("scheme: %w", err)
 	}
 	var err error
+	if watcher, err = client.NewWithWatch(cfg, client.Options{Scheme: scheme}); err != nil {
+		return fmt.Errorf("client: %w", err)
+	}
 	if k8s, err = client.New(cfg, client.Options{Scheme: scheme}); err != nil {
 		return fmt.Errorf("client: %w", err)
 	}
@@ -152,7 +164,7 @@ func runnerConfig(cfg *rest.Config) *rest.Config {
 // applyChart applies the runner's RBAC and admission policy, as the chart renders them.
 func applyChart(ctx context.Context) error {
 	out, err := exec.Command("helm", "template", "rangelight", chart, "--namespace", "rangelight-system",
-		"-f", chart+"/test/runner-values.yaml",
+		"-f", chart+"/test/api-values.yaml", "-f", chart+"/test/runner-values.yaml",
 		// The values the chart requires for sign-in (RAN-37); the runner's templates don't use them.
 		"--set", "publicUrl=https://rangelight.example.com", "--set", "dex.github.org=rangelight",
 		"--show-only", "templates/runner/rbac.yaml", "--show-only", "templates/runner/admission.yaml").Output()
@@ -190,7 +202,11 @@ func startRunner(ctx context.Context, cfg *rest.Config) error {
 	if mgr, err = NewManager(runnerConfig(cfg), runnerNS); err != nil {
 		return err
 	}
-	r := &Reconciler{Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Options: options}
+	report, err := AddProtocol(mgr, broker.URL, runnerNS, org, runnerID)
+	if err != nil {
+		return err
+	}
+	r := &Reconciler{Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Report: report, Options: options}
 	if err := r.SetupWithManager(mgr); err != nil {
 		return err
 	}

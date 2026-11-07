@@ -22,7 +22,7 @@ fn org() -> String {
 
 async fn session(store: &Store) -> NewSession {
     let source = FakeTickets(vec![ticket(1, &[INTAKE_LABEL])]);
-    let command = intake(&source, &SystemClock, &UuidV7)
+    let command = intake(&source, &rl_testkit::workspace(), &SystemClock, &UuidV7)
         .await
         .unwrap()
         .remove(0);
@@ -99,7 +99,7 @@ async fn a_restart_between_publish_and_mark_is_seen_once() {
     let message = &messages[0];
     assert_eq!(
         message.subject.as_str(),
-        subject::runner_desired(&org, "r1")
+        subject::runner_desired(&org, "r1", command.id)
     );
     let msg_id = message
         .headers
@@ -111,6 +111,33 @@ async fn a_restart_between_publish_and_mark_is_seen_once() {
     assert_eq!(
         desired(message),
         (1, DesiredState::DESIRED_STATE_HOT, "rl-ran-1".into())
+    );
+    // RAN-35: the whole session, as the runner's Session resource holds it.
+    let Some(Body::Desired(whole)) = Envelope::decode_from_slice(&message.payload).unwrap().body
+    else {
+        unreachable!("not a SessionDesired")
+    };
+    let ticket = whole.ticket.into_option().unwrap();
+    assert_eq!(
+        (
+            ticket.key.as_str(),
+            ticket.title.as_str(),
+            ticket.criteria.as_slice()
+        ),
+        (
+            "RAN-1",
+            "Ticket 1",
+            ["AC1 one".to_owned(), "AC2 two".to_owned()].as_slice()
+        )
+    );
+    let worktree = &whole.worktrees[0];
+    assert_eq!(
+        (
+            worktree.mirror_repo.as_str(),
+            worktree.base_ref.as_str(),
+            whole.member.as_str()
+        ),
+        ("shop", "main", "ariel")
     );
 }
 
@@ -131,12 +158,11 @@ async fn state_changes_go_out_in_order_and_fan_out() {
     assert_eq!(relay.run_once().await.unwrap(), 2);
     assert_eq!(relay.run_once().await.unwrap(), 0, "nothing left");
 
-    let generations: Vec<_> = consume(&org).await.iter().map(|m| desired(m).0).collect();
-    assert_eq!(generations, [1, 2]);
-    let last = desired(&consume(&org).await[1]);
+    // One message per session's subject (review B1): the stream holds its latest desired state.
+    let kept: Vec<_> = consume(&org).await.iter().map(desired).collect();
     assert_eq!(
-        (last.1, last.2.as_str()),
-        (DesiredState::DESIRED_STATE_WARM, "rl-ran-1")
+        kept,
+        [(2, DesiredState::DESIRED_STATE_WARM, "rl-ran-1".to_owned())]
     );
     for (seq, id) in [(1, command.event), (2, warm.event)] {
         let event = Event::decode_from_slice(&watch.next().await.unwrap().payload).unwrap();
@@ -172,4 +198,30 @@ async fn an_undecodable_event_holds_back_only_its_own_session() {
         .get("Nats-Msg-Id")
         .unwrap();
     assert_eq!(msg_id.as_str(), good.event.0.to_string());
+}
+
+/// Review B1: the stream is the desired-state table, one message per session, kept however long.
+#[tokio::test]
+async fn the_desired_stream_keeps_one_message_per_session() {
+    let (store, org) = (rl_testkit::store("relay::table").await, org());
+    relay(&store, &org).await;
+    let config = jetstream::new(rl_testkit::nats().await)
+        .get_stream(format!("rl-{org}-desired"))
+        .await
+        .unwrap()
+        .cached_info()
+        .config
+        .clone();
+    assert_eq!(
+        (
+            config.max_messages_per_subject,
+            config.max_age,
+            config.subjects
+        ),
+        (
+            1,
+            Duration::ZERO,
+            vec![format!("rl.{org}.runner.*.desired.*")]
+        )
+    );
 }

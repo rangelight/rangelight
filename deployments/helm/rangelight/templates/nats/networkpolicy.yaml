@@ -15,11 +15,24 @@ spec:
   policyTypes:
     - "Ingress"
   ingress:
-    # Rangelight's own pods in rangelight-system, on the client port only.
+    # Only NATS's clients, on the client port: the api and the relay in rangelight-system, and the
+    # runner in its own namespace (the runner protocol). Nothing else, the git mirror included.
+    # Per-runner NATS credentials come with RAN-43.
     - from:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/part-of: "rangelight"
+              {{- include "rangelight.selector" (dict "ctx" $ "name" "api") | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- include "rangelight.selector" (dict "ctx" $ "name" "relay") | nindent 14 }}
+        {{- if .Values.runner.enabled }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.runner.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- include "rangelight.selector" (dict "ctx" $ "name" "runner") | nindent 14 }}
+        {{- end }}
       ports:
         - protocol: "TCP"
           port: 4222

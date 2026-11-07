@@ -1,6 +1,6 @@
 # The api's defaults (ADR 0049 §6). Override in /etc/rangelight/api.toml or with
-# RANGELIGHT_API_<KEY>, for example RANGELIGHT_API_LINEAR_TEAM=RAN. `linear_team`, `public_url` and
-# `oidc_issuer` have no default.
+# RANGELIGHT_API_<KEY>, for example RANGELIGHT_API_LINEAR_TEAM=RAN. `linear_team`, `public_url`,
+# `oidc_issuer`, `repo` and `member` have no default.
 
 # `tracing` filter directives.
 log = "info"
@@ -24,3 +24,9 @@ oidc_client_secret = "secret://rangelight-oidc#client-secret"
 oidc_member_claim = "preferred_username"
 # Seconds between a WatchSession stream's checks that its login still lives; it ends when not.
 login_recheck_seconds = 60
+# JetStream replicas of the runners' status stream: 1 in `lean`, 3 in `scale` (ADR 0021).
+stream_replicas = 1
+# Where the team's sessions work, until repo onboarding maps teams to repos (ADR 0047): the git
+# mirror's name for the repo (`repo`, no default) and its approved base branch.
+base_ref = "main"
+# Whose Claude home the team's lanes mount (ADR 0046 amendment). No default.

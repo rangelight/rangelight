@@ -4,6 +4,18 @@ The only Kubernetes-aware part of Rangelight (ADR 0018), in Go with controller-r
 `Session` resources (`rangelight.dev/v1alpha1`, `deployments/helm/rangelight/files/crds/session.yaml`),
 which live in the runner's own namespace, and answers the git mirror's `/auth/git`.
 
+**The runner protocol** (`api/README.md`, ADR 0021). A durable JetStream pull consumer
+(`runner-<runner_id>`) of `rl.<org>.runner.<runner_id>.desired.*`, one subject per session, from the
+last message of each (so a runner that starts over never revives a closed session), one message at a time: a hot
+`SessionDesired` is server-side applied as the Session named by its id (field manager
+`rangelight-runner`), a cold one deletes it. Acked only after that write; terminated, with the
+reason logged, when it can never succeed (undecodable, another runner's, an invalid ticket the API
+server refuses). An older `generation` than `spec.generation` is ignored. Each phase change gets a
+new `status.phaseId`, and the reconciler hands the settled Session to a publisher that sends
+`SessionStatus` on `rl.<org>.runner.<runner_id>.status` (`Nats-Msg-Id` = `phaseId`), keeping the
+latest per session and retrying while NATS is away. NATS reconnects and retries back off from
+0.5s to 30s with jitter; lanes never wait on NATS, and `/healthz` reflects Kubernetes only.
+
 **A Session's lane** is the namespace `rl-<ticket key, lowercased>`, labelled
 `rangelight.dev/session: <id>`, `rangelight.dev/lane: "true"`, `rangelight.dev/claude-home: "true"`
 and Pod Security `restricted`. In it:
@@ -16,9 +28,11 @@ and Pod Security `restricted`. In it:
 | ConfigMap `lane` | `ticket.json`, and `profile.json`: `rangelight.yaml` read once from the tip of `baseRef` in the mirror, validated against `api/jsonschema/rangelight.v1alpha1.schema.json`. |
 | Pod `agent` | non-root, read-only root, no capabilities, seccomp `RuntimeDefault`, no automounted token; one projected token (audience `rangelight-git-mirror`, 600 s); bounded worktree, `/tmp` and ephemeral storage; `ndots: 1`. |
 
-Phase: `Pending`, `Starting` (the namespace exists), `Hot` (the agent pod is Ready), or `Failed`
-(an invalid profile, a namespace that isn't the session's, no Cilium) with the reason in
-`status.message`. Deleting the Session deletes the namespace (finalizer `rangelight.dev/lane`).
+Phase: `Pending`, `Starting` (the namespace exists, the agent container not Ready yet: an exit, a
+restart or ImagePullBackOff is in `status.message`), `Hot` (only while the agent container is
+Ready), or `Failed` (an invalid profile, a namespace that isn't the session's, no Cilium, or an agent
+container in CrashLoopBackOff after 3 restarts: the last exit's reason and code) with the reason in
+`status.message`; reported as `QUEUED`, `STARTING`, `RUNNING`, `FAILED`, and `GONE` once deleted. Deleting the Session deletes the namespace (finalizer `rangelight.dev/lane`).
 
 **`/auth/git`** (port 8080): a projected token as a Basic password or Bearer token, which a
 TokenReview accepts for `rangelight-git-mirror`, bound to a pod. 200 with `X-Remote-User: runner`
@@ -36,9 +50,11 @@ the `default` ServiceAccount. The tests run the runner as that ServiceAccount, u
 `k8s-app=coredns`).
 
 Config: `configs/runner.default.toml`, then `/etc/rangelight/runner.toml`, then `RANGELIGHT_RUNNER_*`.
+`nats_url`, `org` and `runner_id` name the runner protocol's server and subjects.
 It sets the lane's disk sizes and `workers` (Sessions reconciled at once; a profile read is a
 depth-1 clone on the runner's `/tmp` for up to 30 seconds, so `/tmp` holds up to `workers` of them).
-Code: `main.go` (wiring), `internal/config/`, `internal/session/`. Deployed by the chart
+Code: `main.go` (wiring), `internal/config/`, `internal/session/` (`protocol.go`, `desired.go`,
+`status.go`: the runner protocol). Deployed by the chart
 (`templates/runner/`); image `build/package/docker/runner/Dockerfile`.
 
 ```sh
@@ -46,5 +62,6 @@ scripts/check.sh go     # lint, tests with envtest (-race), govulncheck; needs h
 ```
 
 The tests run against a real API server (envtest), with the chart's CRD, RBAC and admission policy,
-and serve fixture repos with the real `git http-backend`; `testdata/` holds a stand-in for Cilium's
+a real nats-server (in-process, pinned by `go.mod`), and serve fixture repos with the real
+`git http-backend`; `testdata/` holds a stand-in for Cilium's
 CRD. `TestDeepCopyIsGenerated` checks the generated code.

@@ -20,7 +20,7 @@ die() {
 
 # render [helm template flags...]: the chart as it installs into rangelight-system, with the values it requires.
 render() {
-  helm template rangelight "${CHART}" --namespace rangelight-system \
+  helm template rangelight "${CHART}" --namespace rangelight-system -f "${CHART}/test/api-values.yaml" \
     --set publicUrl=https://rangelight.example.com --set dex.github.org=rangelight "$@"
 }
 
@@ -40,8 +40,8 @@ main() {
 
   ! helm dependency list "${CHART}" | awk 'NR > 1 && NF && $NF != "ok" { print; bad = 1 } END { exit !bad }' >&2 ||
     die "charts/ does not match Chart.lock; run: helm dependency build deployments/helm/rangelight"
-  helm lint --strict --namespace rangelight-system --set publicUrl=https://rangelight.example.com \
-    --set dex.github.org=rangelight "${CHART}"
+  helm lint --strict --namespace rangelight-system -f "${CHART}/test/api-values.yaml" \
+    --set publicUrl=https://rangelight.example.com --set dex.github.org=rangelight "${CHART}"
 
   tmp="$(mktemp -d /tmp/rl-chart-lint.XXXXXX)"
   # shellcheck disable=SC2064 # expand now: tmp is local

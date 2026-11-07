@@ -1,5 +1,6 @@
-//! The api: the Linear intake loop, the Connect-RPC session API, and sign-in (ADR 0028,
-//! ADR 0031, ADR 0033). `main.rs` only loads config and wires these.
+//! The api: the Linear intake loop, the runners' status consumer, the Connect-RPC session API,
+//! and sign-in (ADR 0021, ADR 0028, ADR 0031, ADR 0033). `main.rs` only loads config and wires
+//! these.
 #![deny(missing_docs)]
 // connectrpc's generated traits return `impl Encodable<M>`; handlers name the concrete message.
 #![allow(refining_impl_trait_internal, refining_impl_trait_reachable)]
@@ -7,6 +8,7 @@
 pub mod auth;
 pub mod config;
 mod sessions;
+pub mod status;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,7 +16,8 @@ use std::time::Duration;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
-use rl_app::{Clock, IdGen, TicketError, TicketSource, intake};
+use rl_app::{Clock, IdGen, SystemClock, TicketError, TicketSource, UuidV7, intake};
+use rl_domain::Workspace;
 use rl_store::{Store, StoreError};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::sync::CancellationToken;
@@ -40,7 +43,8 @@ pub enum ApiError {
     Store(#[from] StoreError),
 }
 
-/// One intake round: lists the tickets, and creates a session for each that has none yet.
+/// One intake round: lists the tickets, and creates a session in `workspace` for each that has
+/// none yet.
 /// A command that fails (say, a namespace another ticket already holds) is logged and skipped;
 /// the round goes on. Returns how many sessions it created.
 ///
@@ -49,11 +53,12 @@ pub enum ApiError {
 pub async fn intake_once(
     store: &Store,
     source: &impl TicketSource,
+    workspace: &Workspace,
     clock: &impl Clock,
     ids: &impl IdGen,
 ) -> Result<usize, ApiError> {
     let mut created = 0;
-    for command in intake(source, clock, ids).await? {
+    for command in intake(source, workspace, clock, ids).await? {
         match store.create_session(&command).await {
             Ok(true) => created += 1,
             Ok(false) => {}
@@ -65,19 +70,20 @@ pub async fn intake_once(
     Ok(created)
 }
 
-/// Polls every 30 seconds until `cancel`. A failed round is logged and retried next poll. A
+/// Polls every 30 seconds until `cancel`, with the system clock and UUIDv7 ids. A failed round is logged and retried next poll. A
 /// round in flight is dropped at `cancel`, so shutdown never waits on Linear or Postgres; each
 /// command is one transaction, so a dropped round leaves nothing half-written.
 pub async fn intake_loop(
     store: Store,
     source: impl TicketSource,
-    clock: impl Clock,
-    ids: impl IdGen,
+    workspace: Workspace,
     cancel: CancellationToken,
 ) {
     for round in 1u64.. {
         let once = async {
-            if let Err(error) = intake_once(&store, &source, &clock, &ids).await {
+            if let Err(error) =
+                intake_once(&store, &source, &workspace, &SystemClock, &UuidV7).await
+            {
                 tracing::warn!(%error, "intake round failed");
             }
         };

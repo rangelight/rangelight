@@ -57,6 +57,9 @@ type Spec struct {
 	BaseRef string `json:"baseRef"`
 	// Member is whose Claude home the lane mounts (ADR 0046 amendment).
 	Member string `json:"member"`
+	// Generation is the SessionDesired.generation this spec came from: the runner ignores an older
+	// one. 0 for a Session that didn't come over the runner protocol.
+	Generation int64 `json:"generation,omitempty"`
 }
 
 // Ticket is the ticket a lane works on, as services/agent reads it.
@@ -74,14 +77,19 @@ type Ticket struct {
 // +kubebuilder:object:generate=true
 type Status struct {
 	Phase Phase `json:"phase,omitempty"`
-	// Message says why the session failed.
+	// Message says why the session failed, or why its agent container isn't starting yet (say,
+	// ImagePullBackOff).
 	Message string `json:"message,omitempty"`
 	// ProfileCommit is the base-branch commit the profile was read from.
 	ProfileCommit string `json:"profileCommit,omitempty"`
+	// PhaseID is the message_id of the SessionStatus that reports this phase: a new UUIDv7 at each
+	// phase change, so a report sent again (after a restart, say) is the same message.
+	PhaseID string `json:"phaseId,omitempty"`
 }
 
 // Phase is where a session's pod is: Pending, then Starting once its namespace exists, then Hot
-// once the agent pod is Ready. Failed is final.
+// once the agent pod is Ready. Failed is final. Gone is only ever reported, once the Session has
+// been deleted, and never stored.
 type Phase string
 
 // The phases.
@@ -90,4 +98,5 @@ const (
 	PhaseStarting Phase = "Starting"
 	PhaseHot      Phase = "Hot"
 	PhaseFailed   Phase = "Failed"
+	PhaseGone     Phase = "Gone"
 )

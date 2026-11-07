@@ -155,17 +155,43 @@ impl Write for Capture {
     }
 }
 
-/// Review 1: one issue Rangelight can't use is skipped; the others still come through.
+/// Review 1, and RAN-35 AC6: an issue that breaks the ticket rule (a bad key, no acceptance
+/// criteria) is skipped, never reaching a runner; the others still come through.
 #[tokio::test]
 async fn an_invalid_issue_is_skipped_not_fatal() {
-    let node = |id: &str, key: &str| serde_json::json!({ "id": id, "identifier": key, "title": "t", "labels": { "nodes": [] } });
+    let node = |id: &str, key: &str, description: serde_json::Value| serde_json::json!({ "id": id, "identifier": key, "title": "t", "description": description });
+    let brief = serde_json::json!("Acceptance\n- AC1 it works");
     let answer = serde_json::json!({ "data": { "issues": {
-        "nodes": [node("issue-1", "RAN-1"), node("issue-2", "not a key!"), node("issue-3", "RAN-3")],
+        "nodes": [
+            node("issue-1", "RAN-1", brief.clone()),
+            node("issue-2", "not a key!", brief.clone()),
+            node("issue-3", "RAN-3", brief),
+            node("issue-4", "RAN-4", serde_json::json!("no criteria")),
+            node("issue-5", "RAN-5", serde_json::Value::Null),
+        ],
         "pageInfo": { "hasNextPage": false, "endCursor": null },
     } } });
     let stub = LinearStub::start(Reply::Answer(answer)).await;
     let key = key_file();
-    let tickets = linear(&stub, &key).tickets().await.unwrap();
+    let logs = Arc::new(Mutex::new(Vec::new()));
+    let writer = {
+        let logs = Arc::clone(&logs);
+        move || Capture(Arc::clone(&logs))
+    };
+    let subscriber = tracing_subscriber::fmt()
+        .json()
+        .with_writer(writer)
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let source = linear(&stub, &key);
+    source.tickets().await.unwrap();
+    let tickets = source.tickets().await.unwrap();
+    let warnings = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        warnings.matches("skipped a Linear issue").count(),
+        3,
+        "each unusable issue is warned about once, over two polls: {warnings}"
+    );
     let ids: Vec<_> = tickets.iter().map(|t| t.id().to_owned()).collect();
     assert_eq!(ids, ["issue-1", "issue-3"]);
 }

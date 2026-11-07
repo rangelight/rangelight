@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use uuid::Uuid;
 
-use crate::{DomainError, Ticket};
+use crate::{DomainError, Ticket, Workspace};
 
 /// A session's id, a UUIDv7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -82,6 +82,8 @@ pub struct NewSession {
     pub at: SystemTime,
     /// The ticket asking for the session.
     pub ticket: Ticket,
+    /// Where the session works, and for whom.
+    pub workspace: Workspace,
 }
 
 impl NewSession {
@@ -126,6 +128,111 @@ impl ChangeState {
     }
 }
 
+/// Where a session's pod is, as its runner reports it (`runner.v1alpha1.Phase`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    /// Waiting to start.
+    Queued,
+    /// The namespace exists; the pod isn't ready yet.
+    Starting,
+    /// The agent pod is ready.
+    Running,
+    /// Going warm.
+    Hibernating,
+    /// Warm: namespace kept, zero pods.
+    Hibernated,
+    /// Going hot again.
+    Waking,
+    /// Being torn down.
+    Terminating,
+    /// Torn down.
+    Gone,
+    /// Failed; the runner said why.
+    Failed,
+}
+
+impl Phase {
+    /// Every phase, for parsing.
+    pub(crate) const ALL: [Phase; 9] = [
+        Phase::Queued,
+        Phase::Starting,
+        Phase::Running,
+        Phase::Hibernating,
+        Phase::Hibernated,
+        Phase::Waking,
+        Phase::Terminating,
+        Phase::Gone,
+        Phase::Failed,
+    ];
+
+    /// The stored name, for example `running`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Phase::Queued => "queued",
+            Phase::Starting => "starting",
+            Phase::Running => "running",
+            Phase::Hibernating => "hibernating",
+            Phase::Hibernated => "hibernated",
+            Phase::Waking => "waking",
+            Phase::Terminating => "terminating",
+            Phase::Gone => "gone",
+            Phase::Failed => "failed",
+        }
+    }
+
+    /// Parses a stored name.
+    ///
+    /// # Errors
+    /// [`DomainError::UnknownPhase`] for anything else.
+    pub fn parse(name: &str) -> Result<Phase, DomainError> {
+        Phase::ALL
+            .into_iter()
+            .find(|phase| phase.as_str() == name)
+            .ok_or_else(|| DomainError::UnknownPhase(name.to_owned()))
+    }
+}
+
+/// The command that records a runner's `SessionStatus`. The store records each `message_id` once,
+/// so a redelivered or republished status changes nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportPhase {
+    /// The session it reports on.
+    pub session: SessionId,
+    /// The id of the event it appends.
+    pub event: EventId,
+    /// When the control plane received it.
+    pub at: SystemTime,
+    /// The status's `Envelope.message_id`.
+    pub message_id: Uuid,
+    /// The status's `Envelope.sent_at`, if it had one.
+    pub sent_at: Option<SystemTime>,
+    /// The reported phase.
+    pub phase: Phase,
+    /// The runner's reason, at most [`PHASE_MESSAGE_MAX`] characters.
+    pub message: String,
+    /// The `SessionDesired.generation` the runner had applied.
+    pub observed_generation: u64,
+}
+
+/// The longest phase message kept, in characters: the runner's own cap (the CRD's
+/// `status.message`).
+pub const PHASE_MESSAGE_MAX: usize = 2000;
+
+impl ReportPhase {
+    /// What this command records.
+    #[must_use]
+    pub fn change(&self) -> Change {
+        Change::PhaseChanged {
+            phase: self.phase,
+            message: self.message.chars().take(PHASE_MESSAGE_MAX).collect(),
+            observed_generation: self.observed_generation,
+            message_id: self.message_id,
+            sent_at: self.sent_at,
+        }
+    }
+}
+
 /// What a command changed: an event's payload, before its canonical encoding (ADR 0029).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Change {
@@ -147,6 +254,19 @@ pub enum Change {
         /// The new state.
         state: State,
     },
+    /// The runner reported a new phase.
+    PhaseChanged {
+        /// The phase.
+        phase: Phase,
+        /// The runner's reason.
+        message: String,
+        /// The generation the runner had applied.
+        observed_generation: u64,
+        /// The status message it records.
+        message_id: Uuid,
+        /// When the runner sent it.
+        sent_at: Option<SystemTime>,
+    },
 }
 
 impl Change {
@@ -156,14 +276,16 @@ impl Change {
         match self {
             Change::Created { .. } => "session.created",
             Change::StateChanged { .. } => "session.state_changed",
+            Change::PhaseChanged { .. } => "session.phase_changed",
         }
     }
 
-    /// The session's state after this change.
+    /// The desired state this change sets, if it sets one.
     #[must_use]
-    pub fn state(&self) -> State {
+    pub fn state(&self) -> Option<State> {
         match self {
-            Change::Created { state, .. } | Change::StateChanged { state } => *state,
+            Change::Created { state, .. } | Change::StateChanged { state } => Some(*state),
+            Change::PhaseChanged { .. } => None,
         }
     }
 }

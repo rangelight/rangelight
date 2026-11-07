@@ -1,0 +1,14 @@
+[
+  { "repo": "shop", "baseRef": "release/1.2", "member": "ariel-l", "valid": true },
+  { "repo": "opentelemetry-demo", "baseRef": "main", "member": "owner", "valid": true },
+  { "repo": "shop.git", "baseRef": "main", "member": "a", "valid": false },
+  { "repo": ".shop", "baseRef": "main", "member": "a", "valid": false },
+  { "repo": "a/b", "baseRef": "main", "member": "a", "valid": false },
+  { "repo": "shop", "baseRef": "a..b", "member": "a", "valid": false },
+  { "repo": "shop", "baseRef": "main/", "member": "a", "valid": false },
+  { "repo": "shop", "baseRef": "main.lock", "member": "a", "valid": false },
+  { "repo": "shop", "baseRef": "a//b", "member": "a", "valid": false },
+  { "repo": "shop", "baseRef": "main", "member": "Ariel", "valid": false },
+  { "repo": "shop", "baseRef": "main", "member": "-a", "valid": false },
+  { "repo": "shop", "baseRef": "main", "member": "a-", "valid": false }
+]

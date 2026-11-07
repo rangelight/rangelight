@@ -11,3 +11,7 @@ runner:
 # The dev cluster runs RKE2, whose CoreDNS is labelled k8s-app=coredns.
 clusterDns:
   podLabel: "k8s-app=coredns"
+# The dev team's sessions work on the mirrored demo, in the owner's Claude home (ADR 0046 amendment).
+api:
+  repo: "opentelemetry-demo"
+  member: "owner"

@@ -30,6 +30,7 @@ message Session {
   string namespace = 6; // rl-<ticket key>
   rangelight.runner.v1alpha1.DesiredState state = 7;
   uint64 generation = 8; // the seq of the session's last event
+  rangelight.runner.v1alpha1.Phase phase = 9; // as its runner last reported it; unspecified before the first report
 }
 
 message ListSessionsRequest {}
@@ -63,6 +64,7 @@ message Change {
   oneof kind {
     Created created = 1;
     StateChanged state_changed = 2;
+    PhaseChanged phase_changed = 3;
   }
 }
 
@@ -76,4 +78,13 @@ message Created {
 
 message StateChanged {
   rangelight.runner.v1alpha1.DesiredState state = 1;
+}
+
+// The runner reported a new phase: one SessionStatus, recorded once however often it arrives.
+message PhaseChanged {
+  rangelight.runner.v1alpha1.Phase phase = 1;
+  string message = 2; // the runner's reason, for example why the session failed
+  uint64 observed_generation = 3; // the SessionDesired.generation the runner had applied
+  string message_id = 4; // the SessionStatus Envelope.message_id this event records
+  google.protobuf.Timestamp sent_at = 5; // the Envelope.sent_at: when the runner sent it
 }

@@ -2475,6 +2475,7 @@ name = "rl-chain"
 version = "0.1.0"
 dependencies = [
  "buffa",
+ "buffa-types",
  "proptest",
  "rl-domain",
  "rl-proto",
@@ -2498,6 +2499,7 @@ dependencies = [
 name = "rl-domain"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "thiserror 2.0.21",
  "uuid",
 ]

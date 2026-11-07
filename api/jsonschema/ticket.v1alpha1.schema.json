@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rangelight.dev/schemas/ticket.v1alpha1.schema.json",
+  "$comment": "Maturity: v1alpha1, may break with a changelog entry in api/README.md (ADR 0027). The one ticket rule: the api's intake (rl-domain), the Session CRD (deployments/helm/rangelight/files/crds/session.yaml) and the lane's /etc/rangelight/ticket.json are tested against this file. ADRs: 0045, 0051.",
+  "title": "Rangelight ticket v1alpha1",
+  "description": "The ticket a session works on: the lane's brief and its acceptance criteria (ADR 0045 §3). The runner mounts it in the lane as /etc/rangelight/ticket.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["key", "title", "description", "criteria"],
+  "properties": {
+    "key": {
+      "description": "The tracker's key, for example RAN-35. The lane namespace is rl-<key, lowercased>, so it stays a DNS label.",
+      "type": "string",
+      "maxLength": 40,
+      "pattern": "^[A-Z][A-Z0-9]*-[1-9][0-9]*$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "criteria": {
+      "description": "The acceptance criteria, AC1..ACn in order.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    }
+  }
+}

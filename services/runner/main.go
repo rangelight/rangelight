@@ -1,13 +1,10 @@
-// The runner: the only Kubernetes-aware part of Rangelight (ADR 0018). It runs Sessions and answers
-// the git mirror's /auth/git.
+// The runner: the only Kubernetes-aware part of Rangelight (ADR 0018). It takes Sessions from the
+// control plane over NATS, runs them, reports their phase back, and answers the git mirror's /auth/git.
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"time"
 
@@ -43,9 +40,13 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("session: %w", err)
 	}
+	report, err := session.AddProtocol(mgr, cfg.NATSURL, cfg.Namespace, cfg.Org, cfg.RunnerID)
+	if err != nil {
+		return fmt.Errorf("session: %w", err)
+	}
 	workspace, tmp, ephemeral := cfg.Quantities()
 	dnsKey, dnsValue := cfg.DNSLabel()
-	r := &session.Reconciler{Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Options: session.Options{
+	r := &session.Reconciler{Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Report: report, Options: session.Options{
 		AgentImage: cfg.AgentImage, MirrorURL: cfg.MirrorURL, MirrorTokenFile: cfg.MirrorTokenFile,
 		Workspace: workspace, Tmp: tmp, EphemeralStorage: ephemeral, Workers: cfg.Workers,
 		DNS: session.DNS{Namespace: cfg.DNSNamespace, LabelKey: dnsKey, LabelValue: dnsValue},
@@ -54,26 +55,13 @@ func run() error {
 		return fmt.Errorf("session: %w", err)
 	}
 	srv := session.NewServer(cfg.Listen, &session.GitAuth{Client: mgr.GetClient(), Cache: mgr.GetCache(), Namespace: cfg.Namespace})
-	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error { return serve(ctx, srv) })); err != nil {
+	drain := 10 * time.Second
+	if err := mgr.Add(&manager.Server{Name: "http", Server: srv, ShutdownTimeout: &drain}); err != nil {
 		return fmt.Errorf("http: %w", err)
 	}
-	slog.Info("runner starting", "namespace", cfg.Namespace, "listen", cfg.Listen)
+	slog.Info("runner starting", "namespace", cfg.Namespace, "listen", cfg.Listen, "runner_id", cfg.RunnerID)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		return fmt.Errorf("manager: %w", err)
-	}
-	return nil
-}
-
-// serve runs srv until ctx ends, then drains it for up to 10 seconds.
-func serve(ctx context.Context, srv *http.Server) error {
-	go func() {
-		<-ctx.Done()
-		stop, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(stop)
-	}()
-	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("http: %w", err)
 	}
 	return nil
 }

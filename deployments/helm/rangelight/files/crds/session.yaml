@@ -62,6 +62,7 @@ spec:
                     - rule: "self == oldSelf"
                       message: "id is immutable"
                 ticket:
+                  # The rule is api/jsonschema/ticket.v1alpha1.schema.json; a runner test holds this to it.
                   description: "Mounted in the lane as /etc/rangelight/ticket.json."
                   type: "object"
                   required: ["key", "title", "description", "criteria"]
@@ -116,6 +117,11 @@ spec:
                   x-kubernetes-validations:
                     - rule: "self == oldSelf"
                       message: "member is immutable"
+                generation:
+                  description: "The SessionDesired.generation this spec came from; the runner ignores an older one."
+                  type: "integer"
+                  format: "int64"
+                  minimum: 0
             status:
               type: "object"
               properties:
@@ -124,9 +130,13 @@ spec:
                   type: "string"
                   enum: ["Pending", "Starting", "Hot", "Failed"]
                 message:
-                  description: "Why the session failed."
+                  description: "Why the session failed, or why its agent container isn't starting yet."
                   type: "string"
                   maxLength: 2000
                 profileCommit:
                   description: "The base-branch commit the profile was read from."
                   type: "string"
+                phaseId:
+                  description: "The message_id of the SessionStatus that reports this phase (a UUIDv7)."
+                  type: "string"
+                  pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"

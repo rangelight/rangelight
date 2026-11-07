@@ -1,5 +1,6 @@
 ---
-# The api's connection and sign-in settings (ADR 0049 §6): secrets as references, never values.
+# The api's settings (configs/api.default.toml, ADR 0049 §6), as RANGELIGHT_API_<KEY>: connection, sign-in and
+# sessions. Secrets as references, never values.
 apiVersion: "v1"
 kind: "ConfigMap"
 metadata:
@@ -9,9 +10,9 @@ metadata:
     {{- include "rangelight.labels" (dict "ctx" $ "name" "api" "component" "config") | nindent 4 }}
 data:
   {{- if .Values.postgres.enabled }}
-  RANGELIGHT_API_POSTGRES_URL: "secret://rangelight-pg-app#uri"
+  RANGELIGHT_API_DATABASE_URL: "secret://rangelight-pg-app#uri"
   {{- else }}
-  RANGELIGHT_API_POSTGRES_URL: {{ printf "secret://%s#%s" .Values.postgres.external.secretRef.name .Values.postgres.external.secretRef.key | quote }}
+  RANGELIGHT_API_DATABASE_URL: {{ printf "secret://%s#%s" .Values.postgres.external.secretRef.name .Values.postgres.external.secretRef.key | quote }}
   {{- end }}
   {{- if .Values.nats.enabled }}
   RANGELIGHT_API_NATS_URL: {{ printf "nats://%s.%s.svc:4222" .Values.nats.fullnameOverride .Release.Namespace | quote }}
@@ -27,3 +28,7 @@ data:
   RANGELIGHT_API_OIDC_CLIENT_ID: {{ .Values.oidc.clientId | quote }}
   RANGELIGHT_API_OIDC_MEMBER_CLAIM: {{ .Values.oidc.memberClaim | quote }}
   RANGELIGHT_API_OIDC_CLIENT_SECRET: {{ printf "secret://%s#%s" .Values.oidc.clientSecretRef.name .Values.oidc.clientSecretRef.key | quote }}
+  RANGELIGHT_API_REPO: {{ required "api.repo is required" .Values.api.repo | quote }}
+  RANGELIGHT_API_BASE_REF: {{ .Values.api.baseRef | quote }}
+  RANGELIGHT_API_MEMBER: {{ required "api.member is required" .Values.api.member | quote }}
+  RANGELIGHT_API_STREAM_REPLICAS: {{ .Values.api.streamReplicas | quote }}

@@ -260,3 +260,15 @@ runner:
       memory: "128Mi"
     limits:
       memory: "512Mi"
+
+# The api's sessions (configs/api.default.toml). Where the team's sessions work and for whom, until repo
+# onboarding maps teams to repos (ADR 0047) and members to sessions.
+api:
+  # The git mirror's name for the repo the sessions work on (a gitMirror.repos name, without .git). Required.
+  repo: ""
+  # The repo's approved base branch: lanes start there, and the profile is read there (ADR 0041).
+  baseRef: "main"
+  # Whose Claude home the lanes mount (ADR 0046 amendment): a DNS label. Required.
+  member: ""
+  # JetStream replicas of the runners' status stream: 1 for a single NATS server, 3 for a cluster.
+  streamReplicas: 1

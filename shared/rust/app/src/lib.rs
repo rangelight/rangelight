@@ -6,7 +6,7 @@
 use std::future::Future;
 use std::time::SystemTime;
 
-use rl_domain::{ChangeState, EventId, NewSession, SessionId, State, Ticket};
+use rl_domain::{ChangeState, EventId, NewSession, SessionId, State, Ticket, Workspace};
 use uuid::Uuid;
 
 /// Where tickets come from: Linear now, GitHub Issues next (ADR 0049 §2.2). Every implementation
@@ -66,12 +66,14 @@ impl IdGen for UuidV7 {
     }
 }
 
-/// Intake: one [`NewSession`] for each ticket the source lists. Tickets that already have one are left to the store's unique constraint, so re-polling is a no-op.
+/// Intake: one [`NewSession`] in `workspace` for each ticket the source lists. Tickets that
+/// already have one are left to the store's unique constraint, so re-polling is a no-op.
 ///
 /// # Errors
 /// The source's [`TicketError`].
 pub async fn intake(
     source: &impl TicketSource,
+    workspace: &Workspace,
     clock: &impl Clock,
     ids: &impl IdGen,
 ) -> Result<Vec<NewSession>, TicketError> {
@@ -83,6 +85,7 @@ pub async fn intake(
             event: EventId(ids.new_id()),
             at: clock.now(),
             ticket,
+            workspace: workspace.clone(),
         })
         .collect())
 }

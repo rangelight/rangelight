@@ -22,6 +22,20 @@ pub struct Unsent {
     pub at: SystemTime,
     /// Its session's namespace.
     pub namespace: String,
+    /// Its session's ticket key.
+    pub ticket_key: String,
+    /// Its session's ticket title.
+    pub title: String,
+    /// Its session's ticket description.
+    pub description: String,
+    /// Its session's acceptance criteria, in order.
+    pub criteria: Vec<String>,
+    /// Its session's repo, by its git mirror name.
+    pub repo: String,
+    /// Its session's base branch.
+    pub base_ref: String,
+    /// Its session's member.
+    pub member: String,
 }
 
 pub(crate) async fn insert(
@@ -53,6 +67,13 @@ impl Store {
                     payload: row.payload,
                     at: SystemTime::from(row.at),
                     namespace: row.namespace,
+                    ticket_key: row.ticket_key,
+                    title: row.title,
+                    description: row.description,
+                    criteria: row.criteria,
+                    repo: row.repo,
+                    base_ref: row.base_ref,
+                    member: row.member,
                 })
             })
             .collect()

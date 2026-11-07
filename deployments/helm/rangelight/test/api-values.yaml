@@ -1,0 +1,5 @@
+---
+# The api's required values, for test/lint.sh and every render in test/*.sh.
+api:
+  repo: "shop"
+  member: "owner"

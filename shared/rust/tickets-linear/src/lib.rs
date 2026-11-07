@@ -5,6 +5,8 @@
 //! header. It is never logged, and errors never carry it or a response body.
 #![deny(missing_docs)]
 
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use reqwest::header::{AUTHORIZATION, HeaderValue};
@@ -28,7 +30,7 @@ const QUERY: &str = "query Intake($team: String!, $label: String!, $first: Int!,
     labels: { name: { eq: $label } },
     state: { type: { nin: [\"completed\", \"canceled\"] } }
   }) {
-    nodes { id identifier title }
+    nodes { id identifier title description }
     pageInfo { hasNextPage endCursor }
   }
 }";
@@ -40,6 +42,9 @@ pub struct Linear {
     url: String,
     team: String,
     api_key: SecretRef,
+    /// The issues already warned about, so a skipped issue is logged once, not every poll.
+    /// ponytail: grows by one id per unusable issue for the process's life.
+    warned: Arc<Mutex<HashSet<String>>>,
 }
 
 impl Linear {
@@ -60,6 +65,7 @@ impl Linear {
             url,
             team,
             api_key,
+            warned: Arc::default(),
         })
     }
 
@@ -114,7 +120,12 @@ impl TicketSource for Linear {
         let mut after: Option<String> = None;
         for _ in 0..MAX_PAGES {
             let issues = self.page(after.as_deref()).await?;
-            tickets.extend(issues.nodes.into_iter().filter_map(usable));
+            tickets.extend(
+                issues
+                    .nodes
+                    .into_iter()
+                    .filter_map(|node| self.usable(node)),
+            );
             match (issues.page_info.has_next_page, issues.page_info.end_cursor) {
                 (true, Some(cursor)) => after = Some(cursor),
                 (true, None) => {
@@ -132,17 +143,28 @@ impl TicketSource for Linear {
     }
 }
 
-/// The node as a ticket. One issue Rangelight can't use (say, a key that can't name a
-/// namespace) is skipped and logged, not fatal: the team's other issues still get sessions.
-fn usable(node: Node) -> Option<Ticket> {
-    Ticket::new(
-        Tracker::Linear,
-        node.id.clone(),
-        node.identifier,
-        node.title,
-    )
-    .inspect_err(|error| tracing::warn!(issue = %node.id, %error, "skipped a Linear issue"))
-    .ok()
+impl Linear {
+    /// The node as a ticket. One issue Rangelight can't use (it breaks the ticket rule, say, no
+    /// acceptance criteria) is skipped, never sent to a runner, and not fatal: the team's other
+    /// issues still get sessions. It is logged the first time only.
+    fn usable(&self, node: Node) -> Option<Ticket> {
+        let ticket = Ticket::new(
+            Tracker::Linear,
+            node.id.clone(),
+            node.identifier,
+            node.title,
+            node.description.unwrap_or_default(),
+        );
+        if let Err(error) = &ticket
+            && self
+                .warned
+                .lock()
+                .is_ok_and(|mut warned| warned.insert(node.id.clone()))
+        {
+            tracing::warn!(issue = %node.id, %error, "skipped a Linear issue");
+        }
+        ticket.ok()
+    }
 }
 
 #[derive(Deserialize)]
@@ -174,4 +196,6 @@ struct Node {
     id: String,
     identifier: String,
     title: String,
+    /// Markdown; Linear sends null for an empty one.
+    description: Option<String>,
 }

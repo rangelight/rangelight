@@ -44,14 +44,9 @@ environment, inside limits Security approved, and every step leaves evidence.
 
 ## How it works
 
-```text
- Linear ticket ──label──▶ api (Rust) ──NATS──▶ runner (Go) ──▶ lane namespace
-        ▲                  │ Postgres                          ├─ agent (TS): Claude Code in a worktree
-        │                  ▼                                   └─ default-deny network policy
-        └──── PR link ◀── Workbench (TS) ◀── live events          │
-                                                                  ▼
-                                               git mirror: the lane pushes only its own refs ──▶ GitHub PR
-```
+<p align="center">
+  <img src="docs/images/how-it-works.png" width="100%" alt="How Rangelight works: a labelled Linear ticket reaches the Rust api, which records it in Postgres and publishes it over NATS. The Go runner creates an isolated lane where Claude Code works the ticket, streams events and a terminal to the Workbench, pushes only its own refs to the git mirror, and signs in to your Claude plan directly. The api opens the pull request on GitHub.">
+</p>
 
 - **`api`** is the control plane. It turns tickets into sessions and keeps state, events and outbox
   in one Postgres transaction. It has no Kubernetes client.
@@ -60,6 +55,9 @@ environment, inside limits Security approved, and every step leaves evidence.
 - **`agent`** runs the unmodified Claude Code binary in the lane and streams typed events.
 - **`git-mirror`** is stock git behind hooks. It serves each lane its own repository and rejects
   refs that aren't the lane's.
+- **Workbench** shows every lane live, with a terminal into each one, behind GitHub sign-in.
+
+The diagram's source is [`docs/images/how-it-works.html`](docs/images/how-it-works.html).
 
 The design decisions behind each piece are recorded as ADRs in
 [`docs/architecture/adr/`](docs/architecture/adr/).

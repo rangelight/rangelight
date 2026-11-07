@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Rangelight works</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Rangelight light tokens (Workbench design tokens, ADR 0049 §5.1). */
+  :root {
+    --paper: #f4f5f7; --ink: #0f1217; --muted: #4d5560; --soft: #6b7380;
+    --accent: #3d4ec2; --link: #2e6b8a;
+  }
+  html, body { margin: 0; background: var(--paper); }
+  body { padding: 0; }
+  svg { display: block; width: 1280px; height: 784px; text-rendering: geometricPrecision; }
+  .sans { font-family: 'Geist', system-ui, sans-serif; }
+  .mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 40 1280 784" role="img" aria-labelledby="how-it-works-title how-it-works-desc">
+  <title id="how-it-works-title">How Rangelight works</title>
+  <desc id="how-it-works-desc">A labelled Linear ticket reaches the Rangelight api, which records it in Postgres and publishes it over NATS; the runner creates an isolated lane where Claude Code works the ticket, streams events to the Workbench, pushes only its own refs to the git mirror, and the api opens the pull request on GitHub.</desc>
+  <defs>
+    <marker id="hiw-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4d5560"/></marker>
+    <marker id="hiw-arrow-start" markerWidth="8" markerHeight="6" refX="1" refY="3" orient="auto"><polygon points="8 0, 0 3, 8 6" fill="#4d5560"/></marker>
+    <marker id="hiw-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e6b8a"/></marker>
+  </defs>
+
+  <rect x="0" y="40" width="1280" height="784" fill="#f4f5f7"/>
+
+  <!-- ── Zones ─────────────────────────────────────────────── -->
+  <rect x="32" y="72" width="208" height="592" rx="8" fill="rgba(15,18,23,0.02)" stroke="rgba(15,18,23,0.14)" stroke-width="0.5"/>
+  <rect x="48" y="66" width="76" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="52" y="75" class="mono" fill="#6b7380" font-size="8" letter-spacing="0.14em">YOUR TOOLS</text>
+
+  <rect x="272" y="72" width="656" height="592" rx="8" fill="rgba(15,18,23,0.02)" stroke="rgba(15,18,23,0.14)" stroke-width="0.5"/>
+  <rect x="288" y="66" width="192" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="292" y="75" class="mono" fill="#6b7380" font-size="8" letter-spacing="0.14em">RANGELIGHT-SYSTEM · ONE HELM CHART</text>
+
+  <rect x="960" y="244" width="288" height="212" rx="8" fill="rgba(61,78,194,0.03)" stroke="rgba(61,78,194,0.55)" stroke-width="1" stroke-dasharray="4,4"/>
+  <rect x="976" y="238" width="196" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="980" y="247" class="mono" fill="#3d4ec2" font-size="8" letter-spacing="0.14em">LANE · rl-&lt;ticket&gt; · ONE PER TICKET</text>
+
+  <!-- ── Connectors (drawn before nodes) ───────────────────── -->
+  <!-- 1 Linear → api -->
+  <path d="M216,144 H312" fill="none" stroke="#4d5560" stroke-width="1" marker-end="url(#hiw-arrow)"/>
+  <rect x="240" y="124" width="44" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="262" y="133" class="mono" fill="#4d5560" font-size="8" text-anchor="middle" letter-spacing="0.06em">LABEL</text>
+
+  <!-- 2 api → Postgres -->
+  <path d="M472,144 H512" fill="none" stroke="#4d5560" stroke-width="1" marker-end="url(#hiw-arrow)"/>
+  <rect x="474" y="124" width="36" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="492" y="133" class="mono" fill="#4d5560" font-size="8" text-anchor="middle" letter-spacing="0.06em">1 TXN</text>
+
+  <!-- 3 api ⇄ NATS -->
+  <path d="M432,176 V248 Q432,256 440,256 H568 Q576,256 576,264 V336" fill="none" stroke="#4d5560" stroke-width="1" marker-start="url(#hiw-arrow-start)" marker-end="url(#hiw-arrow)"/>
+  <rect x="466" y="236" width="76" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="504" y="245" class="mono" fill="#4d5560" font-size="8" text-anchor="middle" letter-spacing="0.06em">OUTBOX · LIVE</text>
+
+  <!-- 4 api → Workbench -->
+  <path d="M372,176 V336" fill="none" stroke="#4d5560" stroke-width="1" marker-end="url(#hiw-arrow)"/>
+  <rect x="320" y="250" width="44" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="362" y="259" class="mono" fill="#4d5560" font-size="8" text-anchor="end" letter-spacing="0.06em">STREAM</text>
+
+  <!-- 5 You → Workbench -->
+  <path d="M216,368 H312" fill="none" stroke="#4d5560" stroke-width="1" marker-end="url(#hiw-arrow)"/>
+  <rect x="226" y="348" width="76" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="264" y="357" class="mono" fill="#4d5560" font-size="8" text-anchor="middle" letter-spacing="0.06em">WATCH · STEER</text>
+
+  <!-- 6 NATS → runner -->
+  <path d="M672,368 H736" fill="none" stroke="#4d5560" stroke-width="1" marker-end="url(#hiw-arrow)"/>
+  <rect x="680" y="348" width="48" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="704" y="357" class="mono" fill="#4d5560" font-size="8" text-anchor="middle" letter-spacing="0.06em">SESSION</text>
+
+  <!-- 7 runner → lane -->
+  <path d="M896,368 H984" fill="none" stroke="#4d5560" stroke-width="1" marker-end="url(#hiw-arrow)"/>
+  <rect x="914" y="348" width="52" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="940" y="357" class="mono" fill="#4d5560" font-size="8" text-anchor="middle" letter-spacing="0.06em">CREATES</text>
+
+  <!-- 8 lane ⇄ NATS -->
+  <path d="M1040,304 V288 Q1040,280 1032,280 H616 Q608,280 608,288 V336" fill="none" stroke="#4d5560" stroke-width="1" marker-start="url(#hiw-arrow-start)" marker-end="url(#hiw-arrow)"/>
+  <rect x="758" y="260" width="100" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="808" y="269" class="mono" fill="#4d5560" font-size="8" text-anchor="middle" letter-spacing="0.06em">EVENTS · TERMINAL</text>
+
+  <!-- 9 lane → git mirror -->
+  <path d="M1016,432 V584 Q1016,592 1008,592 H896" fill="none" stroke="#4d5560" stroke-width="1" marker-end="url(#hiw-arrow)"/>
+  <rect x="912" y="572" width="80" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="952" y="581" class="mono" fill="#4d5560" font-size="8" text-anchor="middle" letter-spacing="0.06em">OWN REFS ONLY</text>
+
+  <!-- 10 GitHub → git mirror (scheduled fetch) -->
+  <path d="M216,608 H736" fill="none" stroke="#2e6b8a" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#hiw-arrow-link)"/>
+  <rect x="454" y="588" width="44" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="476" y="597" class="mono" fill="#2e6b8a" font-size="8" text-anchor="middle" letter-spacing="0.06em">FETCH</text>
+
+  <!-- 11 api → GitHub (opens the PR; hops the You → Workbench line) -->
+  <path d="M312,164 H260 Q252,164 252,172 V360 a8,8 0 0,0 0,16 V568 Q252,576 244,576 H216" fill="none" stroke="#2e6b8a" stroke-width="1" marker-end="url(#hiw-arrow-link)"/>
+  <rect x="260" y="464" width="52" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="262" y="473" class="mono" fill="#2e6b8a" font-size="8" letter-spacing="0.06em">OPENS PR</text>
+
+  <!-- 12 lane → Anthropic (direct, your plan) -->
+  <path d="M1152,432 V560" fill="none" stroke="#2e6b8a" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#hiw-arrow-link)"/>
+  <rect x="1064" y="496" width="80" height="12" rx="2" fill="#f4f5f7"/>
+  <text x="1142" y="505" class="mono" fill="#2e6b8a" font-size="8" text-anchor="end" letter-spacing="0.06em">/login · DIRECT</text>
+
+  <!-- ── Nodes ──────────────────────────────────────────────── -->
+  <!-- External: Linear -->
+  <rect x="56" y="112" width="160" height="64" rx="6" fill="#f4f5f7"/>
+  <rect x="56" y="112" width="160" height="64" rx="6" fill="rgba(15,18,23,0.03)" stroke="rgba(15,18,23,0.32)" stroke-width="1"/>
+  <rect x="64" y="118" width="28" height="12" rx="2" fill="none" stroke="rgba(15,18,23,0.30)" stroke-width="0.5"/>
+  <text x="78" y="127" class="mono" fill="#6b7380" font-size="7" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+  <text x="136" y="148" class="sans" fill="#0f1217" font-size="13" font-weight="600" text-anchor="middle">Linear</text>
+  <text x="136" y="164" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">label: rangelight</text>
+
+  <!-- User: You -->
+  <rect x="56" y="336" width="160" height="64" rx="6" fill="#f4f5f7"/>
+  <rect x="56" y="336" width="160" height="64" rx="6" fill="rgba(77,85,96,0.10)" stroke="#6b7380" stroke-width="1"/>
+  <rect x="64" y="342" width="32" height="12" rx="2" fill="none" stroke="rgba(15,18,23,0.30)" stroke-width="0.5"/>
+  <text x="80" y="351" class="mono" fill="#6b7380" font-size="7" text-anchor="middle" letter-spacing="0.08em">USER</text>
+  <text x="136" y="372" class="sans" fill="#0f1217" font-size="13" font-weight="600" text-anchor="middle">You</text>
+  <text x="136" y="388" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">any browser</text>
+
+  <!-- External: GitHub -->
+  <rect x="56" y="560" width="160" height="64" rx="6" fill="#f4f5f7"/>
+  <rect x="56" y="560" width="160" height="64" rx="6" fill="rgba(15,18,23,0.03)" stroke="rgba(15,18,23,0.32)" stroke-width="1"/>
+  <rect x="64" y="566" width="28" height="12" rx="2" fill="none" stroke="rgba(15,18,23,0.30)" stroke-width="0.5"/>
+  <text x="78" y="575" class="mono" fill="#6b7380" font-size="7" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+  <text x="136" y="596" class="sans" fill="#0f1217" font-size="13" font-weight="600" text-anchor="middle">GitHub</text>
+  <text x="136" y="612" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">your repo · PRs</text>
+
+  <!-- Service: api + relay -->
+  <rect x="312" y="112" width="160" height="64" rx="6" fill="#f4f5f7"/>
+  <rect x="312" y="112" width="160" height="64" rx="6" fill="#ffffff" stroke="#0f1217" stroke-width="1"/>
+  <rect x="320" y="118" width="32" height="12" rx="2" fill="none" stroke="rgba(15,18,23,0.30)" stroke-width="0.5"/>
+  <text x="336" y="127" class="mono" fill="#4d5560" font-size="7" text-anchor="middle" letter-spacing="0.08em">RUST</text>
+  <text x="392" y="148" class="sans" fill="#0f1217" font-size="13" font-weight="600" text-anchor="middle">api + relay</text>
+  <text x="392" y="164" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">control plane</text>
+
+  <!-- Store: Postgres -->
+  <rect x="512" y="112" width="160" height="64" rx="6" fill="#f4f5f7"/>
+  <rect x="512" y="112" width="160" height="64" rx="6" fill="rgba(15,18,23,0.05)" stroke="#4d5560" stroke-width="1"/>
+  <rect x="520" y="118" width="36" height="12" rx="2" fill="none" stroke="rgba(15,18,23,0.30)" stroke-width="0.5"/>
+  <text x="538" y="127" class="mono" fill="#4d5560" font-size="7" text-anchor="middle" letter-spacing="0.08em">STORE</text>
+  <text x="592" y="148" class="sans" fill="#0f1217" font-size="13" font-weight="600" text-anchor="middle">Postgres</text>
+  <text x="592" y="164" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">state · events · outbox</text>
+
+  <!-- Service: Workbench -->
+  <rect x="312" y="336" width="160" height="64" rx="6" fill="#f4f5f7"/>
+  <rect x="312" y="336" width="160" height="64" rx="6" fill="#ffffff" stroke="#0f1217" stroke-width="1"/>
+  <rect x="320" y="342" width="24" height="12" rx="2" fill="none" stroke="rgba(15,18,23,0.30)" stroke-width="0.5"/>
+  <text x="332" y="351" class="mono" fill="#4d5560" font-size="7" text-anchor="middle" letter-spacing="0.08em">TS</text>
+  <text x="392" y="372" class="sans" fill="#0f1217" font-size="13" font-weight="600" text-anchor="middle">Workbench</text>
+  <text x="392" y="388" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">GitHub sign-in · Dex</text>
+
+  <!-- Store: NATS -->
+  <rect x="512" y="336" width="160" height="64" rx="6" fill="#f4f5f7"/>
+  <rect x="512" y="336" width="160" height="64" rx="6" fill="rgba(15,18,23,0.05)" stroke="#4d5560" stroke-width="1"/>
+  <rect x="520" y="342" width="28" height="12" rx="2" fill="none" stroke="rgba(15,18,23,0.30)" stroke-width="0.5"/>
+  <text x="534" y="351" class="mono" fill="#4d5560" font-size="7" text-anchor="middle" letter-spacing="0.08em">BUS</text>
+  <text x="592" y="372" class="sans" fill="#0f1217" font-size="13" font-weight="600" text-anchor="middle">NATS JetStream</text>
+  <text x="592" y="388" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">transport only</text>
+
+  <!-- Service: runner -->
+  <rect x="736" y="336" width="160" height="64" rx="6" fill="#f4f5f7"/>
+  <rect x="736" y="336" width="160" height="64" rx="6" fill="#ffffff" stroke="#0f1217" stroke-width="1"/>
+  <rect x="744" y="342" width="24" height="12" rx="2" fill="none" stroke="rgba(15,18,23,0.30)" stroke-width="0.5"/>
+  <text x="756" y="351" class="mono" fill="#4d5560" font-size="7" text-anchor="middle" letter-spacing="0.08em">GO</text>
+  <text x="816" y="372" class="sans" fill="#0f1217" font-size="13" font-weight="600" text-anchor="middle">runner</text>
+  <text x="816" y="388" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">the only K8s client</text>
+
+  <!-- Service: git mirror -->
+  <rect x="736" y="560" width="160" height="64" rx="6" fill="#f4f5f7"/>
+  <rect x="736" y="560" width="160" height="64" rx="6" fill="#ffffff" stroke="#0f1217" stroke-width="1"/>
+  <rect x="744" y="566" width="28" height="12" rx="2" fill="none" stroke="rgba(15,18,23,0.30)" stroke-width="0.5"/>
+  <text x="758" y="575" class="mono" fill="#4d5560" font-size="7" text-anchor="middle" letter-spacing="0.08em">GIT</text>
+  <text x="816" y="596" class="sans" fill="#0f1217" font-size="13" font-weight="600" text-anchor="middle">git mirror</text>
+  <text x="816" y="612" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">stock git · ref hooks</text>
+
+  <!-- Focal: the lane -->
+  <rect x="984" y="304" width="240" height="128" rx="6" fill="#f4f5f7"/>
+  <rect x="984" y="304" width="240" height="128" rx="6" fill="rgba(61,78,194,0.09)" stroke="#3d4ec2" stroke-width="1"/>
+  <rect x="992" y="310" width="32" height="12" rx="2" fill="none" stroke="rgba(61,78,194,0.45)" stroke-width="0.5"/>
+  <text x="1008" y="319" class="mono" fill="#3d4ec2" font-size="7" text-anchor="middle" letter-spacing="0.08em">AGENT</text>
+  <text x="1104" y="350" class="sans" fill="#0f1217" font-size="15" font-weight="600" text-anchor="middle">Claude Code</text>
+  <text x="1104" y="367" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">fresh worktree · real terminal</text>
+  <line x1="1008" y1="382" x2="1200" y2="382" stroke="rgba(61,78,194,0.25)" stroke-width="0.5"/>
+  <text x="1104" y="400" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">restricted pod · default-deny egress</text>
+  <text x="1104" y="416" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">no credentials inside</text>
+
+  <!-- External: Anthropic -->
+  <rect x="1072" y="560" width="160" height="64" rx="6" fill="#f4f5f7"/>
+  <rect x="1072" y="560" width="160" height="64" rx="6" fill="rgba(15,18,23,0.03)" stroke="rgba(15,18,23,0.32)" stroke-width="1"/>
+  <rect x="1080" y="566" width="28" height="12" rx="2" fill="none" stroke="rgba(15,18,23,0.30)" stroke-width="0.5"/>
+  <text x="1094" y="575" class="mono" fill="#6b7380" font-size="7" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+  <text x="1152" y="596" class="sans" fill="#0f1217" font-size="13" font-weight="600" text-anchor="middle">Anthropic</text>
+  <text x="1152" y="612" class="mono" fill="#4d5560" font-size="9" text-anchor="middle">your Claude plan</text>
+
+  <!-- ── Principles strip ──────────────────────────────────── -->
+  <line x1="32" y1="696" x2="1248" y2="696" stroke="rgba(15,18,23,0.12)" stroke-width="0.5"/>
+  <text x="32" y="716" class="mono" fill="#6b7380" font-size="8" letter-spacing="0.14em">PRINCIPLES</text>
+  <circle cx="36" cy="737" r="3" fill="#0f1217"/>
+  <text x="46" y="741" class="sans" fill="#0f1217" font-size="12" font-weight="600">One lane per ticket</text>
+  <text x="46" y="757" class="mono" fill="#4d5560" font-size="9">own namespace, lanes can't see each other</text>
+  <circle cx="348" cy="737" r="3" fill="#0f1217"/>
+  <text x="358" y="741" class="sans" fill="#0f1217" font-size="12" font-weight="600">No credentials in a lane</text>
+  <text x="358" y="757" class="mono" fill="#4d5560" font-size="9">git through the mirror, PRs by the api</text>
+  <circle cx="660" cy="737" r="3" fill="#0f1217"/>
+  <text x="670" y="741" class="sans" fill="#0f1217" font-size="12" font-weight="600">Evidence by design</text>
+  <text x="670" y="757" class="mono" fill="#4d5560" font-size="9">state, event and outbox in one transaction</text>
+  <circle cx="972" cy="737" r="3" fill="#0f1217"/>
+  <text x="982" y="741" class="sans" fill="#0f1217" font-size="12" font-weight="600">Self-hosted, self-contained</text>
+  <text x="982" y="757" class="mono" fill="#4d5560" font-size="9">one chart; swap any part for yours</text>
+
+  <!-- ── Legend strip ──────────────────────────────────────── -->
+  <line x1="32" y1="780" x2="1248" y2="780" stroke="rgba(15,18,23,0.12)" stroke-width="0.5"/>
+  <text x="32" y="804" class="mono" fill="#6b7380" font-size="8" letter-spacing="0.14em">LEGEND</text>
+  <rect x="112" y="795" width="20" height="12" rx="2" fill="rgba(61,78,194,0.09)" stroke="#3d4ec2" stroke-width="1"/>
+  <text x="140" y="804" class="sans" fill="#4d5560" font-size="10">Lane</text>
+  <rect x="200" y="795" width="20" height="12" rx="2" fill="#ffffff" stroke="#0f1217" stroke-width="1"/>
+  <text x="228" y="804" class="sans" fill="#4d5560" font-size="10">Rangelight service</text>
+  <rect x="352" y="795" width="20" height="12" rx="2" fill="rgba(15,18,23,0.05)" stroke="#4d5560" stroke-width="1"/>
+  <text x="380" y="804" class="sans" fill="#4d5560" font-size="10">State and transport</text>
+  <rect x="512" y="795" width="20" height="12" rx="2" fill="rgba(15,18,23,0.03)" stroke="rgba(15,18,23,0.32)" stroke-width="1"/>
+  <text x="540" y="804" class="sans" fill="#4d5560" font-size="10">External</text>
+  <rect x="616" y="795" width="20" height="12" rx="2" fill="rgba(61,78,194,0.03)" stroke="rgba(61,78,194,0.55)" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="644" y="804" class="sans" fill="#4d5560" font-size="10">Isolation boundary</text>
+  <line x1="776" y1="801" x2="804" y2="801" stroke="#4d5560" stroke-width="1" marker-end="url(#hiw-arrow)"/>
+  <text x="812" y="804" class="sans" fill="#4d5560" font-size="10">Internal call</text>
+  <line x1="900" y1="801" x2="928" y2="801" stroke="#2e6b8a" stroke-width="1" marker-end="url(#hiw-arrow-link)"/>
+  <text x="936" y="804" class="sans" fill="#4d5560" font-size="10">External call</text>
+  <line x1="1028" y1="801" x2="1056" y2="801" stroke="#2e6b8a" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#hiw-arrow-link)"/>
+  <text x="1064" y="804" class="sans" fill="#4d5560" font-size="10">Scheduled or direct</text>
+</svg>
+</body>
+</html>

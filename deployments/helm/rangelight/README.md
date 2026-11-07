@@ -8,6 +8,7 @@ Every dependency is bundled and swappable for your own (ADR 0009). `values.yaml`
 | --- | --- | --- |
 | Postgres | The CloudNativePG operator (chart `cloudnative-pg`) and one cluster `rangelight-pg`: database `api`, owner `rl_api` | `postgres.enabled=false`, `postgres.external.secretRef` |
 | NATS | One NATS server (chart `nats`) with JetStream on a PVC from the default StorageClass | `nats.enabled=false`, `nats.external.url` |
+| Git mirror | Off by default: `gitMirror.enabled=true` with `gitMirror.image` (by digest) and `gitMirror.repos` runs the mirror (`services/git-mirror/`) on a PVC | — |
 
 ## Install
 
@@ -39,7 +40,9 @@ The ConfigMap `rangelight-api` holds the api's connection settings (ADR 0049 §6
 ## Network
 
 NetworkPolicies let only pods labelled `app.kubernetes.io/part-of: "rangelight"` in `rangelight-system` reach
-Postgres (5432) and NATS (4222), plus the CloudNativePG operator to its instances (5432, 8000).
+Postgres (5432) and NATS (4222), plus the CloudNativePG operator to its instances (5432, 8000). The git mirror
+(8080) accepts only namespaces labelled `rangelight.dev/lane: "true"` (the runner labels each lane's) and the
+namespace `rangelight-runner`.
 
 ## Changing it
 

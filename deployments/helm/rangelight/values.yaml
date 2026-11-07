@@ -102,3 +102,19 @@ cloudnative-pg:
       memory: "128Mi"
     limits:
       memory: "512Mi"
+
+# The git mirror (ADR 0011): stock git behind nginx; sessions push their checkpoints and branches to it.
+gitMirror:
+  # true: run the mirror. It needs gitMirror.image and at least one repo.
+  enabled: false
+  # The git mirror image, by tag and digest: ghcr.io/rangelight/git-mirror:<sha>@sha256:<digest>,
+  # built by .github/workflows/images.yaml. Required when enabled.
+  image: ""
+  # The repos to mirror. Each is served at /<name>.git and fetched anonymously from its public https
+  # upstream (ponytail: until Plan 4's fetch Job with a GitHub App token, ADR 0047 §3).
+  # Example: [{name: "opentelemetry-demo", upstream: "https://github.com/rangelight/opentelemetry-demo.git"}]
+  repos: []
+  # How often each repo is fetched from upstream, in seconds (ponytail: until Plan 4's webhook-driven fetch).
+  syncIntervalSeconds: 300
+  # The volume for every repo: upstream repos and the per-session repos (capped at 512 MiB each).
+  storage: "5Gi"

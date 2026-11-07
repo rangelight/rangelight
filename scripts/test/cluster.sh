@@ -11,11 +11,15 @@ OUT=""
 STATUS=0
 FAILED=0
 
+PINNED_MIRROR="ghcr.io/rangelight/git-mirror:abc@sha256:$(printf '1%.0s' $(seq 1 64))"
+
 new_dir() {
   DIR="$(mktemp -d /tmp/rl-cluster-test.XXXXXX)"
   mkdir -p "${DIR}/scripts" "${DIR}/deployments/dev" "${DIR}/deployments/helm" "${DIR}/bin"
   cp "${ROOT}/scripts/cluster.sh" "${DIR}/scripts/"
-  cp "${ROOT}/deployments/dev/versions.env" "${DIR}/deployments/dev/"
+  cp "${ROOT}/deployments/dev/versions.env" "${ROOT}/deployments/dev/values.yaml" "${DIR}/deployments/dev/"
+  # A pinned git mirror image, as after the first images.yaml run.
+  sed -i "s|^GIT_MIRROR_IMAGE=.*|GIT_MIRROR_IMAGE=${PINNED_MIRROR}|" "${DIR}/deployments/dev/versions.env"
   cp -R "${ROOT}/deployments/helm/rangelight" "${DIR}/deployments/helm/"
   : >"${DIR}/calls"
   # The kubectl stub knows one context, "dev", records every call, keeps what `apply` reads, reports that
@@ -154,6 +158,31 @@ test_up_installs_the_chart_twice_into_rangelight_system() {
     fail "up did not run helm upgrade --install twice"
   [[ "$(grep -n ' apply -f -' "${DIR}/calls" | cut -d: -f1)" -lt "$(grep -n '^helm ' "${DIR}/calls" | head -1 | cut -d: -f1)" ]] ||
     fail "up installed the chart before the namespace"
+}
+
+# --- RAN-17: the git mirror, with its pinned image -------------------------------------
+
+test_up_installs_the_git_mirror_with_the_pinned_image() {
+  run up RANGELIGHT_KUBE_CONTEXT=dev
+  expect_status 0
+  [[ "$(grep -cF -e "--values ${DIR}/deployments/dev/values.yaml --set-string gitMirror.image=${PINNED_MIRROR}" "${DIR}/calls")" -eq 2 ]] ||
+    fail "up did not pass the dev values and the pinned git mirror image to both passes"
+  run up RANGELIGHT_KUBE_CONTEXT=dev RANGELIGHT_DRY_RUN=true
+  expect_status 0
+  expect_out "image: \"${PINNED_MIRROR}\""
+}
+
+test_up_refuses_an_unpinned_git_mirror_image() {
+  sed -i 's|^GIT_MIRROR_IMAGE=.*|GIT_MIRROR_IMAGE=UNPINNED|' "${DIR}/deployments/dev/versions.env"
+  run up RANGELIGHT_KUBE_CONTEXT=dev
+  expect_status 1
+  expect_out "pin GIT_MIRROR_IMAGE after the first images.yaml run"
+  [[ "$(<"${DIR}/calls")" == "config get-contexts -o name" ]] || fail "up called the cluster before refusing"
+}
+
+test_the_checked_in_git_mirror_image_is_pinned_or_the_placeholder() {
+  grep -qxE -e "GIT_MIRROR_IMAGE=(UNPINNED|[^@[:space:]]+:[^@[:space:]]+@sha256:[0-9a-f]{64})" "${ROOT}/deployments/dev/versions.env" ||
+    fail "deployments/dev/versions.env: GIT_MIRROR_IMAGE is neither pinned nor UNPINNED"
 }
 
 test_up_dry_run_changes_nothing_and_prints_the_install() {

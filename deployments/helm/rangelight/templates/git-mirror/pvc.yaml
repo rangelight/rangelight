@@ -1,0 +1,16 @@
+{{- if .Values.gitMirror.enabled }}
+---
+apiVersion: "v1"
+kind: "PersistentVolumeClaim"
+metadata:
+  name: "git-mirror-data"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "git-mirror" "component" "git") | nindent 4 }}
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: {{ .Values.gitMirror.storage | quote }}
+{{- end }}

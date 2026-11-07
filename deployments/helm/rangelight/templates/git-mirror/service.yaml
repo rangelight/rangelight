@@ -1,0 +1,17 @@
+{{- if .Values.gitMirror.enabled }}
+---
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "git-mirror"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "git-mirror" "component" "git") | nindent 4 }}
+spec:
+  selector:
+    {{- include "rangelight.selector" (dict "ctx" $ "name" "git-mirror") | nindent 4 }}
+  ports:
+    - name: "http"
+      port: 8080
+      targetPort: "http"
+{{- end }}

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["postgres", "nats"],
+  "required": ["postgres", "nats", "gitMirror"],
   "properties": {
     "global": { "description": "Helm's values shared with the subcharts.", "type": "object" },
     "postgres": {
@@ -78,7 +78,34 @@
       "if": { "properties": { "enabled": { "const": false } } },
       "then": { "properties": { "external": { "properties": { "url": { "$ref": "#/$defs/natsUrl" } } } } }
     },
-    "cloudnative-pg": { "description": "The upstream cloudnative-pg chart's values; its own schema checks them.", "type": "object" }
+    "cloudnative-pg": { "description": "The upstream cloudnative-pg chart's values; its own schema checks them.", "type": "object" },
+    "gitMirror": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "image", "repos", "syncIntervalSeconds", "storage"],
+      "properties": {
+        "enabled": { "description": "Run the git mirror.", "type": "boolean" },
+        "image": { "description": "The git mirror image, by tag and digest.", "anyOf": [{ "const": "" }, { "$ref": "#/$defs/pinnedImage" }] },
+        "repos": {
+          "description": "The repos to mirror: each served at /<name>.git, fetched from its public https upstream.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "upstream"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$", "not": { "pattern": "\\.git$" } },
+              "upstream": { "type": "string", "pattern": "^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~-]+)+$" }
+            }
+          }
+        },
+        "syncIntervalSeconds": { "description": "Seconds between upstream fetches.", "type": "integer", "minimum": 60 },
+        "storage": { "description": "Size of the mirror's volume.", "$ref": "#/$defs/storage" }
+      },
+      "if": { "properties": { "enabled": { "const": true } } },
+      "then": { "properties": { "image": { "$ref": "#/$defs/pinnedImage" }, "repos": { "minItems": 1 } } }
+    }
   },
   "$defs": {
     "dnsName": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$" },

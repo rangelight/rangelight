@@ -1,0 +1,29 @@
+{{- if .Values.gitMirror.enabled }}
+---
+# Who may reach the mirror: lane namespaces (the runner labels each rl-<session> namespace
+# rangelight.dev/lane: "true") and the runner's own namespace. Egress is not restricted yet.
+apiVersion: "networking.k8s.io/v1"
+kind: "NetworkPolicy"
+metadata:
+  name: "git-mirror"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "git-mirror" "component" "git") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rangelight.selector" (dict "ctx" $ "name" "git-mirror") | nindent 6 }}
+  policyTypes:
+    - "Ingress"
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              rangelight.dev/lane: "true"
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "rangelight-runner"
+      ports:
+        - protocol: "TCP"
+          port: 8080
+{{- end }}

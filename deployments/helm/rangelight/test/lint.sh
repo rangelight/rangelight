@@ -18,8 +18,11 @@ die() {
   exit 1
 }
 
-# render [helm template flags...]: the chart as it installs into rangelight-system.
-render() { helm template rangelight "${CHART}" --namespace rangelight-system "$@"; }
+# render [helm template flags...]: the chart as it installs into rangelight-system, with the values it requires.
+render() {
+  helm template rangelight "${CHART}" --namespace rangelight-system \
+    --set publicUrl=https://rangelight.example.com --set dex.github.org=rangelight "$@"
+}
 
 main() {
   local tool tmp templates=()
@@ -37,7 +40,8 @@ main() {
 
   ! helm dependency list "${CHART}" | awk 'NR > 1 && NF && $NF != "ok" { print; bad = 1 } END { exit !bad }' >&2 ||
     die "charts/ does not match Chart.lock; run: helm dependency build deployments/helm/rangelight"
-  helm lint --strict --namespace rangelight-system "${CHART}"
+  helm lint --strict --namespace rangelight-system --set publicUrl=https://rangelight.example.com \
+    --set dex.github.org=rangelight "${CHART}"
 
   tmp="$(mktemp -d /tmp/rl-chart-lint.XXXXXX)"
   # shellcheck disable=SC2064 # expand now: tmp is local
@@ -45,7 +49,8 @@ main() {
   # The git mirror and the runner are off by default (their images are pinned per install): render them on too.
   render --api-versions "${CNPG_API}" -f "${CHART}/test/git-mirror-values.yaml" -f "${CHART}/test/runner-values.yaml" >"${tmp}/bundled.yaml"
   render --set postgres.enabled=false --set postgres.external.secretRef.name=db \
-    --set nats.enabled=false --set nats.external.url=nats://nats.example:4222 >"${tmp}/external.yaml"
+    --set nats.enabled=false --set nats.external.url=nats://nats.example:4222 \
+    --set dex.enabled=false --set oidc.issuer=https://idp.example.com >"${tmp}/external.yaml"
   # The schema sets have no schema for a CRD object itself; the vendored CRDs are upstream's, pinned in Chart.lock.
   kubeconform -strict -summary -skip CustomResourceDefinition -kubernetes-version "${KUBERNETES_MIN}.0" -cache "${tmp}" \
     -schema-location default -schema-location "${CRD_SCHEMAS}" "${tmp}/bundled.yaml" "${tmp}/external.yaml"

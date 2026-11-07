@@ -13,6 +13,13 @@ targets = [
 [advisories]
 version = 2
 yanked = "deny"
+# Each ignore names why the advisory can't reach Rangelight; drop it when the fix lands upstream.
+ignore = [
+  # rsa 0.9 (no fixed release), through openidconnect: rl-auth only verifies ID-token signatures
+  # with the provider's public keys. The Marvin attack needs private-key operations, which
+  # Rangelight never does with rsa.
+  { id = "RUSTSEC-2023-0071", reason = "rsa only verifies signatures here (rl-auth); no private-key use" },
+]
 
 [licenses]
 version = 2
@@ -43,12 +50,23 @@ skip = [
   { crate = "block-buffer@0.10", reason = "sha2 0.10, for sqlx-core" },
   { crate = "crypto-common@0.1", reason = "sha2 0.10, for sqlx-core" },
   { crate = "cpufeatures@0.2", reason = "sha2 0.10, for sqlx-core" },
-  { crate = "base64@0.22", reason = "async-nats, buffa, connectrpc, sqlx (reqwest uses 0.23)" },
+  { crate = "base64@0.22", reason = "async-nats, buffa, connectrpc, openidconnect, rl-auth, sqlx (reqwest uses 0.23)" },
   { crate = "getrandom@0.2", reason = "ring 0.17" },
   { crate = "syn@2", reason = "sqlx, buffa and connectrpc codegen, tracing-attributes" },
   { crate = "hashbrown@0.15", reason = "buffa 0.9" },
   { crate = "foldhash@0.1", reason = "buffa 0.9" },
   { crate = "hashbrown@0.16", reason = "sqlx-core 0.9" },
+  { crate = "thiserror@1", reason = "openidconnect 4 and oauth2 5" },
+  { crate = "thiserror-impl@1", reason = "thiserror 1, for openidconnect" },
+  { crate = "hmac@0.12", reason = "openidconnect 4" },
+  { crate = "rand@0.8", reason = "openidconnect 4 and rsa 0.9" },
+  { crate = "rand_core@0.6", reason = "rand 0.8, for openidconnect" },
+  { crate = "signature@2", reason = "rsa 0.9, for openidconnect" },
+  { crate = "const-oid@0.9", reason = "rsa 0.9 (der 0.7), for openidconnect" },
+  { crate = "der@0.7", reason = "rsa 0.9, for openidconnect" },
+  { crate = "pem-rfc7468@0.7", reason = "der 0.7, for openidconnect" },
+  { crate = "pkcs8@0.10", reason = "rsa 0.9, for openidconnect" },
+  { crate = "spki@0.7", reason = "rsa 0.9, for openidconnect" },
 ]
 # Adapter crates stay out of rl-domain (ADR 0049 §2.1): only their owning crate depends on them.
 # I/O crates list every crate allowed to depend on them directly, so rl-domain (sync, no I/O)
@@ -56,12 +74,12 @@ skip = [
 deny = [
   { crate = "sqlx", wrappers = ["rl-store", "rl-testkit"] },
   { crate = "cedar-policy", wrappers = ["rl-policy", "rl-testkit"] },
-  { crate = "reqwest", wrappers = ["rl-tickets-linear"] },
+  { crate = "reqwest", wrappers = ["rl-auth", "rl-testkit", "rl-tickets-linear"] },
   { crate = "async-nats", wrappers = ["api", "relay", "rl-testkit"] },
-  { crate = "hyper", wrappers = ["connectrpc", "hyper-rustls", "hyper-util", "reqwest"] },
+  { crate = "hyper", wrappers = ["api", "axum", "connectrpc", "hyper-rustls", "hyper-util", "reqwest"] },
   { crate = "tokio", wrappers = [
-    "api", "relay", "rl-app", "rl-store", "rl-testkit", "rl-tickets-linear",
-    "async-nats", "connectrpc", "h2", "hyper", "hyper-rustls", "hyper-util", "reqwest", "sqlx-core",
+    "api", "relay", "rl-app", "rl-auth", "rl-store", "rl-testkit", "rl-tickets-linear",
+    "async-nats", "axum", "connectrpc", "h2", "hyper", "hyper-rustls", "hyper-util", "reqwest", "sqlx-core",
     "sqlx-macros-core", "tokio-rustls", "tokio-stream", "tokio-util", "tower", "tryhard",
   ] },
 ]

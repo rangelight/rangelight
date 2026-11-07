@@ -1,6 +1,36 @@
 ---
 # Every key is validated by values.schema.json. Rangelight installs into the namespace "rangelight-system" only.
 
+# Where browsers reach Rangelight: https://<host>[:<port>], without a path. Required. The api takes state-changing
+# requests and WebSocket upgrades from this origin only, and bundled Dex is the issuer <publicUrl>/dex.
+publicUrl: ""
+
+# The cluster DNS pods: the only DNS server a lane may query (through Cilium's DNS proxy, which answers only
+# Anthropic's hosts and the mirror) and the only one Dex may. Distributions label CoreDNS differently: check with
+# `kubectl -n kube-system get pods --show-labels`. RKE2: podLabel "k8s-app=coredns".
+clusterDns:
+  namespace: "kube-system"
+  # One label that selects them, as key=value.
+  podLabel: "k8s-app=kube-dns"
+
+# Sign-in: OIDC only (ADR 0028, 0033). Bundled: Dex (dex.enabled). Your own provider: dex.enabled=false and
+# oidc.issuer, with a client registered there for the redirect URI <publicUrl>/auth/callback.
+oidc:
+  # Your provider's issuer (https). Used, and required, only when dex.enabled is false.
+  issuer: ""
+  # The api's client id at the issuer. Bundled Dex registers it.
+  clientId: "rangelight-api"
+  # The ID-token claim that names the member (the sessions' member label). With bundled Dex it must stay
+  # preferred_username: the GitHub login. With your own provider, pick a claim the provider sets and keeps
+  # unique, never one users can edit (OIDC Core says not to key on preferred_username); the first account
+  # to present a name owns it.
+  memberClaim: "preferred_username"
+  # The Secret in rangelight-system, and its key, holding the api's client secret; you create it. Bundled Dex reads
+  # the same Secret, so with dex.enabled it must stay rangelight-oidc / client-secret.
+  clientSecretRef:
+    name: "rangelight-oidc"
+    key: "client-secret"
+
 # Postgres, the source of truth (ADR 0021, 0031). Bundled: a CloudNativePG cluster "rangelight-pg" with the
 # database "api" owned by the role "rl_api"; its credentials exist only in the Secret CloudNativePG generates
 # ("rangelight-pg-app"). External: your own Postgres, through a Secret you create.
@@ -85,6 +115,91 @@ nats:
   natsBox:
     enabled: false
 
+# Dex, the bundled OIDC provider (ADR 0009, 0028): GitHub sign-in limited to one organisation's members. One server
+# with in-memory storage: it only brokers sign-ins, and logins live in Postgres, so a restart costs only the
+# sign-ins in flight. Every key except enabled and github goes to the upstream "dex" chart.
+# You create the Secret "rangelight-dex-github" (keys client-id and client-secret) for a GitHub OAuth app whose
+# callback URL is <publicUrl>/dex/callback, and the Secret named by oidc.clientSecretRef.
+dex:
+  # true: install Dex. false: use your own provider (oidc.issuer).
+  enabled: true
+  github:
+    # Only members of this GitHub organisation can sign in (Dex checks at each sign-in). Required when enabled.
+    org: ""
+  # Who may reach Dex (port 5556) besides the api: whatever routes <publicUrl>/dex to it, usually your ingress
+  # controller, by its namespace's labels and its pods' labels. Both empty: the api only, and browsers can't sign in.
+  ingressFrom:
+    namespaceLabels: {}
+    podLabels: {}
+  # The cluster's pod and service CIDRs. Dex's HTTPS (to GitHub) may go anywhere but these; DNS only to clusterDns.
+  # The defaults are k3s's (and so k3d's); kubeadm with Calico or Flannel: 192.168.0.0/16 or 10.244.0.0/16, and
+  # 10.96.0.0/12.
+  clusterCidrs:
+    - "10.42.0.0/16"
+    - "10.43.0.0/16"
+  # The upstream chart's settings (https://github.com/dexidp/helm-charts/tree/master/charts/dex).
+  # Its Service: rangelight-dex.rangelight-system.svc:5556. Route <publicUrl>/dex to it.
+  fullnameOverride: "rangelight-dex"
+  replicaCount: 1
+  image:
+    # The image by tag and digest: the chart renders "<repository>@<digest>".
+    repository: "ghcr.io/dexidp/dex:v2.46.1"
+    digest: "sha256:65b72ca0f4b0bf6d4ada84ec21da8851782563404ac7b8f926923d27ceced9ab"
+  # The config is ours (templates/dex/config.yaml): it holds no credential, only $VARIABLES Dex fills from the env.
+  configSecret:
+    create: false
+    name: "rangelight-dex-config"
+  # In-memory storage: Dex never calls the Kubernetes API. Our ServiceAccount mounts no token.
+  rbac:
+    create: false
+  serviceAccount:
+    create: false
+    name: "rangelight-dex"
+  # The credentials, from Secrets only. The names are fixed: the config refers to these variables.
+  envVars:
+    - name: "GITHUB_CLIENT_ID"
+      valueFrom:
+        secretKeyRef:
+          name: "rangelight-dex-github"
+          key: "client-id"
+    - name: "GITHUB_CLIENT_SECRET"
+      valueFrom:
+        secretKeyRef:
+          name: "rangelight-dex-github"
+          key: "client-secret"
+    - name: "RANGELIGHT_OIDC_CLIENT_SECRET"
+      valueFrom:
+        secretKeyRef:
+          name: "rangelight-oidc"
+          key: "client-secret"
+  commonLabels:
+    app.kubernetes.io/part-of: "rangelight"
+  podLabels:
+    app.kubernetes.io/part-of: "rangelight"
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    seccompProfile:
+      type: "RuntimeDefault"
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - "ALL"
+  # Resources of the Dex server.
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      memory: "256Mi"
+  # Ours is templates/dex/networkpolicy.yaml, always rendered with Dex; the upstream one stays off (the schema
+  # refuses true).
+  networkPolicy:
+    enabled: false
+
 # The upstream CloudNativePG operator chart's settings (https://github.com/cloudnative-pg/charts).
 cloudnative-pg:
   image:
@@ -133,13 +248,6 @@ runner:
   # The lane agent image (services/agent), by tag and digest: ghcr.io/rangelight/agent:<sha>@sha256:<digest>.
   # Required when enabled.
   agentImage: ""
-  # The cluster DNS pods, the only DNS server a lane may query (through Cilium's DNS proxy, which answers only
-  # Anthropic's hosts and the mirror). Distributions label CoreDNS differently: check with
-  # `kubectl -n kube-system get pods --show-labels`. RKE2: podLabel "k8s-app=coredns".
-  dns:
-    namespace: "kube-system"
-    # One label that selects them, as key=value.
-    podLabel: "k8s-app=kube-dns"
   # How many Sessions reconcile at once. Each one may hold a depth-1 clone of a repo's base branch on /tmp for up to
   # 30 seconds while it reads rangelight.yaml.
   workers: 4

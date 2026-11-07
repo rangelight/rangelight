@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- Whether a login is neither past its absolute end nor idle for $2 seconds. Unlike touch.sql it\n-- doesn't count as use: an open stream alone doesn't keep a login from going idle.\nSELECT EXISTS (\n  SELECT 1 FROM logins\n  WHERE token_hash = $1 AND expires_at > now() AND last_seen_at > now() - make_interval(secs => $2)\n) AS \"alive!\"\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "alive!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0b222ef55cffb861a1508aa9e09443d14aa10f25c0985fd816252409d62993ab"
+}

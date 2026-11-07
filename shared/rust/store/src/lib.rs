@@ -1,5 +1,5 @@
-//! The only Postgres access (ADR 0049 §2.4). Every command writes its state, its chained event and
-//! its outbox row in one transaction (ADR 0031). SQL lives in `db/queries/<area>/*.sql`, one
+//! The only Postgres access (ADR 0049 §2.4): sessions, events, outbox, and sign-in. Every command
+//! writes its state, its chained event and its outbox row in one transaction (ADR 0031). SQL lives in `db/queries/<area>/*.sql`, one
 //! module per area, compile-time checked against `.sqlx/`.
 #![deny(missing_docs)]
 
@@ -12,10 +12,12 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use time::OffsetDateTime;
 
+mod auth;
 mod events;
 mod outbox;
 mod sessions;
 
+pub use auth::NewLogin;
 pub use events::ChainEvent;
 pub use outbox::Unsent;
 pub use sessions::SessionRow;

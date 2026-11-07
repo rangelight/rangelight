@@ -1,14 +1,16 @@
-//! The api end to end: a Linear stub, real Postgres and NATS, the relay, and a real Connect
+//! The api end to end: a Linear stub, real Postgres, NATS and Dex, the relay, and a real Connect
 //! client.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+mod common;
 
 use std::io::Write;
 use std::time::Duration;
 
-use api::{SessionApi, intake_once, serve};
+use api::intake_once;
 use buffa::Message;
 use connectrpc::ErrorCode;
-use connectrpc::client::{ClientConfig, HttpClient};
+use connectrpc::client::HttpClient;
 use relay::Relay;
 use rl_app::{SystemClock, UuidV7, change_state};
 use rl_config::SecretRef;
@@ -21,7 +23,6 @@ use rl_proto::rangelight::session::v1alpha1::{
 use rl_store::Store;
 use rl_testkit::{FakeTickets, LinearStub, Reply, Seed, ticket};
 use rl_tickets_linear::Linear;
-use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
 const KEY: &str = "lin_api_APITESTKEY9876543210";
@@ -77,28 +78,12 @@ async fn linear_intake_creates_one_session_per_labelled_issue() {
     );
 }
 
-struct Served {
-    client: SessionServiceClient<HttpClient>,
-    cancel: CancellationToken,
-}
-
-async fn served(store: &Store, org: &str) -> Served {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let uri = format!("http://{}", listener.local_addr().unwrap())
-        .parse()
-        .unwrap();
-    let cancel = CancellationToken::new();
-    let api = SessionApi::new(
-        store.clone(),
-        rl_testkit::nats().await,
-        org.into(),
-        cancel.clone(),
-    );
-    tokio::spawn(serve(listener, api, cancel.clone()));
-    Served {
-        client: SessionServiceClient::new(HttpClient::plaintext(), ClientConfig::new(uri)),
-        cancel,
-    }
+/// The api, and a session API client signed in through Dex.
+async fn served(store: &Store, org: &str) -> (common::Served, SessionServiceClient<HttpClient>) {
+    let served = common::served(store, org).await;
+    let browser = served.signed_in("kilgore@example.com").await;
+    let client = served.sessions(&browser.cookie_header());
+    (served, client)
 }
 
 /// AC5: `ListSessions`, and `WatchSession` fed by the relay's NATS fan-out.
@@ -111,10 +96,9 @@ async fn list_and_watch_with_a_real_client() {
     intake_once(&store, &linear, &SystemClock, &UuidV7)
         .await
         .unwrap();
-    let served = served(&store, &org).await;
+    let (_served, client) = served(&store, &org).await;
 
-    let listed = served
-        .client
+    let listed = client
         .list_sessions(ListSessionsRequest::default())
         .await
         .unwrap()
@@ -134,7 +118,7 @@ async fn list_and_watch_with_a_real_client() {
         session_id: session.id.clone(),
         ..Default::default()
     };
-    let mut watch = served.client.watch_session(request).await.unwrap();
+    let mut watch = client.watch_session(request).await.unwrap();
     let id = SessionId(uuid::Uuid::parse_str(&session.id).unwrap());
     let warm = change_state(id, State::Warm, &SystemClock, &UuidV7);
     store.change_state(&warm).await.unwrap();
@@ -163,19 +147,18 @@ async fn list_and_watch_with_a_real_client() {
     assert!(
         matches!(&seen[1], (2, Some(Kind::StateChanged(changed))) if changed.state.as_known() == Some(DesiredState::DESIRED_STATE_WARM))
     );
-    served.cancel.cancel();
 }
 
 #[tokio::test]
 async fn watch_rejects_an_id_that_isnt_a_uuid() {
     let (store, org) = (rl_testkit::store("api::invalid").await, org());
-    let served = served(&store, &org).await;
+    let (_served, client) = served(&store, &org).await;
     let request = WatchSessionRequest {
         session_id: "*".into(),
         ..Default::default()
     };
     // A server stream reports its error on the first read.
-    let error = match served.client.watch_session(request).await {
+    let error = match client.watch_session(request).await {
         Ok(mut stream) => stream.message().await.err().unwrap(),
         Err(error) => error,
     };
@@ -216,13 +199,13 @@ async fn a_failing_command_doesnt_stop_the_intake_round() {
 #[tokio::test]
 async fn watch_ends_with_an_error_on_a_seq_gap() {
     let (store, org) = (rl_testkit::store("api::gap").await, org());
-    let served = served(&store, &org).await;
+    let (_served, client) = served(&store, &org).await;
     let id = uuid::Uuid::now_v7();
     let request = WatchSessionRequest {
         session_id: id.to_string(),
         ..Default::default()
     };
-    let mut watch = served.client.watch_session(request).await.unwrap();
+    let mut watch = client.watch_session(request).await.unwrap();
     let nats = rl_testkit::nats().await;
     for seq in [1, 3] {
         let event = Event {
@@ -276,4 +259,52 @@ async fn shutdown_doesnt_wait_for_a_stuck_round() {
         .await
         .expect("the loop stopped")
         .unwrap();
+}
+
+/// Security review L3: a client that never finishes its request headers is disconnected after the
+/// 10-second header-read timeout, not held for ever.
+#[tokio::test]
+async fn a_stalled_request_is_closed() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let (store, org) = (rl_testkit::store("api::stalled").await, org());
+    let served = common::served(&store, &org).await;
+    let mut socket = tokio::net::TcpStream::connect(served.base.socket_addrs(|| None).unwrap()[0])
+        .await
+        .unwrap();
+    socket
+        .write_all(b"GET /auth/login HTTP/1.1\r\nHost: rangelight.test\r\n")
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let mut rest = Vec::new();
+    let read = tokio::time::timeout(Duration::from_secs(20), socket.read_to_end(&mut rest)).await;
+    assert!(read.is_ok(), "the connection was still open after 20s");
+    let waited = started.elapsed();
+    assert!(
+        (Duration::from_secs(8)..Duration::from_secs(15)).contains(&waited),
+        "closed after {waited:?}"
+    );
+}
+
+/// Security review round 2, item 1: a connection that never sends a byte is closed within the
+/// header-read timeout too (the server speaks HTTP/1.1 only: no protocol sniff waiting for ever).
+#[tokio::test]
+async fn a_silent_connection_is_closed() {
+    use tokio::io::AsyncReadExt;
+
+    let (store, org) = (rl_testkit::store("api::silent").await, org());
+    let served = common::served(&store, &org).await;
+    let mut socket = tokio::net::TcpStream::connect(served.base.socket_addrs(|| None).unwrap()[0])
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let mut rest = Vec::new();
+    let read = tokio::time::timeout(Duration::from_secs(20), socket.read_to_end(&mut rest)).await;
+    assert!(read.is_ok(), "the connection was still open after 20s");
+    let waited = started.elapsed();
+    assert!(
+        (Duration::from_secs(8)..Duration::from_secs(15)).contains(&waited),
+        "closed after {waited:?}"
+    );
 }

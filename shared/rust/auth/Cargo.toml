@@ -1,0 +1,30 @@
+[package]
+name = "rl-auth"
+description = "OIDC sign-in: the authorization-code flow with PKCE against bundled Dex or any OIDC provider."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+openidconnect.workspace = true
+reqwest.workspace = true
+ring.workspace = true
+rl-config.workspace = true
+rustls.workspace = true
+secrecy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+rl-testkit.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

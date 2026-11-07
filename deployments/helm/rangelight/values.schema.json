@@ -2,9 +2,108 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["postgres", "nats", "gitMirror", "runner"],
+  "required": ["publicUrl", "clusterDns", "oidc", "dex", "postgres", "nats", "gitMirror", "runner"],
   "properties": {
     "global": { "description": "Helm's values shared with the subcharts.", "type": "object" },
+    "publicUrl": { "description": "Where browsers reach Rangelight: https://<host>[:<port>], without a path.", "$ref": "#/$defs/publicUrl" },
+    "clusterDns": {
+      "description": "The cluster DNS pods: the only DNS server of the lanes and of Dex.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace", "podLabel"],
+      "properties": {
+        "namespace": { "$ref": "#/$defs/dnsName" },
+        "podLabel": {
+          "description": "One label that selects them, as key=value.",
+          "type": "string",
+          "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?=[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$"
+        }
+      }
+    },
+    "oidc": {
+      "description": "The api's OIDC client: at bundled Dex, or at your own provider when dex.enabled is false.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuer", "clientId", "memberClaim", "clientSecretRef"],
+      "properties": {
+        "issuer": { "description": "Your provider's issuer, when dex.enabled is false.", "anyOf": [{ "const": "" }, { "$ref": "#/$defs/httpsUrl" }] },
+        "clientId": { "description": "The api's client id at the issuer.", "type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$" },
+        "memberClaim": { "description": "The ID-token claim that names the member.", "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,64}$" },
+        "clientSecretRef": {
+          "description": "The Secret in rangelight-system, and its key, holding the api's client secret.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "key"],
+          "properties": { "name": { "$ref": "#/$defs/dnsName" }, "key": { "$ref": "#/$defs/secretKey" } }
+        }
+      }
+    },
+    "dex": {
+      "description": "enabled and github are Rangelight's; every other key goes to the upstream dex chart.",
+      "type": "object",
+      "required": [
+        "enabled", "github", "ingressFrom", "clusterCidrs", "fullnameOverride", "replicaCount", "image", "configSecret",
+        "serviceAccount", "envVars", "resources", "networkPolicy"
+      ],
+      "properties": {
+        "enabled": { "description": "Install Dex, or use your own provider (oidc.issuer).", "type": "boolean" },
+        "github": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["org"],
+          "properties": {
+            "org": { "description": "The GitHub organisation whose members may sign in.", "anyOf": [{ "const": "" }, { "$ref": "#/$defs/githubOrg" }] }
+          }
+        },
+        "ingressFrom": {
+          "description": "Who may reach Dex besides the api: namespace labels and pod labels.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["namespaceLabels", "podLabels"],
+          "properties": { "namespaceLabels": { "$ref": "#/$defs/labels" }, "podLabels": { "$ref": "#/$defs/labels" } }
+        },
+        "clusterCidrs": {
+          "description": "The cluster's pod and service CIDRs, which Dex's HTTPS egress excludes.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$" }
+        },
+        "networkPolicy": {
+          "description": "The upstream chart's policy: off, ours (templates/dex/networkpolicy.yaml) replaces it.",
+          "type": "object",
+          "required": ["enabled"],
+          "properties": { "enabled": { "const": false } }
+        },
+        "fullnameOverride": { "const": "rangelight-dex" },
+        "replicaCount": { "description": "One server: its storage is in memory.", "const": 1 },
+        "image": {
+          "type": "object",
+          "required": ["repository", "digest"],
+          "properties": {
+            "repository": { "description": "The image and its tag.", "type": "string", "pattern": "^[a-z0-9.-]+(/[a-z0-9._-]+)+:[A-Za-z0-9._-]+$", "not": { "pattern": ":latest$" } },
+            "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          }
+        },
+        "configSecret": {
+          "description": "The config is templates/dex/config.yaml.",
+          "type": "object",
+          "required": ["create", "name"],
+          "properties": { "create": { "const": false }, "name": { "const": "rangelight-dex-config" } }
+        },
+        "config": { "description": "Unused: the config is templates/dex/config.yaml.", "type": "object", "maxProperties": 0 },
+        "serviceAccount": {
+          "type": "object",
+          "required": ["create", "name"],
+          "properties": { "create": { "const": false }, "name": { "const": "rangelight-dex" } }
+        },
+        "envVars": {
+          "description": "The credentials, each from a Secret, never a value.",
+          "type": "array",
+          "items": { "type": "object", "required": ["name", "valueFrom"], "not": { "required": ["value"] } }
+        },
+        "resources": { "$ref": "#/$defs/resources" }
+      }
+    },
     "postgres": {
       "type": "object",
       "additionalProperties": false,
@@ -109,26 +208,12 @@
     "runner": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "namespace", "image", "agentImage", "dns", "workers", "tmpSize", "resources"],
+      "required": ["enabled", "namespace", "image", "agentImage", "workers", "tmpSize", "resources"],
       "properties": {
         "enabled": { "description": "Run the runner.", "type": "boolean" },
         "namespace": { "description": "The runner's own namespace, never rangelight-system.", "$ref": "#/$defs/dnsName" },
         "image": { "description": "The runner image, by tag and digest.", "anyOf": [{ "const": "" }, { "$ref": "#/$defs/pinnedImage" }] },
         "agentImage": { "description": "The lane agent image, by tag and digest.", "anyOf": [{ "const": "" }, { "$ref": "#/$defs/pinnedImage" }] },
-        "dns": {
-          "description": "The cluster DNS pods, the lanes' only DNS server.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["namespace", "podLabel"],
-          "properties": {
-            "namespace": { "$ref": "#/$defs/dnsName" },
-            "podLabel": {
-              "description": "One label that selects them, as key=value.",
-              "type": "string",
-              "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?=[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$"
-            }
-          }
-        },
         "workers": { "description": "How many Sessions reconcile at once.", "type": "integer", "minimum": 1, "maximum": 64 },
         "tmpSize": { "description": "The runner's /tmp, for the profile reads' shallow clones.", "$ref": "#/$defs/storage" },
         "resources": { "$ref": "#/$defs/resources" }
@@ -137,8 +222,32 @@
       "then": { "properties": { "image": { "$ref": "#/$defs/pinnedImage" }, "agentImage": { "$ref": "#/$defs/pinnedImage" } } }
     }
   },
+  "if": { "properties": { "dex": { "properties": { "enabled": { "const": true } } } } },
+  "then": {
+    "description": "Bundled Dex needs the GitHub organisation, and reads the api's client secret from rangelight-oidc.",
+    "properties": {
+      "dex": { "properties": { "github": { "properties": { "org": { "$ref": "#/$defs/githubOrg" } } } } },
+      "oidc": {
+        "properties": {
+          "memberClaim": { "const": "preferred_username" },
+          "clientSecretRef": { "properties": { "name": { "const": "rangelight-oidc" }, "key": { "const": "client-secret" } } }
+        }
+      }
+    }
+  },
+  "else": { "properties": { "oidc": { "properties": { "issuer": { "$ref": "#/$defs/httpsUrl" } } } } },
   "$defs": {
     "dnsName": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$" },
+    "secretKey": { "type": "string", "pattern": "^[-._a-zA-Z0-9]{1,253}$" },
+    "labels": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": { "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$" },
+      "additionalProperties": { "type": "string", "pattern": "^([A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?)?$" }
+    },
+    "githubOrg": { "type": "string", "pattern": "^[A-Za-z0-9](-?[A-Za-z0-9]){0,38}$" },
+    "publicUrl": { "type": "string", "pattern": "^https://[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(:[0-9]{1,5})?$" },
+    "httpsUrl": { "type": "string", "pattern": "^https://[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(:[0-9]{1,5})?(/[-._~A-Za-z0-9]+)*$" },
     "natsUrl": { "type": "string", "pattern": "^(nats|tls)://[-.a-zA-Z0-9]+(:[0-9]{1,5})?$" },
     "pinnedImage": {
       "type": "string",

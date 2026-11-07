@@ -1,5 +1,5 @@
 ---
-# The api's connection settings (ADR 0049 §6): the Postgres URI as a secret reference, never a value.
+# The api's connection and sign-in settings (ADR 0049 §6): secrets as references, never values.
 apiVersion: "v1"
 kind: "ConfigMap"
 metadata:
@@ -18,3 +18,12 @@ data:
   {{- else }}
   RANGELIGHT_API_NATS_URL: {{ .Values.nats.external.url | quote }}
   {{- end }}
+  RANGELIGHT_API_PUBLIC_URL: {{ .Values.publicUrl | quote }}
+  {{- if .Values.dex.enabled }}
+  RANGELIGHT_API_OIDC_ISSUER: {{ printf "%s/dex" .Values.publicUrl | quote }}
+  {{- else }}
+  RANGELIGHT_API_OIDC_ISSUER: {{ .Values.oidc.issuer | quote }}
+  {{- end }}
+  RANGELIGHT_API_OIDC_CLIENT_ID: {{ .Values.oidc.clientId | quote }}
+  RANGELIGHT_API_OIDC_MEMBER_CLAIM: {{ .Values.oidc.memberClaim | quote }}
+  RANGELIGHT_API_OIDC_CLIENT_SECRET: {{ printf "secret://%s#%s" .Values.oidc.clientSecretRef.name .Values.oidc.clientSecretRef.key | quote }}

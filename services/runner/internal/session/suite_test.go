@@ -153,6 +153,8 @@ func runnerConfig(cfg *rest.Config) *rest.Config {
 func applyChart(ctx context.Context) error {
 	out, err := exec.Command("helm", "template", "rangelight", chart, "--namespace", "rangelight-system",
 		"-f", chart+"/test/runner-values.yaml",
+		// The values the chart requires for sign-in (RAN-37); the runner's templates don't use them.
+		"--set", "publicUrl=https://rangelight.example.com", "--set", "dex.github.org=rangelight",
 		"--show-only", "templates/runner/rbac.yaml", "--show-only", "templates/runner/admission.yaml").Output()
 	if err != nil {
 		return fmt.Errorf("helm template: %w", err)

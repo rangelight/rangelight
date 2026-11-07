@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM logins WHERE token_hash = $1\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4afeae7e660ff95e5fd363fbf39972e59e450cb0b11cf909ed46f0fdf4f11ef8"
+}

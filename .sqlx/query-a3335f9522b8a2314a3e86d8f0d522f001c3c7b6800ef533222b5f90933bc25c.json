@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- A login for a member, binding the member to the account on its first sign-in. No row comes\n-- back when another account already owns the member: the sign-in is refused. Logins past their\n-- end, or idle for $6 seconds, go at the same moment.\nWITH expired AS (\n  DELETE FROM logins\n  WHERE expires_at <= now() OR last_seen_at <= now() - make_interval(secs => $6)\n), bound AS (\n  INSERT INTO members (member, issuer, subject) VALUES ($2, $3, $4)\n  ON CONFLICT (member) DO UPDATE SET member = excluded.member\n  WHERE members.issuer = excluded.issuer AND members.subject = excluded.subject\n  RETURNING member\n)\nINSERT INTO logins (token_hash, member, expires_at)\nSELECT $1, member, now() + make_interval(secs => $5) FROM bound\nRETURNING member\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "logins",
+            "name": "member"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Text",
+        "Text",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a3335f9522b8a2314a3e86d8f0d522f001c3c7b6800ef533222b5f90933bc25c"
+}

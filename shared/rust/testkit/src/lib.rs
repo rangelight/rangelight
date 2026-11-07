@@ -1,8 +1,8 @@
 //! Test support (ADR 0049 §2.2, §8): fakes for the seams, the `TicketSource` contract suite, a
-//! Linear stub, and real Postgres and NATS. A dev-dependency only.
+//! Linear stub, and real Postgres, NATS and Dex. A dev-dependency only.
 //!
-//! Postgres and NATS come from `scripts/test/services.sh run`, which sets `DATABASE_URL` (read
-//! by sqlx) and `RANGELIGHT_TESTKIT_NATS_URL`.
+//! Postgres, NATS and Dex come from `scripts/test/services.sh run`, which sets `DATABASE_URL`
+//! (read by sqlx) and `RANGELIGHT_TESTKIT_*`.
 #![deny(missing_docs)]
 // Test support: failing loudly is the point, so any function here may panic.
 #![allow(
@@ -23,8 +23,12 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::testing::{TestArgs, TestSupport};
 use uuid::Uuid;
 
+mod browser;
+mod dex;
 mod linear_stub;
 
+pub use browser::{Browser, Page};
+pub use dex::{Dex, PUBLIC_URL, dex, sign_in_at_dex};
 pub use linear_stub::{LinearStub, Reply, StubRequest};
 
 /// A ticket as a tracker holds it, with its labels: what a test seeds a source with.

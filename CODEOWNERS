@@ -12,8 +12,12 @@
 /services/gateway/                          @ArielLahiany
 /services/rld/                              @ArielLahiany
 
-# Policy and auth: Cedar authorisation, and the schema with its RLS and grants
+# Policy and auth: Cedar authorisation, sign-in, and the schema with its RLS and grants
 /shared/rust/policy/                        @ArielLahiany
+/shared/rust/auth/                          @ArielLahiany
+/services/api/src/auth.rs                   @ArielLahiany
+/services/api/src/auth/                     @ArielLahiany
+/db/queries/auth/                           @ArielLahiany
 /db/migrations/                             @ArielLahiany
 
 # The runner's lane identity (/auth/git) and its cluster-wide permissions

@@ -81,3 +81,36 @@ fn subject_tokens_cant_widen_a_subject() {
         assert!(subject::token(bad).is_err(), "{bad:?}");
     }
 }
+
+#[test]
+fn a_member_is_the_lowercased_login_or_nothing() {
+    assert_eq!(
+        Member::from_username("ArielLahiany").unwrap().as_str(),
+        "ariellahiany"
+    );
+    assert_eq!(Member::from_username("a-1").unwrap().as_str(), "a-1");
+    assert_eq!(
+        Member::from_username(&"a".repeat(63))
+            .unwrap()
+            .as_str()
+            .len(),
+        63
+    );
+    for bad in [
+        "",
+        "-a",
+        "a-",
+        "a.b",
+        "a_b",
+        "a@example.com",
+        "a b",
+        "ı",
+        &"a".repeat(64),
+    ] {
+        assert_eq!(
+            Member::from_username(bad),
+            Err(DomainError::InvalidMember),
+            "{bad:?}"
+        );
+    }
+}

@@ -37,11 +37,14 @@ test_cluster_waits_for_the_operator_crd() {
 }
 
 test_no_credentials_in_values_or_render() {
-  render --api-versions "${CNPG_API}"
+  render --api-versions "${CNPG_API}" --no-hooks
   expect_ok
-  expect_no_match '^kind: "?Secret"?$'
+  # The one Secret is Dex's config, which holds variables, not credentials.
+  [[ "$(kinds | grep -c '^Secret/')" -eq 1 && "$(kinds | grep '^Secret/')" == "Secret/rangelight-dex-config" ]] ||
+    fail "Secrets rendered: $(kinds | grep '^Secret/' | paste -sd' ')"
   OUT="$(<"${CHART}/values.yaml")"
   expect_no_match '^ *[A-Za-z]*([Pp]ass(word)?|[Ss]ecret[Vv]alue)[A-Za-z]*:'
+  expect_no_match '^ *value: '
 }
 
 # --- AC2: NATS with JetStream, one server, file storage on a default-class PVC ---
@@ -71,7 +74,7 @@ test_bundled_exposes_cnpg_secret_and_nats_service() {
 # --- AC3: your own Postgres and NATS --------------------------------------------
 
 test_external_installs_only_the_api_settings() {
-  render --api-versions "${CNPG_API}" "${EXTERNAL[@]}"
+  render --api-versions "${CNPG_API}" "${EXTERNAL[@]}" "${EXTERNAL_OIDC[@]}"
   expect_ok
   [[ "$(kinds)" == "ConfigMap/rangelight-api" ]] || fail "external mode renders more than the api ConfigMap: $(kinds | paste -sd' ')"
   expect_line '  RANGELIGHT_API_POSTGRES_URL: "secret://pg-api#uri"'
@@ -80,7 +83,7 @@ test_external_installs_only_the_api_settings() {
 
 test_external_postgres_alone_keeps_bundled_nats() {
   render --api-versions "${CNPG_API}" --set postgres.enabled=false --set postgres.external.secretRef.name=pg-api \
-    --set postgres.external.secretRef.key=url
+    --set postgres.external.secretRef.key=url "${EXTERNAL_OIDC[@]}"
   expect_ok
   [[ "$(kinds | paste -sd' ')" == "ConfigMap/rangelight-api ConfigMap/rangelight-nats-config NetworkPolicy/rangelight-nats Service/rangelight-nats Service/rangelight-nats-headless StatefulSet/rangelight-nats" ]] ||
     fail "external Postgres with bundled NATS renders: $(kinds | paste -sd' ')"
@@ -151,7 +154,8 @@ test_refuses_an_unknown_key() {
 
 test_refuses_another_namespace() {
   STATUS=0
-  OUT="$(helm template rangelight "${CHART}" --namespace default 2>&1)" || STATUS=$?
+  OUT="$(helm template rangelight "${CHART}" --namespace default --set publicUrl=https://rangelight.example.com \
+    --set dex.github.org=rangelight 2>&1)" || STATUS=$?
   expect_refused 'install into the namespace rangelight-system, not "default"'
 }
 

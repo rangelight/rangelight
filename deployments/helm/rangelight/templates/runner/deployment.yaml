@@ -42,9 +42,9 @@ spec:
             - name: "RANGELIGHT_RUNNER_MIRROR_URL"
               value: {{ printf "http://git-mirror.%s.svc.cluster.local:8080" .Release.Namespace | quote }}
             - name: "RANGELIGHT_RUNNER_DNS_NAMESPACE"
-              value: {{ .Values.runner.dns.namespace | quote }}
+              value: {{ .Values.clusterDns.namespace | quote }}
             - name: "RANGELIGHT_RUNNER_DNS_POD_LABEL"
-              value: {{ .Values.runner.dns.podLabel | quote }}
+              value: {{ .Values.clusterDns.podLabel | quote }}
             - name: "RANGELIGHT_RUNNER_WORKERS"
               value: {{ .Values.runner.workers | quote }}
           ports:

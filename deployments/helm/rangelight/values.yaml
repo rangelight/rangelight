@@ -118,3 +118,30 @@ gitMirror:
   syncIntervalSeconds: 300
   # The volume for every repo: upstream repos and the per-session repos (capped at 512 MiB each).
   storage: "5Gi"
+
+# The runner (ADR 0018): it runs Sessions (crds/session.yaml) as lane namespaces rl-<ticket> with a hardened agent
+# pod, and answers the git mirror's /auth/git.
+runner:
+  # true: run the runner. It needs runner.image, runner.agentImage, the namespace runner.namespace, and Cilium.
+  enabled: false
+  # The runner's own namespace, which the cluster owner creates (Pod Security `restricted`) and the chart doesn't,
+  # so no rangelight-system workload can mount the runner's ServiceAccount. Sessions live here.
+  namespace: "rangelight-runner"
+  # The runner image, by tag and digest: ghcr.io/rangelight/runner:<sha>@sha256:<digest>, built by
+  # .github/workflows/images.yaml. Required when enabled.
+  image: ""
+  # The lane agent image (services/agent), by tag and digest: ghcr.io/rangelight/agent:<sha>@sha256:<digest>.
+  # Required when enabled.
+  agentImage: ""
+  # How many Sessions reconcile at once. Each one may hold a depth-1 clone of a repo's base branch on /tmp for up to
+  # 30 seconds while it reads rangelight.yaml.
+  workers: 4
+  # The runner's /tmp: at least workers times the largest base-branch snapshot (a checkout without history).
+  tmpSize: "2Gi"
+  # Resources of the runner pod.
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      memory: "512Mi"

@@ -121,9 +121,9 @@ EOF
 up() {
   require_context
   load_versions
-  [[ "${GIT_MIRROR_IMAGE}" =~ @sha256:[0-9a-f]{64}$ ]] || die "pin GIT_MIRROR_IMAGE after the first images.yaml run (deployments/dev/versions.env: ${GIT_MIRROR_IMAGE})"
+  local name; for name in GIT_MIRROR_IMAGE RUNNER_IMAGE AGENT_IMAGE; do [[ "${!name}" =~ @sha256:[0-9a-f]{64}$ ]] || die "pin ${name} after the first images.yaml run (deployments/dev/versions.env: ${!name})"; done
   command -v helm >/dev/null || die "helm is not installed"
-  local dev=(--values "${ROOT}/deployments/dev/values.yaml" --set-string "gitMirror.image=${GIT_MIRROR_IMAGE}")
+  local dev=(--values "${ROOT}/deployments/dev/values.yaml" --set-string "gitMirror.image=${GIT_MIRROR_IMAGE}" --set-string "runner.image=${RUNNER_IMAGE}" --set-string "runner.agentImage=${AGENT_IMAGE}")
   if [[ "${RANGELIGHT_DRY_RUN:-}" == true ]]; then
     namespace_manifest
     helm template "${RELEASE}" "${CHART}" --namespace "${SYSTEM_NS}" --api-versions postgresql.cnpg.io/v1/Cluster "${dev[@]}"

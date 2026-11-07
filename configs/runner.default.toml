@@ -1,0 +1,23 @@
+# Defaults for services/runner (ADR 0049 §6). Override with the mounted /etc/rangelight/runner.toml,
+# then with RANGELIGHT_RUNNER_<KEY>, for example RANGELIGHT_RUNNER_AGENT_IMAGE. No secrets here, ever.
+
+# The runner's own namespace: Sessions live here, and nowhere else (the chart sets it).
+namespace = "rangelight-runner"
+# The listener for the git mirror's /auth/git and for /healthz.
+listen = ":8080"
+# The git mirror (services/git-mirror): the profile is read from it, and lanes clone from it.
+mirror_url = "http://git-mirror.rangelight-system.svc.cluster.local:8080"
+# The runner's own projected token for the mirror (audience rangelight-git-mirror), read at each fetch.
+mirror_token_file = "/var/run/secrets/rangelight/git-mirror/token"
+# How many Sessions reconcile at once. Each profile read is a depth-1 clone on the runner's /tmp for up
+# to 30 seconds, so a slow mirror holds one worker, and /tmp holds up to this many clones.
+workers = 4
+# The lane agent's image (services/agent), by tag and digest. Required: the chart sets it.
+agent_image = ""
+# The lane agent pod's disk: the worktree's emptyDir, /tmp's emptyDir, and the container's
+# ephemeral-storage limit (logs and writable layers too, so at least the sum of the two).
+lane_workspace_size = "10Gi"
+lane_tmp_size = "1Gi"
+lane_ephemeral_storage = "12Gi"
+# debug, info, warn or error.
+log_level = "info"

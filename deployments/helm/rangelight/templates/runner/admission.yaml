@@ -1,0 +1,73 @@
+{{- if .Values.runner.enabled }}
+{{- $user := printf "system:serviceaccount:%s:runner" .Values.runner.namespace }}
+---
+# RBAC can't scope by label, so the runner's ClusterRole reaches every namespace. This policy narrows
+# every write the runner's ServiceAccount makes to lanes: a compromised runner (it parses repo
+# content and YAML) can't put a pod in kube-system or touch any namespace that isn't a lane.
+# failurePolicy Fail: if the policy can't be evaluated, the write is refused.
+apiVersion: "admissionregistration.k8s.io/v1"
+kind: "ValidatingAdmissionPolicy"
+metadata:
+  name: "rangelight-runner"
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "runner" "component" "runner") | nindent 4 }}
+spec:
+  failurePolicy: "Fail"
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        resources: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE", "CONNECT"]
+  matchConditions:
+    - name: "the-runner"
+      expression: {{ printf "request.userInfo.username == '%s'" $user | quote }}
+  variables:
+    # <group>/<resource>[/<subresource>], for example "/pods" or "rangelight.dev/sessions/status".
+    - name: "kind"
+      expression: >-
+        request.resource.group + '/' + request.resource.resource +
+        (has(request.subResource) && request.subResource != '' ? '/' + request.subResource : '')
+    # The writes the runner makes (services/runner/internal/session), and nothing else.
+    - name: "allowed"
+      expression: >-
+        {'/namespaces': ['CREATE', 'DELETE'], '/pods': ['CREATE'], '/persistentvolumeclaims': ['CREATE'],
+        '/configmaps': ['CREATE', 'UPDATE'], 'networking.k8s.io/networkpolicies': ['CREATE', 'UPDATE'],
+        'cilium.io/ciliumnetworkpolicies': ['CREATE', 'UPDATE'], 'authentication.k8s.io/tokenreviews': ['CREATE'],
+        'rangelight.dev/sessions': ['UPDATE'], 'rangelight.dev/sessions/status': ['UPDATE']}
+    - name: "target"
+      expression: "request.operation == 'DELETE' ? oldObject : object"
+    - name: "isLane"
+      expression: >-
+        has(variables.target.metadata.labels) && 'rangelight.dev/lane' in variables.target.metadata.labels &&
+        variables.target.metadata.labels['rangelight.dev/lane'] == 'true'
+    - name: "inLane"
+      expression: >-
+        namespaceObject != null && has(namespaceObject.metadata.labels) && 'rangelight.dev/lane' in namespaceObject.metadata.labels &&
+        namespaceObject.metadata.labels['rangelight.dev/lane'] == 'true'
+  validations:
+    - expression: "variables.kind in variables.allowed && request.operation in variables.allowed[variables.kind]"
+      messageExpression: "'the runner may not ' + request.operation + ' ' + variables.kind"
+    - expression: "variables.kind != '/namespaces' || (variables.target.metadata.name.startsWith('rl-') && variables.isLane)"
+      message: "the runner may create or delete only lane namespaces: rl-*, labelled rangelight.dev/lane=true"
+    - expression: >-
+        variables.kind in ['/namespaces', 'authentication.k8s.io/tokenreviews'] || variables.kind.startsWith('rangelight.dev/sessions') ||
+        variables.inLane
+      message: "the runner writes only in lane namespaces (labelled rangelight.dev/lane=true)"
+    - expression: {{ printf "!variables.kind.startsWith('rangelight.dev/sessions') || request.namespace == '%s'" .Values.runner.namespace | quote }}
+      message: "the runner's Sessions live only in its own namespace"
+    - expression: >-
+        variables.kind != '/pods' || (has(object.spec.serviceAccountName) && object.spec.serviceAccountName == 'default' &&
+        has(object.spec.automountServiceAccountToken) && !object.spec.automountServiceAccountToken)
+      message: "a lane pod runs as the namespace's default ServiceAccount, with no automounted token"
+---
+apiVersion: "admissionregistration.k8s.io/v1"
+kind: "ValidatingAdmissionPolicyBinding"
+metadata:
+  name: "rangelight-runner"
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "runner" "component" "runner") | nindent 4 }}
+spec:
+  policyName: "rangelight-runner"
+  validationActions: ["Deny"]
+{{- end }}

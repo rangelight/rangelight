@@ -10,6 +10,13 @@ Every dependency is bundled and swappable for your own (ADR 0009). `values.yaml`
 | NATS | One NATS server (chart `nats`) with JetStream on a PVC from the default StorageClass | `nats.enabled=false`, `nats.external.url` |
 | Git mirror | Off by default: `gitMirror.enabled=true` with `gitMirror.image` (by digest) and `gitMirror.repos` runs the mirror (`services/git-mirror/`) on a PVC | — |
 
+**The runner** (ADR 0018, `services/runner/`) is off by default too: `runner.enabled=true` with `runner.image`
+and `runner.agentImage` (by digest) runs it in its own namespace, `runner.namespace` (default `rangelight-runner`).
+The cluster owner creates that namespace first (Pod Security `restricted`); the chart never does, so no
+`rangelight-system` workload can mount the runner's ServiceAccount. Lanes need Cilium for their Anthropic egress.
+The `Session` CRD is in `crds/`. The runner's ClusterRole holds only what a lane needs, each rule with its reason
+(`templates/runner/rbac.yaml`).
+
 ## Install
 
 ```sh

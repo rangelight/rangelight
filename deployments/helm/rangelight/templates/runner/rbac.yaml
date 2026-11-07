@@ -1,0 +1,100 @@
+{{- if .Values.runner.enabled }}
+---
+# The runner's identity, in its own namespace so no other workload can borrow it (ADR 0046 amendment).
+apiVersion: "v1"
+kind: "ServiceAccount"
+metadata:
+  name: "runner"
+  namespace: {{ .Values.runner.namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "runner" "component" "runner") | nindent 4 }}
+---
+# Only what a lane needs, cluster-wide because every lane is its own namespace rl-<ticket>; admission.yaml
+# then confines every write to lane namespaces.
+# No verbs on Secrets, ServiceAccounts, roles, nodes or exec; no update of namespaces, so the runner
+# can't relabel one into a lane.
+apiVersion: "rbac.authorization.k8s.io/v1"
+kind: "ClusterRole"
+metadata:
+  name: "rangelight-runner"
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "runner" "component" "runner") | nindent 4 }}
+rules:
+  # Create the lane namespace, read lanes (cached, by label), delete it when its Session goes.
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # The agent pod: created once, watched for Ready; /auth/git checks a token's pod in the cache.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create"]
+  # The member's Claude home claim, created once.
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create"]
+  # The lane ConfigMap (ticket.json, profile.json): updated when the ticket text changes.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update"]
+  # The lane's default-deny policy, put back if anyone changes it.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update"]
+  # The lane's DNS and Anthropic egress through Cilium (ADR 0046 amendment), watched and put back if changed.
+  - apiGroups: ["cilium.io"]
+    resources: ["ciliumnetworkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update"]
+  # /auth/git: is this lane token valid for the git mirror's audience?
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: "rbac.authorization.k8s.io/v1"
+kind: "ClusterRoleBinding"
+metadata:
+  name: "rangelight-runner"
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "runner" "component" "runner") | nindent 4 }}
+roleRef:
+  apiGroup: "rbac.authorization.k8s.io"
+  kind: "ClusterRole"
+  name: "rangelight-runner"
+subjects:
+  - kind: "ServiceAccount"
+    name: "runner"
+    namespace: {{ .Values.runner.namespace | quote }}
+---
+# Sessions live only in the runner's namespace: a namespaced Role, not part of the ClusterRole.
+apiVersion: "rbac.authorization.k8s.io/v1"
+kind: "Role"
+metadata:
+  name: "runner"
+  namespace: {{ .Values.runner.namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "runner" "component" "runner") | nindent 4 }}
+rules:
+  # Read Sessions; update one only to add or remove the runner's finalizer.
+  - apiGroups: ["rangelight.dev"]
+    resources: ["sessions"]
+    verbs: ["get", "list", "watch", "update"]
+  # Report the phase.
+  - apiGroups: ["rangelight.dev"]
+    resources: ["sessions/status"]
+    verbs: ["patch"]
+---
+apiVersion: "rbac.authorization.k8s.io/v1"
+kind: "RoleBinding"
+metadata:
+  name: "runner"
+  namespace: {{ .Values.runner.namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "runner" "component" "runner") | nindent 4 }}
+roleRef:
+  apiGroup: "rbac.authorization.k8s.io"
+  kind: "Role"
+  name: "runner"
+subjects:
+  - kind: "ServiceAccount"
+    name: "runner"
+    namespace: {{ .Values.runner.namespace | quote }}
+{{- end }}

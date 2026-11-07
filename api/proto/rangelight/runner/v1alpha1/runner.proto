@@ -90,6 +90,16 @@ message SessionDesired {
   map<string, string> credential_refs = 13; // name -> secret ref; never values (ADR 0004)
   google.protobuf.Duration idle_autostop = 14; // delegated local timer (ADR 0018)
   string owner = 15; // OIDC subject, for labels/audit only
+  Ticket ticket = 17; // mounted in the lane as /etc/rangelight/ticket.json
+  string member = 18; // whose Claude home the lane mounts (ADR 0046 amendment): ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+}
+
+// The ticket a session works on: the lane's brief and its acceptance criteria (ADR 0045 §3).
+message Ticket {
+  string key = 1; // e.g. "RAN-19"; the lane namespace is rl-<key, lowercased>
+  string title = 2;
+  string description = 3;
+  repeated string criteria = 4; // AC1..ACn, in order
 }
 
 message Worktree {
@@ -97,6 +107,8 @@ message Worktree {
   string base_sha = 2;
   string branch = 3; // rangelight/<slug>
   string checkpoint_ref = 4; // refs/rangelight/sessions/<id>/cp/<n>, for wake/fork (ADR 0010)
+  string base_ref = 5; // the approved base branch: the worktree starts here and the profile is read here (ADR 0041)
+  string mirror_repo = 6; // the git mirror's name for repo, served at /<mirror_repo>.git
 }
 
 enum Phase {

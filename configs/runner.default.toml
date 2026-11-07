@@ -9,6 +9,10 @@ listen = ":8080"
 mirror_url = "http://git-mirror.rangelight-system.svc.cluster.local:8080"
 # The runner's own projected token for the mirror (audience rangelight-git-mirror), read at each fetch.
 mirror_token_file = "/var/run/secrets/rangelight/git-mirror/token"
+# The cluster DNS pods, the only DNS server a lane may query (through Cilium's DNS proxy): their namespace
+# and one label that selects them. The common kube-dns label; RKE2's CoreDNS is k8s-app=coredns.
+dns_namespace = "kube-system"
+dns_pod_label = "k8s-app=kube-dns"
 # How many Sessions reconcile at once. Each profile read is a depth-1 clone on the runner's /tmp for up
 # to 30 seconds, so a slow mirror holds one worker, and /tmp holds up to this many clones.
 workers = 4

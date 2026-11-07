@@ -460,7 +460,8 @@ func TestAnthropicEgress(t *testing.T) {
 		t.Fatalf("spec %s: %v", raw, err)
 	}
 	dns, web := spec.Egress[0], spec.Egress[1]
-	if dns.ToEndpoints[0].MatchLabels["k8s:k8s-app"] != "kube-dns" || dns.ToPorts[0].Ports[0].Port != "53" {
+	if dns.ToEndpoints[0].MatchLabels["k8s:k8s-app"] != "coredns" || dns.ToEndpoints[0].MatchLabels["k8s:io.kubernetes.pod.namespace"] != "kube-system" ||
+		dns.ToPorts[0].Ports[0].Port != "53" {
 		t.Errorf("DNS does not go through Cilium's DNS proxy: %s", raw)
 	}
 	// Only exact names resolve, so a query name can't carry data out.
@@ -558,7 +559,7 @@ func TestTamperedPoliciesArePutBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := egressPolicy(s).Spec
-	wantCilium := ciliumPolicy(s, strings.Split(strings.TrimPrefix(mirror.URL, "http://"), ":")[0]).Object["spec"]
+	wantCilium := ciliumPolicy(s, strings.Split(strings.TrimPrefix(mirror.URL, "http://"), ":")[0], options.DNS).Object["spec"]
 	// Well inside the 10-hour resync: only a watch puts them back this fast.
 	eventually(t, "both policies restored", func() error {
 		if err := errors.Join(k8s.Get(ctx, client.ObjectKeyFromObject(np), np), k8s.Get(ctx, client.ObjectKeyFromObject(cnp), cnp)); err != nil {

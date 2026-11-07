@@ -133,6 +133,13 @@ runner:
   # The lane agent image (services/agent), by tag and digest: ghcr.io/rangelight/agent:<sha>@sha256:<digest>.
   # Required when enabled.
   agentImage: ""
+  # The cluster DNS pods, the only DNS server a lane may query (through Cilium's DNS proxy, which answers only
+  # Anthropic's hosts and the mirror). Distributions label CoreDNS differently: check with
+  # `kubectl -n kube-system get pods --show-labels`. RKE2: podLabel "k8s-app=coredns".
+  dns:
+    namespace: "kube-system"
+    # One label that selects them, as key=value.
+    podLabel: "k8s-app=kube-dns"
   # How many Sessions reconcile at once. Each one may hold a depth-1 clone of a repo's base branch on /tmp for up to
   # 30 seconds while it reads rangelight.yaml.
   workers: 4

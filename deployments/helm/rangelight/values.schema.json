@@ -109,12 +109,26 @@
     "runner": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "namespace", "image", "agentImage", "workers", "tmpSize", "resources"],
+      "required": ["enabled", "namespace", "image", "agentImage", "dns", "workers", "tmpSize", "resources"],
       "properties": {
         "enabled": { "description": "Run the runner.", "type": "boolean" },
         "namespace": { "description": "The runner's own namespace, never rangelight-system.", "$ref": "#/$defs/dnsName" },
         "image": { "description": "The runner image, by tag and digest.", "anyOf": [{ "const": "" }, { "$ref": "#/$defs/pinnedImage" }] },
         "agentImage": { "description": "The lane agent image, by tag and digest.", "anyOf": [{ "const": "" }, { "$ref": "#/$defs/pinnedImage" }] },
+        "dns": {
+          "description": "The cluster DNS pods, the lanes' only DNS server.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["namespace", "podLabel"],
+          "properties": {
+            "namespace": { "$ref": "#/$defs/dnsName" },
+            "podLabel": {
+              "description": "One label that selects them, as key=value.",
+              "type": "string",
+              "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?=[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$"
+            }
+          }
+        },
         "workers": { "description": "How many Sessions reconcile at once.", "type": "integer", "minimum": 1, "maximum": 64 },
         "tmpSize": { "description": "The runner's /tmp, for the profile reads' shallow clones.", "$ref": "#/$defs/storage" },
         "resources": { "$ref": "#/$defs/resources" }

@@ -44,9 +44,11 @@ func run() error {
 		return fmt.Errorf("session: %w", err)
 	}
 	workspace, tmp, ephemeral := cfg.Quantities()
+	dnsKey, dnsValue := cfg.DNSLabel()
 	r := &session.Reconciler{Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Options: session.Options{
 		AgentImage: cfg.AgentImage, MirrorURL: cfg.MirrorURL, MirrorTokenFile: cfg.MirrorTokenFile,
 		Workspace: workspace, Tmp: tmp, EphemeralStorage: ephemeral, Workers: cfg.Workers,
+		DNS: session.DNS{Namespace: cfg.DNSNamespace, LabelKey: dnsKey, LabelValue: dnsValue},
 	}}
 	if err := r.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("session: %w", err)

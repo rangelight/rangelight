@@ -14,7 +14,7 @@ func TestLoadLayers(t *testing.T) {
 	if err := os.WriteFile(file, []byte("agent_image = \""+image+"\"\nlog_level = \"debug\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c, err := load(file, []string{"RANGELIGHT_RUNNER_LOG_LEVEL=warn", "RANGELIGHT_RUNNER_MIRROR_URL=http://mirror:8080/", "RANGELIGHT_RUNNER_WORKERS=8", "HOME=/x"})
+	c, err := load(file, []string{"RANGELIGHT_RUNNER_LOG_LEVEL=warn", "RANGELIGHT_RUNNER_MIRROR_URL=http://mirror:8080/", "RANGELIGHT_RUNNER_WORKERS=8", "RANGELIGHT_RUNNER_DNS_POD_LABEL=k8s-app=coredns", "HOME=/x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,9 +22,13 @@ func TestLoadLayers(t *testing.T) {
 		Namespace: "rangelight-runner", Listen: ":8080", MirrorURL: "http://mirror:8080",
 		MirrorTokenFile: "/var/run/secrets/rangelight/git-mirror/token", Workers: 8, AgentImage: image,
 		LaneWorkspaceSize: "10Gi", LaneTmpSize: "1Gi", LaneEphemeralStorage: "12Gi", LogLevel: "warn",
+		DNSNamespace: "kube-system", DNSPodLabel: "k8s-app=coredns",
 	}
 	if c != want {
 		t.Errorf("got %+v, want %+v", c, want)
+	}
+	if k, v := c.DNSLabel(); k != "k8s-app" || v != "coredns" {
+		t.Errorf("DNSLabel() = %q, %q", k, v)
 	}
 }
 
@@ -55,6 +59,10 @@ func TestLoadRefuses(t *testing.T) {
 		{"a relative token file", "", "RANGELIGHT_RUNNER_MIRROR_TOKEN_FILE=token", "mirror_token_file"},
 		{"a token file with ..", "", "RANGELIGHT_RUNNER_MIRROR_TOKEN_FILE=/var/../token", "mirror_token_file"},
 		{"no workers", "", "RANGELIGHT_RUNNER_WORKERS=0", "workers"},
+		{"a bad DNS namespace", "", "RANGELIGHT_RUNNER_DNS_NAMESPACE=Kube_System", "dns_namespace"},
+		{"a DNS label without a value", "", "RANGELIGHT_RUNNER_DNS_POD_LABEL=k8s-app", "dns_pod_label"},
+		{"a DNS label with an empty value", "", "RANGELIGHT_RUNNER_DNS_POD_LABEL=k8s-app=", "dns_pod_label"},
+		{"a DNS label that isn't a label", "", "RANGELIGHT_RUNNER_DNS_POD_LABEL=k8s app=kube dns", "dns_pod_label"},
 		{"workers not a number", "", "RANGELIGHT_RUNNER_WORKERS=many", "RANGELIGHT_RUNNER_WORKERS: want a number"},
 		{"a workspace that isn't a size", "", "RANGELIGHT_RUNNER_LANE_WORKSPACE_SIZE=big", "lane_workspace_size"},
 		{"no tmp", "", "RANGELIGHT_RUNNER_LANE_TMP_SIZE=0", "lane_tmp_size"},

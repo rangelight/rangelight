@@ -8,3 +8,6 @@ gitMirror:
       upstream: "https://github.com/rangelight/opentelemetry-demo.git"
 runner:
   enabled: true
+  # The dev cluster runs RKE2, whose CoreDNS is labelled k8s-app=coredns.
+  dns:
+    podLabel: "k8s-app=coredns"

@@ -29,6 +29,8 @@ type Options struct {
 	// Workspace, Tmp and EphemeralStorage bound the agent pod's disk: the worktree's and /tmp's
 	// emptyDirs, and the container's ephemeral-storage limit.
 	Workspace, Tmp, EphemeralStorage resource.Quantity
+	// DNS selects the cluster DNS pods, the lane's only DNS server.
+	DNS DNS
 	// Workers is how many Sessions reconcile at once, so one slow mirror fetch stalls only one.
 	Workers int
 }
@@ -176,7 +178,7 @@ func (r *Reconciler) ensurePolicies(ctx context.Context, s *Session) error {
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, np, func() error { np.Spec = spec; return nil }); err != nil {
 		return fmt.Errorf("lane %s: network policy: %w", Namespace(s), err)
 	}
-	cnp := ciliumPolicy(s, r.mirrorHost)
+	cnp := ciliumPolicy(s, r.mirrorHost, r.DNS)
 	cspec := cnp.Object["spec"]
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, cnp, func() error { cnp.Object["spec"] = cspec; return nil })
 	if meta.IsNoMatchError(err) {

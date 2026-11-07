@@ -39,14 +39,16 @@ const (
 	agentUID       = 1000 // the agent image's node user (ADR 0045 §5)
 )
 
-// The git mirror (RAN-17) and the cluster DNS, the lane's only in-cluster egress (ADR 0016).
+// The git mirror (RAN-17), the lane's only in-cluster egress besides the cluster DNS (ADR 0016).
 const (
 	mirrorNamespace = "rangelight-system"
 	mirrorApp       = "git-mirror"
 	mirrorPort      = 8080
-	dnsNamespace    = "kube-system"
-	dnsApp          = "kube-dns"
 )
+
+// DNS selects the cluster DNS pods: their namespace and one label. Distributions label CoreDNS
+// differently (k8s-app=kube-dns, k8s-app=coredns), so it is the runner's config, not a constant.
+type DNS struct{ Namespace, LabelKey, LabelValue string }
 
 var ciliumPolicyKind = schema.GroupVersionKind{Group: "cilium.io", Version: "v2", Kind: "CiliumNetworkPolicy"}
 
@@ -103,7 +105,7 @@ func egressPolicy(s *Session) *networkingv1.NetworkPolicy {
 // ciliumPolicy is the lane's DNS and its Anthropic egress (ADR 0046 amendment). Cilium's DNS proxy
 // answers only Anthropic's hosts and the mirror's service name, so query names can't carry data out,
 // and toFQDNs learns Anthropic's addresses from those answers.
-func ciliumPolicy(s *Session, mirrorHost string) *unstructured.Unstructured {
+func ciliumPolicy(s *Session, mirrorHost string, dns DNS) *unstructured.Unstructured {
 	fqdns := make([]any, 0, len(AnthropicHosts))
 	names := []any{map[string]any{"matchName": mirrorHost}}
 	for _, h := range AnthropicHosts {
@@ -116,7 +118,7 @@ func ciliumPolicy(s *Session, mirrorHost string) *unstructured.Unstructured {
 			"egress": []any{
 				map[string]any{
 					"toEndpoints": []any{map[string]any{"matchLabels": map[string]any{
-						"k8s:io.kubernetes.pod.namespace": dnsNamespace, "k8s:k8s-app": dnsApp,
+						"k8s:io.kubernetes.pod.namespace": dns.Namespace, "k8s:" + dns.LabelKey: dns.LabelValue,
 					}}},
 					"toPorts": []any{map[string]any{
 						"ports": []any{map[string]any{"port": "53", "protocol": "ANY"}},

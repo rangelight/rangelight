@@ -18,6 +18,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/rangelight/rangelight/configs"
 )
@@ -43,6 +44,9 @@ type Config struct {
 	MirrorURL string `toml:"mirror_url"`
 	// MirrorTokenFile is the runner's own projected token for the mirror, an absolute path.
 	MirrorTokenFile string `toml:"mirror_token_file"`
+	// DNSNamespace and DNSPodLabel (key=value) select the cluster DNS pods, the lane's only DNS server.
+	DNSNamespace string `toml:"dns_namespace"`
+	DNSPodLabel  string `toml:"dns_pod_label"`
 	// Workers is how many Sessions reconcile at once, 1 to 64.
 	Workers int `toml:"workers"`
 	// AgentImage is the lane agent's image, by tag and digest.
@@ -63,6 +67,12 @@ func (c Config) Quantities() (resource.Quantity, resource.Quantity, resource.Qua
 		return q
 	}
 	return size(c.LaneWorkspaceSize), size(c.LaneTmpSize), size(c.LaneEphemeralStorage)
+}
+
+// DNSLabel is DNSPodLabel's key and value. Load validated it.
+func (c Config) DNSLabel() (string, string) {
+	k, v, _ := strings.Cut(c.DNSPodLabel, "=")
+	return k, v
 }
 
 // Level is the slog level of LogLevel.
@@ -112,6 +122,7 @@ func (c *Config) fields() map[string]*string {
 		"mirror_token_file": &c.MirrorTokenFile, "agent_image": &c.AgentImage, "log_level": &c.LogLevel,
 		"lane_workspace_size": &c.LaneWorkspaceSize, "lane_tmp_size": &c.LaneTmpSize,
 		"lane_ephemeral_storage": &c.LaneEphemeralStorage,
+		"dns_namespace":          &c.DNSNamespace, "dns_pod_label": &c.DNSPodLabel,
 	}
 }
 
@@ -157,6 +168,10 @@ func (c *Config) validate() error {
 	check(pinnedImage.MatchString(c.AgentImage) && !strings.Contains(c.AgentImage, ":latest@"),
 		"agent_image", "an image by tag and digest, not latest")
 	check(filepath.IsAbs(c.MirrorTokenFile) && filepath.Clean(c.MirrorTokenFile) == c.MirrorTokenFile, "mirror_token_file", "a clean absolute path")
+	check(dnsName.MatchString(c.DNSNamespace), "dns_namespace", "a namespace name")
+	k, v, found := strings.Cut(c.DNSPodLabel, "=")
+	check(found && len(validation.IsQualifiedName(k)) == 0 && v != "" && len(validation.IsValidLabelValue(v)) == 0,
+		"dns_pod_label", "one label as key=value, like k8s-app=kube-dns")
 	check(c.Workers >= 1 && c.Workers <= 64, "workers", "1 to 64")
 	sizes := map[string]string{"lane_workspace_size": c.LaneWorkspaceSize, "lane_tmp_size": c.LaneTmpSize, "lane_ephemeral_storage": c.LaneEphemeralStorage}
 	for key, v := range sizes {

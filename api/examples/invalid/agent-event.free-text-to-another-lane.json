@@ -1,0 +1,10 @@
+{
+  "messageId": "019a3f50-0000-7000-8000-00000000000a",
+  "sessionId": "019a3f4e-7c21-7d10-9a3b-2f5e6c7d8a90",
+  "at": "2026-11-01T09:41:00Z",
+  "type": "message",
+  "payload": {
+    "to": "019a3f4e-0000-7000-8000-000000000001",
+    "text": "please change your branch"
+  }
+}

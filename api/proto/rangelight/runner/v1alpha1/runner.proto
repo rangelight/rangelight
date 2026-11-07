@@ -1,0 +1,217 @@
+// The runner protocol, v1alpha1: the only interface between the control plane and a runner.
+// Maturity: v1alpha1 may break, with a changelog entry in api/README.md (ADR 0027).
+// ADRs: 0008, 0012, 0018, 0021, 0024, 0027, 0040, 0041, 0042.
+// Transport: protobuf messages on NATS subjects (subject map in api/README.md). Not gRPC.
+syntax = "proto3";
+
+package rangelight.runner.v1alpha1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/rangelight/rangelight/shared/go/gen/rangelight/runner/v1alpha1;runnerv1alpha1";
+
+// Envelope on every subject. Receivers dedupe on message_id.
+message Envelope {
+  string message_id = 1; // UUIDv7, also set as the Nats-Msg-Id header
+  string protocol_version = 2; // "v1alpha1"
+  string runner_id = 3;
+  google.protobuf.Timestamp sent_at = 4;
+  oneof body {
+    RunnerHello hello = 10;
+    RunnerWelcome welcome = 11;
+    CapacityReport capacity = 12;
+    SessionDesired desired = 13;
+    SessionStatus status = 14;
+    Command command = 15;
+    CommandResult result = 16;
+    Error error = 17;
+    GateResult gate_result = 18;
+  }
+}
+
+// runner -> control plane, request/reply on rl.<org>.runner.hello
+message RunnerHello {
+  string runner_id = 1; // stable per cluster
+  string cluster_name = 2;
+  string runner_version = 3; // semver
+  repeated string supported_protocols = 4; // e.g. ["v1alpha1"]
+  string sa_issuer_url = 5; // cluster ServiceAccount issuer; CP validates projected tokens via OIDC discovery (ADR 0018 amendment)
+  repeated string runtime_classes = 6; // e.g. ["runc", "gvisor"]
+  bool csi_clone_supported = 7; // ADR 0038 accelerator
+  string preview_domain = 8; // ADR 0039
+  string argocd_namespace = 9;
+}
+
+message RunnerWelcome {
+  string negotiated_protocol = 1;
+  google.protobuf.Duration capacity_report_interval = 2;
+  repeated SessionDesired sessions = 3; // full desired set: runner reconciles to exactly this
+}
+
+// runner -> CP on rl.<org>.runner.<runner>.capacity (also on change)
+message CapacityReport {
+  int64 allocatable_millicpu = 1;
+  int64 allocatable_memory_bytes = 2;
+  int64 requested_millicpu = 3;
+  int64 requested_memory_bytes = 4;
+  int32 hot_sessions = 5;
+  int32 warm_namespaces_ready = 6;
+  repeated string pending_session_ids = 7; // pods Pending beyond threshold (ADR 0018 placement feedback)
+}
+
+enum SessionKind {
+  SESSION_KIND_UNSPECIFIED = 0;
+  SESSION_KIND_PLAN = 1;
+  SESSION_KIND_BUILD = 2;
+}
+enum DesiredState {
+  DESIRED_STATE_UNSPECIFIED = 0;
+  DESIRED_STATE_HOT = 1;
+  DESIRED_STATE_WARM = 2;
+  DESIRED_STATE_COLD = 3;
+}
+
+// CP -> runner on rl.<org>.runner.<runner>.desired. Mirrors the Session CRD spec (ADR 0012).
+message SessionDesired {
+  string session_id = 1; // UUIDv7
+  uint64 generation = 2; // monotonic per session; runner ignores older
+  SessionKind kind = 3;
+  DesiredState state = 4;
+  string namespace = 5; // rl-<slug>
+  int32 priority = 6; // maps to a PriorityClass
+  string profile_digest = 7; // rangelight.yaml digest
+  bytes profile = 8; // rangelight.yaml as JSON, read from the approved base branch, never the session branch (ADR 0041)
+  string profile_source_sha = 16; // base-branch commit the profile was read from
+  repeated Worktree worktrees = 9;
+  string agent_image = 10; // digest-pinned
+  string runtime_class = 11;
+  repeated string under_change = 12; // service names from the profile
+  map<string, string> credential_refs = 13; // name -> secret ref; never values (ADR 0004)
+  google.protobuf.Duration idle_autostop = 14; // delegated local timer (ADR 0018)
+  string owner = 15; // OIDC subject, for labels/audit only
+}
+
+message Worktree {
+  string repo = 1; // owner/name
+  string base_sha = 2;
+  string branch = 3; // rangelight/<slug>
+  string checkpoint_ref = 4; // refs/rangelight/sessions/<id>/cp/<n>, for wake/fork (ADR 0010)
+}
+
+enum Phase {
+  PHASE_UNSPECIFIED = 0;
+  PHASE_QUEUED = 1;
+  PHASE_STARTING = 2;
+  PHASE_RUNNING = 3;
+  PHASE_HIBERNATING = 4;
+  PHASE_HIBERNATED = 5;
+  PHASE_WAKING = 6;
+  PHASE_TERMINATING = 7;
+  PHASE_GONE = 8;
+  PHASE_FAILED = 9;
+}
+
+enum Layer {
+  LAYER_UNSPECIFIED = 0;
+  LAYER_CODE = 1;
+  LAYER_DEPS = 2;
+  LAYER_NEIGHBOURS = 3;
+  LAYER_SCHEMA = 4;
+  LAYER_SERVICE = 5;
+  LAYER_PREVIEW = 6;
+}
+
+message LayerStatus {
+  Layer layer = 1;
+  bool ready = 2;
+  google.protobuf.Duration elapsed = 3; // since session start
+  string detail = 4; // e.g. "restoring caches"
+}
+
+// runner -> CP on rl.<org>.runner.<runner>.status (JetStream, per-session ordered)
+message SessionStatus {
+  string session_id = 1;
+  uint64 observed_generation = 2;
+  Phase phase = 3;
+  repeated LayerStatus layers = 4;
+  string preempted_by = 5; // session id, when hibernated by preemption (ADR 0008)
+  repeated string preview_urls = 6;
+  string node_name = 7;
+  string message = 8;
+}
+
+// CP -> runner, request/reply on rl.<org>.runner.<runner>.cmd
+message Command {
+  string command_id = 1; // idempotency key
+  string session_id = 2;
+  oneof kind {
+    Hibernate hibernate = 10;
+    Wake wake = 11;
+    Teardown teardown = 12;
+    RunGate run_gate = 13;
+  }
+}
+message Hibernate {
+  string reason = 1;
+  string preempted_by = 2;
+}
+message Wake {
+  string checkpoint_ref = 1;
+}
+message Teardown {
+  bool keep_namespace_warm = 1;
+}
+
+// Start a gate Job that proves one contract criterion (ADR 0041). The runner
+// runs it in the session namespace on a read-only checkout of `commit`, outside
+// the agent's process, and reports a GateResult. Its evidence is `observed`.
+message RunGate {
+  string gate_id = 1;
+  string criterion_id = 2;
+  string commit = 3; // committed SHA under test
+  string image = 4; // digest-pinned gate image
+  repeated string command = 5;
+  google.protobuf.Duration timeout = 6;
+}
+
+// runner -> CP on rl.<org>.runner.<runner>.gate (JetStream, per-session ordered)
+message GateResult {
+  string session_id = 1;
+  string gate_id = 2;
+  string criterion_id = 3;
+  string commit = 4;
+  bool passed = 5;
+  repeated Artifact artifacts = 6; // reports, traces, by digest
+  google.protobuf.Duration elapsed = 7;
+}
+
+message Artifact {
+  string name = 1;
+  string uri = 2;
+  string media_type = 3;
+  string sha256 = 4;
+}
+
+message CommandResult {
+  string command_id = 1;
+  bool accepted = 2; // accepted = will converge; outcome arrives as SessionStatus
+  Error error = 3;
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_UNSUPPORTED_PROTOCOL = 1;
+  ERROR_CODE_STALE_GENERATION = 2;
+  ERROR_CODE_UNKNOWN_SESSION = 3;
+  ERROR_CODE_INVALID_PROFILE = 4; // e.g. shared resource rendered per session (rangelight.yaml rules)
+  ERROR_CODE_CAPACITY = 5;
+  ERROR_CODE_FORBIDDEN = 6;
+  ERROR_CODE_INTERNAL = 7;
+}
+
+message Error {
+  ErrorCode code = 1;
+  string message = 2;
+  bool retryable = 3;
+}

@@ -1,0 +1,9 @@
+{
+  "messageId": "019a3f50-0000-7000-8000-00000000000b",
+  "sessionId": "019a3f4e-7c21-7d10-9a3b-2f5e6c7d8a90",
+  "at": "2026-11-01T09:42:00Z",
+  "type": "progress",
+  "payload": {
+    "question": "which one?"
+  }
+}

@@ -1,0 +1,86 @@
+---
+# Example rangelight.yaml for a fork of open-telemetry/opentelemetry-demo.
+# Chart: open-telemetry/opentelemetry-helm-charts, opentelemetry-demo 0.42.6 (app 3.1.0), read 2026-11-01.
+# Component names, ports and dependencies are from that chart's values.yaml. Lines marked GUESS are not verified.
+apiVersion: "rangelight.dev/v1alpha1"
+kind: "PreviewProfile"
+metadata:
+  name: "otel-demo"
+  pinnedBy: "github|maintainer"
+spec:
+  devcontainer: ".devcontainer/devcontainer.json"
+  tests:                                            # ADR 0045: Rangelight runs these itself
+    command: "make test"                            # GUESS: the fork adds a top-level test target
+    format: "junit"
+    reportPath: "build/test-results/junit.xml"      # GUESS
+  externalChecks:                                   # ADR 0054: the fork's own CI must pass too
+    - name: "build-test"                            # GUESS: the upstream Actions job name
+      app: "github-actions"
+  argo:
+    source:
+      repoURL: "https://open-telemetry.github.io/opentelemetry-helm-charts"
+      chart: "opentelemetry-demo"
+      targetRevision: "0.42.6"
+    overlay:
+      values:
+        opentelemetry-collector: {enabled: false}   # toggles from Chart.yaml dependency conditions
+        jaeger: {enabled: false}
+        prometheus: {enabled: false}
+        grafana: {enabled: false}
+        opensearch: {enabled: false}
+        components:
+          load-generator: {enabled: false}
+  services:
+    - name: "frontend"
+      serviceName: "frontend"
+      port: 8080
+      underChange:
+        repoPath: "src/frontend"
+        command: "npm run dev -- --port 8080"          # GUESS: dev script name
+        park:
+          values: {components: {frontend: {enabled: false}}}
+    - name: "frontend-proxy"
+      serviceName: "frontend-proxy"
+      port: 8080
+      expose: true
+    - name: "checkout"
+      serviceName: "checkout"
+      port: 8080
+      underChange:
+        repoPath: "src/checkout"
+        command: "go run github.com/air-verse/air@latest"   # GUESS: air config not in repo yet
+        park:
+          values: {components: {checkout: {enabled: false}}}
+    - name: "cart"
+      serviceName: "cart"
+      port: 8080
+      underChange:
+        repoPath: "src/cart"
+        command: "dotnet watch run --urls http://*:8080"
+        env: {VALKEY_ADDR: "valkey-cart:6379"}
+        park:
+          values: {components: {cart: {enabled: false}}}
+  data:
+    - name: "astronomy-db"
+      engine: "postgres"
+      mode: "fixtures"              # launch is fixtures-first (ADR 0044); masked-snapshot comes after launch
+    - name: "valkey-cart"
+      engine: "valkey"
+      mode: "fixtures"
+    - name: "kafka"
+      engine: "kafka"
+      mode: "fixtures"
+  externalDeps:
+    - name: "payment-provider"     # GUESS: the demo's payment service is internal; this models a real PSP
+      mode: "mock"
+      hosts: ["api.payments.example"]
+      mock: {engine: "prism", spec: "specs/payment-provider.openapi.yaml"}
+  secrets:
+    previewSet: "otel-demo-preview"
+  readiness:
+    - layer: "neighbours"
+      check: {tcp: "kafka:9092"}
+    - layer: "neighbours"
+      check: {tcp: "valkey-cart:6379"}
+    - layer: "preview"
+      check: {http: "http://frontend-proxy:8080/"}

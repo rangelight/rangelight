@@ -80,7 +80,7 @@ test_size_skips_tests_generated_and_docs() {
   lines control-plane/crates/rl-domain/src/tests.rs 900
   lines runner/internal/session/big_test.go 900
   lines agent/src/big.test.ts 900
-  lines spec/gen/go/big.go 900
+  lines api/gen/go/big.go 900
   lines control-plane/crates/rl-proto/src/big.rs 900
   lines control-plane/.sqlx/big.sql 900
   lines docs/big.md 900
@@ -171,7 +171,7 @@ test_scrub_honours_allow_list() {
 # --- rules (ADR 0049 §2.4, §5.1, §6, §10) --------------------------------------
 
 test_rules_pass_clean_tree() {
-  put runner/internal/config/config.go 'v := os.Getenv("RANGELIGHT_RUNNER_X")'
+  put services/runner/internal/config/config.go 'v := os.Getenv("RANGELIGHT_RUNNER_X")'
   put agent/src/config.ts 'const v = process.env["X"];'
   put control-plane/crates/rl-config/src/lib.rs 'let v = std::env::var("X");'
   put control-plane/crates/rl-store/src/lane.rs 'sqlx::query_file_as!(Lane, "queries/lane/get.sql")'
@@ -221,6 +221,85 @@ test_rules_raw_colour_outside_tokens() {
   expect_out "web/src/c.css:1"
 }
 
+# --- spec (RAN-15) -------------------------------------------------------------
+
+# spec_fixture: the repo's real contracts, generated code and embedded schema copies.
+spec_fixture() {
+  mkdir -p "${REPO}/services/runner/internal/session" "${REPO}/shared/go"
+  cp -R "${ROOT}/api" "${REPO}/api"
+  cp "${ROOT}/go.mod" "${ROOT}/go.sum" "${REPO}/"
+  cp -R "${ROOT}/shared/go/gen" "${REPO}/shared/go/"
+  cp -R "${ROOT}/services/runner/internal/session/schema" "${REPO}/services/runner/internal/session/"
+}
+
+test_spec_fails_without_contract_files() {
+  run spec
+  expect_status 1
+  expect_out "spec: missing api/buf.yaml"
+  expect_out "spec: missing api/proto/rangelight/runner/v1alpha1/runner.proto"
+  expect_out "spec: missing api/jsonschema/agent-event.v1alpha1.schema.json"
+  expect_out "FAIL: spec (missing files)"
+}
+
+test_spec_passes_with_contracts() {
+  spec_fixture
+  run spec
+  expect_status 0
+  expect_out "ok: spec"
+}
+
+test_spec_fails_when_embedded_copy_differs() {
+  spec_fixture
+  printf ' \n' >>"${REPO}/services/runner/internal/session/schema/rangelight.v1alpha1.schema.json"
+  run spec
+  expect_status 1
+  expect_out "services/runner/internal/session/schema/rangelight.v1alpha1.schema.json differs from api/jsonschema/"
+}
+
+test_spec_fails_when_invalid_example_validates() {
+  spec_fixture
+  cp "${REPO}/api/examples/receipt.example.json" "${REPO}/api/examples/invalid/receipt.not-really.json"
+  run spec
+  expect_status 1
+  expect_out "api/examples/invalid/receipt.not-really.json passes"
+}
+
+test_spec_fails_when_example_does_not_validate() {
+  spec_fixture
+  cp "${REPO}/api/examples/invalid/receipt.missing-provenance.json" "${REPO}/api/examples/receipt.broken.json"
+  run spec
+  expect_status 1
+  expect_out "'provenance' is a required property"
+  expect_out "FAIL: spec (schemas)"
+}
+
+test_spec_fails_on_example_without_schema() {
+  spec_fixture
+  put api/examples/session.example.json '{}'
+  run spec
+  expect_status 1
+  expect_out "api/examples/session.example.json: no schema for this name"
+}
+
+test_spec_fails_on_stale_generated_code() {
+  spec_fixture
+  printf '// edited by hand\n' >>"${REPO}/shared/go/gen/rangelight/runner/v1alpha1/runner.pb.go"
+  run spec
+  expect_status 1
+  expect_out "shared/go/gen is stale"
+}
+
+test_spec_fails_on_breaking_change_against_base() {
+  spec_fixture
+  git -C "${REPO}" add -A
+  git -C "${REPO}" -c user.name=t -c user.email=t@example.com commit -qm base
+  sed -i '/string node_name = 7;/d' "${REPO}/api/proto/rangelight/runner/v1alpha1/runner.proto"
+  run spec RANGELIGHT_SPEC_BASE=HEAD
+  expect_status 1
+  expect_out 'Previously present field "7" with name "node_name"'
+  expect_out "FAIL: spec (breaking change against HEAD)"
+}
+
 # --- dispatcher and empty parts ------------------------------------------------
 
 test_unknown_part_prints_usage_and_exits_2() {
@@ -233,7 +312,7 @@ test_unknown_part_prints_usage_and_exits_2() {
 
 test_parts_without_sources_skip() {
   local part
-  for part in spec rust go ts hooks; do
+  for part in rust go ts hooks; do
     run "${part}"
     expect_status 0
     expect_out "skipped: ${part} (no sources yet)"

@@ -8,6 +8,8 @@ ROOT="$(git rev-parse --show-toplevel)"
 PARTS=(size rules secrets scrub spec rust go ts deploy hooks fmt all)
 GOLANGCI_LINT="github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0"
 GOVULNCHECK="golang.org/x/vuln/cmd/govulncheck@v1.9.0"
+BUF_VERSION="1.75.0"
+CHECK_JSONSCHEMA_VERSION="0.38.2"
 # Built from parts so the rules part never matches its own source.
 TAG="TO""DO"
 
@@ -19,7 +21,8 @@ repo_files() {
     while IFS= read -r f; do [[ -f "${f}" ]] && printf '%s\n' "${f}"; done
 }
 
-has_files() { repo_files | grep -qE "$1"; }
+# Reads all of its input: `grep -q` would exit early and, under pipefail, SIGPIPE reads as "no files".
+has_files() { repo_files | grep -E "$1" >/dev/null; }
 
 need() {
   local tool
@@ -27,6 +30,10 @@ need() {
     command -v "${tool}" >/dev/null || { printf 'missing tool: %s\n' "${tool}" >&2; return 1; }
   done
 }
+
+# The toolchain pinned in go.mod. `go run tool@version` builds the tool with the tool's own go line
+# and an exported GOTOOLCHAIN wins over go.mod, so every go call here names this one.
+go_toolchain() { awk '$1 == "toolchain" { print $2 }' go.mod; }
 
 ok() { printf 'ok: %s\n' "$1"; }
 skip() { printf 'skipped: %s (no sources yet)\n' "$1"; }
@@ -88,7 +95,7 @@ rules() {
   local f out env=() sql=() todo=() colour=()
   while IFS= read -r f; do
     case "${f}" in
-      control-plane/crates/rl-config/* | runner/internal/config/* | agent/src/config.ts) ;;
+      control-plane/crates/rl-config/* | services/*/internal/config/* | agent/src/config.ts) ;;
       *.rs | *.go | *.ts | *.tsx) env+=("${f}") ;;
     esac
     case "${f}" in *.rs) sql+=("${f}") ;; esac
@@ -165,20 +172,115 @@ scrub() {
   ok scrub
 }
 
-# --- per-component parts --------------------------------------------------------
+# --- spec: the v1alpha1 contracts (ADR 0025, ADR 0027, ADR 0049 §2.3) ----------
+
+SPEC_REQUIRED=(
+  api/README.md api/buf.yaml api/buf.gen.yaml
+  api/proto/rangelight/runner/v1alpha1/runner.proto
+  api/jsonschema/receipt-predicate.v1alpha1.schema.json
+  api/jsonschema/rangelight.v1alpha1.schema.json
+  api/jsonschema/agent-event.v1alpha1.schema.json
+  go.mod go.sum
+  services/runner/internal/session/schema/rangelight.v1alpha1.schema.json
+)
+# The generated package lives where Go imports it from; buf.gen.yaml writes it there.
+SPEC_GO_GEN="shared/go/gen"
+
+# Every file the spec needs is there.
+spec_files() {
+  local f bad=0
+  for f in "${SPEC_REQUIRED[@]}"; do
+    [[ -f "${f}" ]] || { printf 'spec: missing %s\n' "${f}" >&2; bad=1; }
+  done
+  [[ "${bad}" -eq 0 ]] || failed "spec (missing files)"
+}
+
+# The runner embeds copies of schemas (go:embed can't reach api/); each must equal its source.
+spec_copies() {
+  local f bad=0
+  for f in services/runner/internal/session/schema/*.json; do
+    cmp -s "${f}" "api/jsonschema/${f##*/}" && continue
+    printf 'spec: %s differs from api/jsonschema/%s; copy it over\n' "${f}" "${f##*/}" >&2
+    bad=1
+  done
+  [[ "${bad}" -eq 0 ]] || failed "spec (embedded copy differs)"
+}
+
+# spec_schema_for <example>: the schema an example is written against, from its name's first word.
+spec_schema_for() {
+  local name="${1##*/}"
+  case "${name%%.*}" in
+    receipt) printf 'api/jsonschema/receipt-predicate.v1alpha1.schema.json' ;;
+    rangelight | agent-event) printf 'api/jsonschema/%s.v1alpha1.schema.json' "${name%%.*}" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Schemas are valid against their metaschema; valid examples pass; every invalid example fails.
+spec_schemas() {
+  local f schema status bad=0 covered=()
+  for f in api/jsonschema/*.json; do
+    check-jsonschema --check-metaschema "${f}" >/dev/null || { printf 'spec: %s: not a valid schema\n' "${f}" >&2; bad=1; }
+  done
+  while IFS= read -r f; do
+    schema="$(spec_schema_for "${f}")" || { printf 'spec: %s: no schema for this name\n' "${f}" >&2; bad=1; continue; }
+    status=0
+    check-jsonschema --schemafile "${schema}" "${f}" >/dev/null 2>&1 || status=$?
+    case "${f}:${status}" in
+      api/examples/invalid/*:1) covered+=("invalid:${schema}") ;;
+      api/examples/invalid/*:0) printf 'spec: %s passes %s; it must fail\n' "${f}" "${schema}" >&2; bad=1 ;;
+      *:0) covered+=("valid:${schema}") ;;
+      *) check-jsonschema --schemafile "${schema}" "${f}" >&2 || true; bad=1 ;;
+    esac
+  done < <(repo_files | grep -E '^api/examples/.*\.(json|ya?ml)$')
+  for f in api/jsonschema/*.json; do
+    for status in valid invalid; do
+      [[ " ${covered[*]} " == *" ${status}:${f} "* ]] ||
+        { printf 'spec: %s has no %s example that checks\n' "${f}" "${status}" >&2; bad=1; }
+    done
+  done
+  [[ "${bad}" -eq 0 ]] || failed "spec (schemas)"
+}
+
+# buf format, lint and breaking (against main); the committed Go code is what buf generates.
+spec_proto() {
+  local base="${RANGELIGHT_SPEC_BASE:-origin/main}" tmp toolchain
+  toolchain="$(go_toolchain)"
+  (cd api && buf format --diff --exit-code && buf lint) || failed "spec (buf format or lint)"
+  if git cat-file -e "${base}:api/buf.yaml" 2>/dev/null; then
+    (cd api && buf breaking --against "${ROOT}/.git#ref=${base},subdir=api") ||
+      failed "spec (breaking change against ${base})"
+  else
+    printf 'spec: %s has no api/ yet, nothing to break\n' "${base}"
+  fi
+  tmp="$(mktemp -d /tmp/rl-check-spec.XXXXXX)"
+  # shellcheck disable=SC2064 # expand now: tmp is local
+  trap "rm -rf '${tmp}'" EXIT
+  cp -R api "${tmp}/api"
+  cp go.mod go.sum "${tmp}/"
+  (cd "${tmp}/api" && GOTOOLCHAIN="${toolchain}" buf generate) || failed "spec (buf generate)"
+  diff -r "${tmp}/${SPEC_GO_GEN}" "${SPEC_GO_GEN}" >&2 ||
+    { printf 'spec: %s is stale; run buf generate in api/\n' "${SPEC_GO_GEN}" >&2; failed "spec (generated code)"; }
+}
+
+spec_versions() {
+  need buf check-jsonschema go
+  [[ "$(buf --version)" == "${BUF_VERSION}" ]] ||
+    { printf 'spec: need buf %s, have %s\n' "${BUF_VERSION}" "$(buf --version)" >&2; failed "spec (tool versions)"; }
+  [[ "$(check-jsonschema --version)" == *" ${CHECK_JSONSCHEMA_VERSION}" ]] ||
+    { printf 'spec: need check-jsonschema %s\n' "${CHECK_JSONSCHEMA_VERSION}" >&2; failed "spec (tool versions)"; }
+}
 
 spec() {
-  has_files '^spec/.*\.(proto|json|yaml)$' || { skip spec; return 0; }
-  need buf
-  local base="${RANGELIGHT_SPEC_BASE:-origin/main}"
-  (cd spec && buf format --diff --exit-code && buf lint)
-  if git cat-file -e "${base}:spec" 2>/dev/null; then
-    (cd spec && buf breaking --against "${ROOT}/.git#ref=${base},subdir=spec")
-  else
-    printf 'spec: %s has no spec/ yet, nothing to break\n' "${base}"
-  fi
+  spec_files
+  spec_copies
+  spec_versions
+  spec_schemas
+  spec_proto
   ok spec
 }
+
+# --- per-component parts --------------------------------------------------------
 
 rust() {
   has_files '^control-plane/.*\.rs$' || { skip rust; return 0; }
@@ -195,14 +297,13 @@ rust() {
 }
 
 go() {
-  has_files '^runner/.*\.go$' || { skip go; return 0; }
+  has_files '\.go$' || { skip go; return 0; }
   need go
-  (
-    cd runner
-    command go run "${GOLANGCI_LINT}" run ./...
-    command go test -race ./...
-    command go run "${GOVULNCHECK}" ./...
-  )
+  local -x GOTOOLCHAIN
+  GOTOOLCHAIN="$(go_toolchain)"
+  command go run "${GOLANGCI_LINT}" run ./...
+  command go test -race ./...
+  command go run "${GOVULNCHECK}" ./...
   ok go
 }
 
@@ -245,7 +346,7 @@ hooks() {
 fmt() {
   local did=0
   if has_files '^control-plane/.*\.rs$'; then (cd control-plane && cargo fmt --all); did=1; fi
-  if has_files '^runner/.*\.go$'; then (cd runner && command go run "${GOLANGCI_LINT}" fmt); did=1; fi
+  if has_files '\.go$'; then GOTOOLCHAIN="$(go_toolchain)" command go run "${GOLANGCI_LINT}" fmt; did=1; fi
   if has_files '^(agent|web)/.*\.tsx?$'; then pnpm exec prettier --write .; did=1; fi
   [[ "${did}" -eq 1 ]] || { skip fmt; return 0; }
   ok fmt

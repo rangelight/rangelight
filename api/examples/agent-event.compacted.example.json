@@ -1,0 +1,10 @@
+{
+  "messageId": "019a3f50-0000-7000-8000-000000000004",
+  "sessionId": "019a3f4e-7c21-7d10-9a3b-2f5e6c7d8a90",
+  "at": "2026-11-01T09:33:00Z",
+  "type": "compacted",
+  "payload": {
+    "trigger": "auto",
+    "summary": "Working on MEG-901: discount codes. Done: AC1 test, handler change. Next: run the suite."
+  }
+}

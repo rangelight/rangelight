@@ -1,0 +1,10 @@
+{
+  "messageId": "019a3f50-0000-7000-8000-000000000002",
+  "sessionId": "019a3f4e-7c21-7d10-9a3b-2f5e6c7d8a90",
+  "at": "2026-11-01T09:31:00Z",
+  "type": "progress",
+  "payload": {
+    "stage": "tests",
+    "note": "AC1 test added, running the suite"
+  }
+}

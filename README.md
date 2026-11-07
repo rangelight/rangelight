@@ -11,7 +11,7 @@ components arrive with their tickets.
 
 | Path | What |
 |---|---|
-| `spec/` | Protobuf and JSON Schemas (Buf), the only source of cross-language types |
+| `api/` | Protobuf and JSON Schemas (Buf), the only source of cross-language types |
 | `control-plane/` | Rust workspace: `crates/rl-*` libraries, `services/*` binaries, `queries/`, `migrations/` |
 | `runner/` | Go module, the Kubernetes runner |
 | `agent/`, `web/` | TypeScript: the agent entrypoints and the Workbench |

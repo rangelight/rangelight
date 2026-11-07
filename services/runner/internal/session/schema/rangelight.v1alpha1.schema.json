@@ -1,0 +1,532 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rangelight.dev/schemas/rangelight.v1alpha1.schema.json",
+  "$comment": "Maturity: v1alpha1, may break with a changelog entry in api/README.md (ADR 0027). ADRs: 0002, 0013, 0014, 0019, 0024, 0038, 0039, 0041, 0045, 0048, 0054.",
+  "title": "rangelight.yaml v1alpha1 (preview profile)",
+  "description": "A thin preview profile: references to the org's existing Argo source plus what Rangelight needs to run a ticket's copy of prod. It is not a deployment format.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "rangelight.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "PreviewProfile"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/dnsLabel"
+        },
+        "pinnedBy": {
+          "type": "string",
+          "description": "Human who reviewed the agent-derived profile."
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "services"
+      ],
+      "properties": {
+        "devcontainer": {
+          "type": "string",
+          "description": "Path to devcontainer.json in this repo (ADR 0013). Defaults to .devcontainer/devcontainer.json."
+        },
+        "argo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source"
+          ],
+          "description": "Rendered into one Argo Application per session with automated sync (ADRs 0019, 0014).",
+          "properties": {
+            "source": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "repoURL"
+              ],
+              "properties": {
+                "repoURL": {
+                  "type": "string"
+                },
+                "chart": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "targetRevision": {
+                  "type": "string",
+                  "default": "main"
+                },
+                "helm": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "valueFiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "values": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              "oneOf": [
+                {
+                  "required": [
+                    "chart"
+                  ]
+                },
+                {
+                  "required": [
+                    "path"
+                  ]
+                }
+              ]
+            },
+            "overlay": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Preview-only changes on top of the org's source: one replica, small resources, disabled extras.",
+              "properties": {
+                "valueFiles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "values": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "services": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "serviceName",
+              "port"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/dnsLabel"
+              },
+              "serviceName": {
+                "type": "string",
+                "description": "Kubernetes Service name neighbours call."
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "expose": {
+                "type": "boolean",
+                "default": false,
+                "description": "Publish at <name>--<session>.preview.<domain> behind forward-auth (ADR 0039)."
+              },
+              "underChange": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Present when this service may run hot-reloaded in the agent pod (ADR 0014).",
+                "required": [
+                  "repoPath",
+                  "command",
+                  "park"
+                ],
+                "properties": {
+                  "repoPath": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "string",
+                    "description": "Hot-reload command run in the agent pod."
+                  },
+                  "env": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "park": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "values"
+                    ],
+                    "description": "Argo values that remove the org's workload for this service; Rangelight then serves a Service of the same name selecting the agent pod.",
+                    "properties": {
+                      "values": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "engine",
+              "mode"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "engine": {
+                "enum": [
+                  "postgres",
+                  "mysql",
+                  "valkey",
+                  "redis",
+                  "mongodb",
+                  "kafka",
+                  "other"
+                ]
+              },
+              "mode": {
+                "enum": [
+                  "fixtures",
+                  "masked-snapshot"
+                ]
+              },
+              "migrate": {
+                "type": "string",
+                "description": "Command that applies the repo's migrations."
+              },
+              "seed": {
+                "type": "string",
+                "description": "fixtures: command that loads the repo's seed data."
+              },
+              "maskingRules": {
+                "type": "string",
+                "description": "masked-snapshot: ref into rangelight-config, e.g. config://masking/<name>.yaml."
+              },
+              "goldenSource": {
+                "type": "string",
+                "description": "masked-snapshot: credential-ref of the staging/prod source, used only by the trusted golden-copy job."
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "const": "masked-snapshot"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "maskingRules",
+                    "goldenSource"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "externalDeps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "mode"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "mode": {
+                "enum": [
+                  "mock",
+                  "sandbox",
+                  "block"
+                ]
+              },
+              "hosts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "mock": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "engine",
+                  "spec"
+                ],
+                "properties": {
+                  "engine": {
+                    "enum": [
+                      "prism",
+                      "wiremock"
+                    ]
+                  },
+                  "spec": {
+                    "type": "string"
+                  }
+                }
+              },
+              "sandboxCredential": {
+                "type": "string",
+                "description": "sandbox: credential-ref from the preview secret set."
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "const": "mock"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "mock"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "const": "sandbox"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "sandboxCredential",
+                    "hosts"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "secrets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "previewSet"
+          ],
+          "properties": {
+            "previewSet": {
+              "type": "string",
+              "description": "Name of the preview secret set in rangelight-config (ADR 0038). Prod secrets are never allowed."
+            }
+          }
+        },
+        "shared": {
+          "type": "array",
+          "description": "Cluster-scoped or operator-managed resources that must already exist; Rangelight never renders them per session.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "apiVersion": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "readiness": {
+          "type": "array",
+          "description": "Extra gates on top of the built-in layers (ADR 0024).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "layer",
+              "check"
+            ],
+            "properties": {
+              "layer": {
+                "enum": [
+                  "deps",
+                  "neighbours",
+                  "schema",
+                  "service",
+                  "preview"
+                ]
+              },
+              "check": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "http": {
+                    "type": "string",
+                    "description": "URL inside the namespace that must return 2xx."
+                  },
+                  "tcp": {
+                    "type": "string",
+                    "description": "host:port that must accept connections."
+                  },
+                  "command": {
+                    "type": "string"
+                  }
+                },
+                "minProperties": 1,
+                "maxProperties": 1
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 300
+              }
+            }
+          }
+        },
+        "tests": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "command",
+            "format"
+          ],
+          "description": "The test command Rangelight runs itself in the observed gate Job (ADR 0045 §3): on the pushed head, on main, and on main merged with the branch. Tests whose names contain AC<n> prove acceptance criterion n.",
+          "properties": {
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Shell command run from repoPath, e.g. 'npm test -- --test-reporter=tap'."
+            },
+            "format": {
+              "enum": [
+                "tap",
+                "junit"
+              ],
+              "description": "How Rangelight reads results: TAP on stdout, or JUnit XML at reportPath."
+            },
+            "reportPath": {
+              "type": "string",
+              "description": "JUnit XML path, relative to repoPath. Required when format is junit."
+            },
+            "repoPath": {
+              "type": "string",
+              "default": "."
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 3600,
+              "default": 900
+            }
+          },
+          "if": {
+            "properties": {
+              "format": {
+                "const": "junit"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reportPath"
+            ]
+          }
+        },
+        "verify": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Verify any branch (ADR 0048).",
+          "properties": {
+            "pullRequests": {
+              "type": "boolean",
+              "default": true,
+              "description": "Verify same-repo pull requests automatically."
+            },
+            "maxConcurrent": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32,
+              "default": 4
+            }
+          }
+        },
+        "externalChecks": {
+          "type": "array",
+          "description": "Check Runs from the org's own CI that a lane's pushed head must also pass (ADR 0054 §1). A Check Run from any app other than `app` is ignored.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "app"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The Check Run name, e.g. 'Jenkins' or 'ci / test'."
+              },
+              "app": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$",
+                "description": "Slug of the only GitHub App allowed to publish this check, e.g. 'github-actions'."
+              },
+              "required": {
+                "type": "boolean",
+                "default": true
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "dnsLabel": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]{0,48}[a-z0-9])?$",
+      "description": "RFC 1123 label, at most 50 characters (ADR 0019 slug rule)."
+    }
+  }
+}

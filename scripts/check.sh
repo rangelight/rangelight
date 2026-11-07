@@ -11,6 +11,7 @@ GOVULNCHECK="golang.org/x/vuln/cmd/govulncheck@v1.9.0"
 BUF_VERSION="1.75.0"
 CHECK_JSONSCHEMA_VERSION="0.38.2"
 YAMLLINT_VERSION="1.38.0"
+CHART="deployments/helm/rangelight"
 # Built from parts so the rules part never matches its own source.
 TAG="TO""DO"
 
@@ -341,10 +342,9 @@ deploy() {
   local scripts=() t
   mapfile -t scripts < <(repo_files | grep -E '\.sh$|^services/git-mirror/hooks/[^/]+$')
   shellcheck -x -- "${scripts[@]}"
-  if has_files '^deployments/helm/rangelight/Chart\.yaml$'; then
-    need helm kubeconform
-    helm lint --strict deployments/helm/rangelight
-    helm template rangelight deployments/helm/rangelight | kubeconform -strict -summary
+  if has_files "^${CHART}/Chart\.yaml$"; then
+    bash "${CHART}/test/lint.sh"
+    bash "${CHART}/test/template.sh"
   fi
   for t in scripts/test/*.sh; do bash "${t}"; done
   ok deploy

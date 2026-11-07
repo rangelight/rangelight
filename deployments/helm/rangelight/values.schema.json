@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["postgres", "nats"],
+  "properties": {
+    "global": { "description": "Helm's values shared with the subcharts.", "type": "object" },
+    "postgres": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "image", "storage", "resources", "external"],
+      "properties": {
+        "enabled": { "description": "Install CloudNativePG and the cluster rangelight-pg, or use postgres.external.", "type": "boolean" },
+        "image": { "description": "The Postgres image, by tag and digest.", "$ref": "#/$defs/pinnedImage" },
+        "storage": { "description": "Size of the data volume.", "$ref": "#/$defs/storage" },
+        "resources": { "$ref": "#/$defs/resources" },
+        "external": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["secretRef"],
+          "properties": {
+            "secretRef": {
+              "description": "The Secret in rangelight-system, and its key, holding the api's Postgres connection URI.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "key"],
+              "properties": {
+                "name": { "anyOf": [{ "const": "" }, { "$ref": "#/$defs/dnsName" }] },
+                "key": { "type": "string", "pattern": "^[-._a-zA-Z0-9]{1,253}$" }
+              }
+            }
+          }
+        }
+      },
+      "if": { "properties": { "enabled": { "const": false } } },
+      "then": { "properties": { "external": { "properties": { "secretRef": { "properties": { "name": { "$ref": "#/$defs/dnsName" } } } } } } }
+    },
+    "nats": {
+      "description": "enabled and external are Rangelight's; every other key goes to the upstream nats chart.",
+      "type": "object",
+      "required": ["enabled", "external", "fullnameOverride"],
+      "properties": {
+        "enabled": { "description": "Install a NATS server with JetStream, or use nats.external.", "type": "boolean" },
+        "external": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url"],
+          "properties": {
+            "url": { "description": "The NATS URL the api connects to.", "anyOf": [{ "const": "" }, { "$ref": "#/$defs/natsUrl" }] }
+          }
+        },
+        "fullnameOverride": { "description": "The server's name, and its Service's.", "$ref": "#/$defs/dnsName" },
+        "config": {
+          "type": "object",
+          "properties": {
+            "jetstream": {
+              "type": "object",
+              "properties": {
+                "enabled": { "const": true },
+                "fileStore": {
+                  "type": "object",
+                  "properties": {
+                    "pvc": { "type": "object", "properties": { "size": { "$ref": "#/$defs/storage" } } }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "container": {
+          "type": "object",
+          "properties": {
+            "image": { "type": "object", "properties": { "fullImageName": { "$ref": "#/$defs/pinnedImage" } } },
+            "resources": { "$ref": "#/$defs/resources" }
+          }
+        }
+      },
+      "if": { "properties": { "enabled": { "const": false } } },
+      "then": { "properties": { "external": { "properties": { "url": { "$ref": "#/$defs/natsUrl" } } } } }
+    },
+    "cloudnative-pg": { "description": "The upstream cloudnative-pg chart's values; its own schema checks them.", "type": "object" }
+  },
+  "$defs": {
+    "dnsName": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$" },
+    "natsUrl": { "type": "string", "pattern": "^(nats|tls)://[-.a-zA-Z0-9]+(:[0-9]{1,5})?$" },
+    "pinnedImage": {
+      "type": "string",
+      "pattern": "^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$",
+      "not": { "pattern": ":latest@" }
+    },
+    "storage": { "type": "string", "pattern": "^[1-9][0-9]*(Mi|Gi|Ti)$" },
+    "quantity": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?(m|Mi|Gi)?$" },
+    "resources": {
+      "description": "The pod's resources: CPU and memory requests, and a memory limit.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requests", "limits"],
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cpu", "memory"],
+          "properties": { "cpu": { "$ref": "#/$defs/quantity" }, "memory": { "$ref": "#/$defs/quantity" } }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["memory"],
+          "properties": { "cpu": { "$ref": "#/$defs/quantity" }, "memory": { "$ref": "#/$defs/quantity" } }
+        }
+      }
+    }
+  }
+}

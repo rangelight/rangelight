@@ -1,0 +1,4 @@
+{{- /* The NetworkPolicies and the operator's scope assume this namespace. */ -}}
+{{- if ne .Release.Namespace "rangelight-system" }}
+{{- fail (printf "install into the namespace rangelight-system, not %q" .Release.Namespace) }}
+{{- end }}

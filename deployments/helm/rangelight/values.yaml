@@ -1,0 +1,104 @@
+---
+# Every key is validated by values.schema.json. Rangelight installs into the namespace "rangelight-system" only.
+
+# Postgres, the source of truth (ADR 0021, 0031). Bundled: a CloudNativePG cluster "rangelight-pg" with the
+# database "api" owned by the role "rl_api"; its credentials exist only in the Secret CloudNativePG generates
+# ("rangelight-pg-app"). External: your own Postgres, through a Secret you create.
+postgres:
+  # true: install the CloudNativePG operator and the cluster "rangelight-pg". false: use postgres.external.
+  enabled: true
+  # The Postgres image, by tag and digest. The major version decides the on-disk format: never bump it in place.
+  image: "ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie@sha256:26d15a12723510b0b416e8aec2bc65f2da7ac9b77ef3182a0911e4b8b991420a"
+  # Size of the data volume, from the default StorageClass.
+  storage: "10Gi"
+  # Resources of the Postgres pod.
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      memory: "1Gi"
+  # Used only when postgres.enabled is false.
+  external:
+    # The Secret in rangelight-system, and its key, holding the api's connection URI
+    # (postgresql://<user>:<password>@<host>:5432/<database>). Its name is required when postgres.enabled is false.
+    secretRef:
+      name: ""
+      key: "uri"
+
+# NATS JetStream, the transport (ADR 0021): one server, file storage on a PVC from the default StorageClass.
+# Bundled: the upstream "nats" chart, configured by every key below except enabled and external.
+nats:
+  # true: install a NATS server with JetStream. false: use nats.external.
+  enabled: true
+  # Used only when nats.enabled is false.
+  external:
+    # The NATS URL the api connects to (nats:// or tls://). Required when nats.enabled is false.
+    url: ""
+  # The upstream chart's settings (https://github.com/nats-io/k8s/tree/main/helm/charts/nats).
+  # The server's name, and so its Service: the api connects to nats://rangelight-nats.rangelight-system.svc:4222.
+  fullnameOverride: "rangelight-nats"
+  global:
+    labels:
+      app.kubernetes.io/part-of: "rangelight"
+  config:
+    jetstream:
+      enabled: true
+      fileStore:
+        pvc:
+          # Size of the JetStream volume.
+          size: "10Gi"
+  # Restarts the server when its config changes, instead of a reloader sidecar.
+  podTemplate:
+    configChecksumAnnotation: true
+    merge:
+      spec:
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          fsGroup: 1000
+          seccompProfile:
+            type: "RuntimeDefault"
+  container:
+    image:
+      fullImageName: "docker.io/library/nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde"
+    # Resources of the NATS server.
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        memory: "512Mi"
+    merge:
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - "ALL"
+  reloader:
+    enabled: false
+  # A disruption budget for one server would allow every disruption anyway.
+  podDisruptionBudget:
+    enabled: false
+  natsBox:
+    enabled: false
+
+# The upstream CloudNativePG operator chart's settings (https://github.com/cloudnative-pg/charts).
+cloudnative-pg:
+  image:
+    # The operator image: the chart's appVersion, pinned by digest.
+    tag: "1.30.1@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07"
+  config:
+    # Watch rangelight-system only: namespaced RBAC, and no reach into other teams' Postgres clusters.
+    clusterWide: false
+  podLabels:
+    app.kubernetes.io/part-of: "rangelight"
+  # Resources of the operator.
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      memory: "512Mi"

@@ -346,7 +346,7 @@ deploy() {
   shellcheck -x -- "${scripts[@]}"
   if has_files "^${CHART}/Chart\.yaml$"; then
     bash "${CHART}/test/lint.sh"
-    bash "${CHART}/test/template.sh"
+    for t in template git-mirror runner; do bash "${CHART}/test/${t}.sh"; done
   fi
   for t in scripts/test/*.sh; do [[ ! -f "scripts/${t##*/}" ]] || bash "${t}"; done # self-tests; services.sh is a fixture
   ok deploy

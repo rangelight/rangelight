@@ -10,7 +10,7 @@ import (
 )
 
 // GroupVersion is the Session API's group and version (ADR 0051: the group is rangelight.dev).
-// The schema the API server enforces is the chart's crds/session.yaml.
+// The schema the API server enforces is the chart's files/crds/session.yaml.
 var GroupVersion = schema.GroupVersion{Group: "rangelight.dev", Version: "v1alpha1"}
 
 // AddToScheme registers Session and SessionList in a scheme.

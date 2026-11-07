@@ -91,7 +91,7 @@ func run(m *testing.M) (int, error) {
 	}
 	env := &envtest.Environment{
 		BinaryAssetsDirectory: string(assets),
-		CRDDirectoryPaths:     []string{"../../../../deployments/helm/rangelight/crds", "testdata"},
+		CRDDirectoryPaths:     []string{"../../../../deployments/helm/rangelight/files/crds", "testdata"},
 		ErrorIfCRDPathMissing: true,
 	}
 	cfg, err := env.Start()

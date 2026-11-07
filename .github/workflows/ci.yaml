@@ -76,7 +76,7 @@ jobs:
               - ".golangci.yaml"
               # The runner's envtest suite installs the chart's CRDs, RBAC and admission policy, and embeds
               # its default config.
-              - "deployments/helm/rangelight/crds/**"
+              - "deployments/helm/rangelight/files/crds/**"
               - "deployments/helm/rangelight/templates/runner/**"
               - "deployments/helm/rangelight/test/runner-values.yaml"
               - "configs/runner.default.toml"

@@ -1,5 +1,5 @@
 ---
-# The git mirror switched on, for test/lint.sh and test/template.sh. The digest is not a real image.
+# The git mirror switched on, for test/lint.sh and test/git-mirror.sh. The digest is not a real image.
 gitMirror:
   enabled: true
   image: "ghcr.io/rangelight/git-mirror:test@sha256:1111111111111111111111111111111111111111111111111111111111111111"

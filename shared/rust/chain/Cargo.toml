@@ -1,0 +1,23 @@
+[package]
+name = "rl-chain"
+description = "Event canonicalisation, the per-session hash chain and its verification (ADR 0029)."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+buffa.workspace = true
+rl-domain.workspace = true
+rl-proto.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

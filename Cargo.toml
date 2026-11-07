@@ -1,8 +1,7 @@
 # The Rust workspace (ADR 0049 §3). Crates are created when first needed, not up front.
 [workspace]
 resolver = "3"
-# Libraries in shared/rust/, binaries in services/. Cargo needs at least one crate to load this;
-# until then `scripts/check.sh rust` skips.
+# Libraries in shared/rust/, binaries in services/.
 members = ["shared/rust/*", "services/*"]
 # The services that aren't Rust.
 exclude = ["services/runner", "services/agent", "services/web", "services/git-mirror"]
@@ -16,6 +15,44 @@ publish = false
 
 # Every dependency is declared here once; crates use `dep.workspace = true`.
 [workspace.dependencies]
+rl-app = { path = "shared/rust/app" }
+rl-chain = { path = "shared/rust/chain" }
+rl-config = { path = "shared/rust/config" }
+rl-domain = { path = "shared/rust/domain" }
+rl-proto = { path = "shared/rust/proto" }
+rl-store = { path = "shared/rust/store" }
+rl-telemetry = { path = "shared/rust/telemetry" }
+rl-testkit = { path = "shared/rust/testkit" }
+rl-tickets-linear = { path = "shared/rust/tickets-linear" }
+relay = { path = "services/relay" }
+
+anyhow = "1.0.104"
+# No nkeys, KV, object store or websockets until a ticket needs them.
+async-nats = { version = "0.52.0", default-features = false, features = ["jetstream", "ring"] }
+buffa = "0.9.2"
+buffa-types = "0.9.2"
+# Pre-1.0, so pinned exactly (ADR 0033).
+connectrpc = { version = "=0.9.1", features = ["server", "client"] }
+connectrpc-build = "=0.9.0"
+figment = { version = "0.10.19", features = ["toml", "env"] }
+futures-util = "0.3.34"
+proptest = "1.9.0"
+# TLS by rustls with ring, the provider async-nats already uses (aws-lc-sys isn't Apache-2.0 compatible).
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls-no-provider", "http2"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+secrecy = "0.10.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate", "uuid", "time"] }
+tempfile = "3.23.0"
+thiserror = "2.0.21"
+time = "0.3.44"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "time", "signal", "io-util", "sync"] }
+tokio-util = "0.7.20"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter"] }
+uuid = "1.29.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

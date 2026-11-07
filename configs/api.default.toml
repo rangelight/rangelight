@@ -1,0 +1,15 @@
+# The api's defaults (ADR 0049 §6). Override in /etc/rangelight/api.toml or with
+# RANGELIGHT_API_<KEY>, for example RANGELIGHT_API_LINEAR_TEAM=RAN. `linear_team` has no default.
+
+# `tracing` filter directives.
+log = "info"
+# The Connect-RPC listener.
+listen = "0.0.0.0:8080"
+# The Postgres URL, as a secret reference: the mounted Secret file holds the whole URL.
+database_url = "secret://postgres#url"
+nats_url = "nats://nats:4222"
+# The org's NATS subject token (ADR 0021): subjects are rl.<org>.…
+org = "default"
+linear_url = "https://api.linear.app/graphql"
+# The Linear API key, as a secret reference, read at each poll.
+linear_api_key = "secret://linear#api-key"

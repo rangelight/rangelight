@@ -1,0 +1,79 @@
+// The session API, v1alpha1: what the api serves over Connect-RPC (ADR 0033), and the payload of
+// the session event log (ADR 0029).
+// Maturity: v1alpha1 may break, with a changelog entry in api/README.md (ADR 0027).
+// ADRs: 0021, 0029, 0031, 0033.
+syntax = "proto3";
+
+package rangelight.session.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+import "rangelight/runner/v1alpha1/runner.proto";
+
+option go_package = "github.com/rangelight/rangelight/shared/go/gen/rangelight/session/v1alpha1;sessionv1alpha1";
+
+// Sessions, as the Workbench reads them.
+service SessionService {
+  // The newest sessions first, at most 1000.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  // A session's events as they commit, from the next one on. Fed from NATS fan-out, never by
+  // polling Postgres. Receivers dedupe on Event.id. Ends with ABORTED when events went missing
+  // (seq gap): reread the session and watch again.
+  rpc WatchSession(WatchSessionRequest) returns (stream WatchSessionResponse);
+}
+
+message Session {
+  string id = 1; // UUIDv7
+  string tracker = 2; // "linear"
+  string ticket_id = 3; // the tracker's id
+  string ticket_key = 4; // e.g. "RAN-34"
+  string title = 5;
+  string namespace = 6; // rl-<ticket key>
+  rangelight.runner.v1alpha1.DesiredState state = 7;
+  uint64 generation = 8; // the seq of the session's last event
+}
+
+message ListSessionsRequest {}
+
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message WatchSessionRequest {
+  string session_id = 1; // UUID
+}
+
+message WatchSessionResponse {
+  Event event = 1;
+}
+
+// A committed event of a session's chained log (ADR 0029).
+message Event {
+  string id = 1; // UUIDv7, also the Nats-Msg-Id of what the relay publishes for it
+  string session_id = 2;
+  uint64 seq = 3; // per session, from 1
+  google.protobuf.Timestamp at = 4;
+  Change change = 5;
+}
+
+// What a command changed. Its deterministic encoding is the event payload. An event's hash is
+// sha256(prev_hash || event id (16 bytes) || at (int64 big-endian microseconds since the Unix
+// epoch, UTC) || payload), with 32 zero bytes as prev_hash before a session's first event
+// (rl-chain documents the encoding).
+message Change {
+  oneof kind {
+    Created created = 1;
+    StateChanged state_changed = 2;
+  }
+}
+
+message Created {
+  string ticket_id = 1;
+  string ticket_key = 2;
+  string title = 3;
+  string namespace = 4;
+  rangelight.runner.v1alpha1.DesiredState state = 5; // always DESIRED_STATE_HOT
+}
+
+message StateChanged {
+  rangelight.runner.v1alpha1.DesiredState state = 1;
+}

@@ -1,0 +1,27 @@
+[package]
+name = "rl-proto"
+description = "Rust code generated from api/proto by connectrpc-build. Generated only."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+buffa = { workspace = true, features = ["json"] }
+buffa-types = { workspace = true, features = ["json"] }
+connectrpc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+connectrpc-build.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
+
+# The generated code uses these through `include!`, which cargo-machete can't follow.
+[package.metadata.cargo-machete]
+ignored = ["buffa", "buffa-types", "serde", "serde_json"]

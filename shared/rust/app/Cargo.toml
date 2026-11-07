@@ -1,0 +1,21 @@
+[package]
+name = "rl-app"
+description = "Use cases (intake, state changes) and the seams they consume: TicketSource, Clock, IdGen."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+rl-domain.workspace = true
+thiserror.workspace = true
+uuid = { workspace = true, features = ["v7"] }
+
+[dev-dependencies]
+rl-testkit.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

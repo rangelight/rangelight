@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- Sets a row aside that the relay can't publish; its session's later rows wait behind it.\nUPDATE outbox SET failed_at = now() WHERE id = $1 AND sent_at IS NULL\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "31a8864d6e244560d66e480a477359f9addeec56c55f76b4c18d29ade1ec828c"
+}

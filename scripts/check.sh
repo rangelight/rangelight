@@ -305,10 +305,12 @@ yaml() {
 
 rust() {
   has_files '\.rs$' || { skip rust; return 0; }
-  need cargo cargo-nextest cargo-deny cargo-machete
+  need cargo cargo-nextest cargo-deny cargo-machete cargo-sqlx buf # buf: rl-proto's build script
+  local -x SQLX_OFFLINE=true # SQL compiles against the committed .sqlx/ (ADR 0049 §2.4)
   cargo fmt --all --check
   cargo clippy --workspace --all-targets --locked -- -D warnings
-  cargo nextest run --workspace --locked --no-tests=pass
+  bash scripts/test/services.sh run bash -c 'cargo sqlx migrate run --source db/migrations &&
+    cargo sqlx prepare --workspace --check -- --all-targets --locked && cargo nextest run --workspace --locked --no-tests=pass'
   cargo deny check
   cargo machete
   ok rust
@@ -346,7 +348,7 @@ deploy() {
     bash "${CHART}/test/lint.sh"
     bash "${CHART}/test/template.sh"
   fi
-  for t in scripts/test/*.sh; do bash "${t}"; done
+  for t in scripts/test/*.sh; do [[ ! -f "scripts/${t##*/}" ]] || bash "${t}"; done # self-tests; services.sh is a fixture
   ok deploy
 }
 

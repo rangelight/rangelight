@@ -1,7 +1,7 @@
 # runner
 
 The only Kubernetes-aware part of Rangelight (ADR 0018), in Go with controller-runtime. It runs
-`Session` resources (`rangelight.dev/v1alpha1`, `deployments/helm/rangelight/crds/session.yaml`),
+`Session` resources (`rangelight.dev/v1alpha1`, `deployments/helm/rangelight/files/crds/session.yaml`),
 which live in the runner's own namespace, and answers the git mirror's `/auth/git`.
 
 **A Session's lane** is the namespace `rl-<ticket key, lowercased>`, labelled

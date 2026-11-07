@@ -119,7 +119,7 @@ gitMirror:
   # The volume for every repo: upstream repos and the per-session repos (capped at 512 MiB each).
   storage: "5Gi"
 
-# The runner (ADR 0018): it runs Sessions (crds/session.yaml) as lane namespaces rl-<ticket> with a hardened agent
+# The runner (ADR 0018): it runs Sessions (files/crds/session.yaml) as lane namespaces rl-<ticket> with a hardened agent
 # pod, and answers the git mirror's /auth/git.
 runner:
   # true: run the runner. It needs runner.image, runner.agentImage, the namespace runner.namespace, and Cilium.

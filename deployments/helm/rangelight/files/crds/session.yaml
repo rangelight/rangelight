@@ -1,6 +1,7 @@
 ---
 # The Session resource (ADR 0012, ADR 0018): one ticket's lane, the runner's local desired state.
 # Go types: services/runner/internal/session/api.go. The runner's envtest suite installs this file.
+# templates/runner/crd.yaml renders it, not crds/: Helm applies crds/ on first install only, never on upgrade.
 # Sessions live only in the runner's namespace; the spec mirrors runner.v1alpha1.SessionDesired.
 apiVersion: "apiextensions.k8s.io/v1"
 kind: "CustomResourceDefinition"
@@ -11,6 +12,9 @@ metadata:
     app.kubernetes.io/component: "runner"
     app.kubernetes.io/part-of: "rangelight"
     app.kubernetes.io/managed-by: "Helm"
+  annotations:
+    # Uninstalling the chart keeps the CRD, so it never deletes live Sessions with it.
+    helm.sh/resource-policy: "keep"
 spec:
   group: "rangelight.dev"
   scope: "Namespaced"

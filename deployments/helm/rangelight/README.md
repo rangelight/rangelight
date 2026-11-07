@@ -14,7 +14,7 @@ Every dependency is bundled and swappable for your own (ADR 0009). `values.yaml`
 and `runner.agentImage` (by digest) runs it in its own namespace, `runner.namespace` (default `rangelight-runner`).
 The cluster owner creates that namespace first (Pod Security `restricted`); the chart never does, so no
 `rangelight-system` workload can mount the runner's ServiceAccount. Lanes need Cilium for their Anthropic egress.
-The `Session` CRD is in `crds/`. The runner's ClusterRole holds only what a lane needs, each rule with its reason
+The `Session` CRD (`files/crds/session.yaml`) installs and upgrades with the runner, and uninstall keeps it. The runner's ClusterRole holds only what a lane needs, each rule with its reason
 (`templates/runner/rbac.yaml`).
 
 ## Install
@@ -57,4 +57,4 @@ namespace `rangelight-runner`.
   `helm dependency update deployments/helm/rangelight`.
 - Images are pinned by tag and digest. Never bump the Postgres major version in place.
 - `scripts/check.sh deploy` runs `helm lint`, kubeconform on both modes, the YAML style on our templates'
-  output, and `test/template.sh`.
+  output, and the render tests `test/{template,git-mirror,runner}.sh`.

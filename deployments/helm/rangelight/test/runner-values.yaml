@@ -1,5 +1,5 @@
 ---
-# The runner switched on, for test/lint.sh and test/template.sh. The digests are not real images.
+# The runner switched on, for test/lint.sh and test/runner.sh. The digests are not real images.
 runner:
   enabled: true
   image: "ghcr.io/rangelight/runner:test@sha256:2222222222222222222222222222222222222222222222222222222222222222"

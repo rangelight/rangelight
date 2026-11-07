@@ -1,0 +1,3 @@
+{{- if .Values.runner.enabled }}
+{{ .Files.Get "files/crds/session.yaml" }}
+{{- end }}

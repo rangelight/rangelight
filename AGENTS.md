@@ -10,6 +10,7 @@ exceptions.
 scripts/check.sh all      # the whole gate, exactly what CI runs; must exit 0 before a PR
 scripts/check.sh <part>   # size rules secrets scrub spec yaml rust go ts deploy hooks
 scripts/check.sh fmt      # format in place
+scripts/check.sh gen      # regenerate shared/ts/gen from api/jsonschema
 scripts/test/check.sh     # self-tests of the checks
 ```
 

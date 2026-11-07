@@ -1,0 +1,18 @@
+# Defaults for services/agent (ADR 0049 §6). Override with the mounted /etc/rangelight/agent.toml,
+# then with RANGELIGHT_AGENT_<KEY> (list values comma-separated). No secrets here, ever.
+
+# The lane's session (UUIDv7); the runner sets it.
+session_id = ""
+# The git mirror's base URL; the agent clones <mirror_url>/<repo>.git and pushes to
+# <mirror_url>/session/<repo>.git (services/git-mirror).
+mirror_url = ""
+repo = ""
+base_ref = "main"
+# The lane's projected ServiceAccount token for the mirror. Read by git at use time, never by the agent.
+token_file = "/var/run/secrets/rangelight/git-mirror/token"
+workdir = "/workspace/repo"
+# Mounted by the runner, read from the base branch (ADR 0041); never the worktree's rangelight.yaml.
+profile_file = "/etc/rangelight/profile.json"
+ticket_file = "/etc/rangelight/ticket.json"
+# Names of the profile's services under change; the agent runs each one's dev command once.
+under_change = []

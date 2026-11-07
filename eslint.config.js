@@ -52,10 +52,12 @@ export default defineConfig(
       "max-params": ["error", 5],
       "sonarjs/cognitive-complexity": ["error", 15],
       "no-console": "error",
+      // No `as` casts: external data is parsed with zod at the edge (ADR 0049 §5).
+      "@typescript-eslint/consistent-type-assertions": ["error", { assertionStyle: "never" }],
     },
   },
   // The agent's event writer is its one console sink.
-  { files: ["services/agent/src/events.ts"], rules: { "no-console": "off" } },
+  { files: ["services/agent/src/events/events.ts"], rules: { "no-console": "off" } },
   // Test files don't count towards file length (ADR 0049 §7).
   { files: ["**/*.test.{ts,tsx}", "**/tests/**"], rules: { "max-lines": "off" } },
   { files: ["**/*.js"], extends: [tseslint.configs.disableTypeChecked] },

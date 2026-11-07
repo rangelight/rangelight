@@ -41,12 +41,16 @@ jobs:
             shared: &shared
               - ".github/workflows/ci.yaml"
               - "scripts/check.sh"
+              - "scripts/check/**"
             spec:
               - *shared
               - "api/**"
               - "go.mod"
               - "go.sum"
               - "shared/go/gen/**"
+              - "shared/ts/gen/**"
+              - "package.json"
+              - "pnpm-lock.yaml"
               - "services/runner/internal/session/schema/**"
             yaml:
               - *shared
@@ -92,6 +96,10 @@ jobs:
               - "tsconfig.base.json"
               - "eslint.config.js"
               - ".prettierrc"
+              - ".prettierignore"
+              - "configs/agent.default.toml"
+              - "api/jsonschema/agent-event.v1alpha1.schema.json"
+              - "build/package/docker/agent/**"
               - ".nvmrc"
             deploy:
               - *shared
@@ -174,6 +182,13 @@ jobs:
           version: "1.75.0"
           setup_only: true
       - run: "pipx install check-jsonschema==0.38.2"
+      # json-schema-to-typescript, pinned in package.json, generates shared/ts/gen.
+      - uses: "pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115"  # v6.1.1
+      - uses: "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1"  # v7.1.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+      - run: "pnpm install --frozen-lockfile"
       - run: "scripts/check.sh spec"
 
   yaml:
@@ -270,6 +285,13 @@ jobs:
         with:
           version: "v3.22.0"
       - run: "go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 && echo \"$(go env GOPATH)/bin\" >> \"${GITHUB_PATH}\""
+      # The gen and spec self-tests run json-schema-to-typescript (package.json).
+      - uses: "pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115"  # v6.1.1
+      - uses: "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1"  # v7.1.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+      - run: "pnpm install --frozen-lockfile"
       - run: "scripts/check.sh deploy"
 
   hooks:

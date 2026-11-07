@@ -15,7 +15,8 @@ rules:
   line-length:
     max: 160
 # Helm templates are YAML only once rendered: `scripts/check.sh deploy` lints what they render.
-# Chart.lock is written by `helm dependency update`.
+# Chart.lock is written by `helm dependency update`; pnpm-lock.yaml by pnpm.
 ignore: |
   deployments/helm/rangelight/templates/
   deployments/helm/rangelight/Chart.lock
+  pnpm-lock.yaml

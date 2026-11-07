@@ -1,0 +1,9 @@
+# Prettier formats the TypeScript workspace (ADR 0049 §5). YAML has yamllint; ADRs, contracts and
+# other docs stay as written.
+*
+!*/
+!*.ts
+!*.tsx
+!*.js
+# Generated; `scripts/check.sh spec` checks it instead.
+shared/ts/gen/

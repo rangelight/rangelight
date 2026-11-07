@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Reports each new checkpoint (refs/rangelight/sessions/<id>/cp/<n>) to Rangelight (ADR 0010, 0011)
+# as one JSON object per POST to RANGELIGHT_EVENTS_URL. Unset: nothing is sent (no receiver yet).
+# The push is already stored, so a failed POST only warns; it can't undo the push.
+set -euo pipefail
+export LC_ALL=C
+
+# shellcheck source=services/git-mirror/identity.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../identity.sh"
+url="${RANGELIGHT_EVENTS_URL-}"
+[[ -n "${url}" ]] || exit 0
+rl_identity && [[ "${RL_ROLE}" == session ]] || exit 0
+
+while IFS=' ' read -r old new ref; do
+  [[ "${ref}" =~ ^refs/rangelight/sessions/${RL_SESSION}/cp/([1-9][0-9]{0,8})$ ]] || continue
+  n="${BASH_REMATCH[1]}"
+  # Object ids only, and not a deletion (all zeros).
+  [[ "${old}${new}" =~ ^[0-9a-f]{80,128}$ && "${new}" == *[1-9a-f]* ]] || continue
+  printf '{"session":"%s","checkpoint":%s,"commit":"%s","previous":"%s"}' "${RL_SESSION}" "${n}" "${new}" "${old}" |
+    curl -fsS --max-time 5 -H 'Content-Type: application/json' --data-binary @- -o /dev/null "${url}" ||
+    printf 'rangelight: checkpoint %s stored, but not reported\n' "${ref}" >&2
+done

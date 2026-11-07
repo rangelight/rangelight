@@ -120,18 +120,19 @@ EOF
 
 up() {
   require_context
+  load_versions
+  [[ "${GIT_MIRROR_IMAGE}" =~ @sha256:[0-9a-f]{64}$ ]] || die "pin GIT_MIRROR_IMAGE after the first images.yaml run (deployments/dev/versions.env: ${GIT_MIRROR_IMAGE})"
   command -v helm >/dev/null || die "helm is not installed"
+  local dev=(--values "${ROOT}/deployments/dev/values.yaml" --set-string "gitMirror.image=${GIT_MIRROR_IMAGE}")
   if [[ "${RANGELIGHT_DRY_RUN:-}" == true ]]; then
     namespace_manifest
-    helm template "${RELEASE}" "${CHART}" --namespace "${SYSTEM_NS}" --api-versions postgresql.cnpg.io/v1/Cluster
+    helm template "${RELEASE}" "${CHART}" --namespace "${SYSTEM_NS}" --api-versions postgresql.cnpg.io/v1/Cluster "${dev[@]}"
     return 0
   fi
   namespace_manifest | k apply -f -
   # Twice: the first pass installs the CloudNativePG operator and its CRDs and waits for the operator;
   # the chart renders the Postgres cluster once its CRD exists, so the second pass creates it.
-  for _ in 1 2; do
-    h upgrade --install "${RELEASE}" "${CHART}" --namespace "${SYSTEM_NS}" --wait --timeout 10m
-  done
+  for _ in 1 2; do h upgrade --install "${RELEASE}" "${CHART}" --namespace "${SYSTEM_NS}" --wait --timeout 10m "${dev[@]}"; done
   if k -n "${SYSTEM_NS}" get clusters.postgresql.cnpg.io rangelight-pg >/dev/null 2>&1; then
     k -n "${SYSTEM_NS}" wait clusters.postgresql.cnpg.io/rangelight-pg --for=condition=Ready --timeout=600s
   fi

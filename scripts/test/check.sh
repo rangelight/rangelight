@@ -365,6 +365,15 @@ test_parts_without_sources_skip() {
   done
 }
 
+# --- hooks (RAN-17): needs a test, runs it, and finds it in a large tree (grep -q + pipefail) ---
+test_hooks_needs_and_runs_the_git_mirror_tests() {
+  put services/git-mirror/hooks/pre-receive 'exit 1'; run hooks; expect_status 1; expect_out "has no *_test.sh"
+  put services/git-mirror/refs_test.sh 'echo ran-refs-test; exit 1'; run hooks; expect_status 1; expect_out "ran-refs-test"
+  put services/git-mirror/refs_test.sh 'echo ran-refs-test'
+  for i in $(seq 1 500); do put "z/file-${i}.txt" x; done
+  run hooks; expect_status 0; expect_out "ok: hooks"
+}
+
 main() {
   local names=("$@") name
   if [[ ${#names[@]} -eq 0 ]]; then

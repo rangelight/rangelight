@@ -1,0 +1,160 @@
+{{- if .Values.gitMirror.enabled }}
+---
+{{- $repos := list -}}
+{{- range .Values.gitMirror.repos }}{{ $repos = append $repos (printf "%s=%s" .name .upstream) }}{{ end }}
+apiVersion: "apps/v1"
+kind: "Deployment"
+metadata:
+  name: "git-mirror"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "git-mirror" "component" "git") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: "Recreate"
+  selector:
+    matchLabels:
+      {{- include "rangelight.selector" (dict "ctx" $ "name" "git-mirror") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "rangelight.labels" (dict "ctx" $ "name" "git-mirror" "component" "git") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: "RuntimeDefault"
+      initContainers:
+        # The first clone of every repo, so the mirror never serves an empty one.
+        - name: "clone"
+          image: {{ .Values.gitMirror.image | quote }}
+          command:
+            - "/opt/git-mirror/sync.sh"
+            - "/srv/git"
+            {{- range $repos }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: "HOME"
+              value: "/tmp"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              memory: "512Mi"
+          volumeMounts:
+            - name: "data"
+              mountPath: "/srv/git"
+            - name: "tmp"
+              mountPath: "/tmp"
+      containers:
+        # The image's CMD: nginx, after writing the pod's nameserver to /tmp/resolver.conf.
+        - name: "nginx"
+          image: {{ .Values.gitMirror.image | quote }}
+          ports:
+            - name: "http"
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          readinessProbe:
+            httpGet:
+              path: "/healthz"
+              port: "http"
+          livenessProbe:
+            httpGet:
+              path: "/healthz"
+              port: "http"
+            initialDelaySeconds: 5
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "32Mi"
+            limits:
+              memory: "128Mi"
+          # Its own /tmp: the inner server's socket there carries a trusted identity header.
+          volumeMounts:
+            - name: "nginx-tmp"
+              mountPath: "/tmp"
+            - name: "fcgi"
+              mountPath: "/tmp/fcgiwrap"
+        # Each git request holds a worker for its whole transfer (a clone can take minutes), so 16
+        # workers; nginx caps one identity at 4 concurrent requests, so one session can't hold them all.
+        - name: "fcgiwrap"
+          image: {{ .Values.gitMirror.image | quote }}
+          command: ["fcgiwrap", "-c", "16", "-s", "unix:/tmp/fcgiwrap/fcgiwrap.sock"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              memory: "1Gi"
+          volumeMounts:
+            - name: "data"
+              mountPath: "/srv/git"
+            - name: "fcgi"
+              mountPath: "/tmp/fcgiwrap"
+        # ponytail: a periodic anonymous fetch, until Plan 4's fetch Job (ADR 0047 §3).
+        # The repos are arguments ("<name>=<upstream>"), never part of the shell script.
+        - name: "sync"
+          image: {{ .Values.gitMirror.image | quote }}
+          command:
+            - "sh"
+            - "-c"
+            - "while sleep \"$0\"; do /opt/git-mirror/sync.sh /srv/git \"$@\" || true; done"
+            - {{ .Values.gitMirror.syncIntervalSeconds | quote }}
+            {{- range $repos }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: "HOME"
+              value: "/tmp"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              memory: "512Mi"
+          volumeMounts:
+            - name: "data"
+              mountPath: "/srv/git"
+            - name: "tmp"
+              mountPath: "/tmp"
+      volumes:
+        - name: "data"
+          persistentVolumeClaim:
+            claimName: "git-mirror-data"
+        - name: "tmp"
+          emptyDir: {}
+        - name: "nginx-tmp"
+          emptyDir: {}
+        - name: "fcgi"
+          emptyDir: {}
+{{- end }}

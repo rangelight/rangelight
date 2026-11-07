@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# What a push may do (ADR 0010, 0011; threat model §7 #8 and #9). Fails closed: any failed check
+# rejects the whole push. Only a session may push, only into its own repo
+# (sessions/<id>.git), only below these refs:
+#   refs/rangelight/sessions/<id>/<name>  checkpoints: append-only, never deleted or rewound
+#   refs/heads/rangelight/<id>/<name>     its branches: force-push and delete allowed
+# and only while that repo stays under MAX_KIB and MAX_REFS, MAX_UPDATES refs per push at most
+# (receive-pack writes each ref as its own file after this hook: a cap on bytes alone can't bound that).
+set -euo pipefail
+export LC_ALL=C
+
+# ponytail: the caps count what is stored plus this push only, without a lock, so a session's concurrent pushes
+# (nginx allows 4 at a time) can overshoot them: at most ~13,000 refs and ~812 MiB (512 MiB + 3 × the 100 MB body
+# limit). A lock here can't cover the ref writes after this hook exits; if the ceiling matters, allow one
+# receive-pack at a time per session in nginx.
+MAX_KIB=$((512 * 1024))
+MAX_REFS=10000
+MAX_UPDATES=1000
+
+deny() {
+  printf 'rangelight: %s\n' "$1" >&2
+  exit 1
+}
+
+# shellcheck source=services/git-mirror/identity.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../identity.sh" || deny "no identity check"
+rl_identity || deny "no valid identity"
+[[ "${RL_ROLE}" == session ]] || deny "read-only identity"
+
+own="${GIT_PROJECT_ROOT-}/sessions/${RL_SESSION}.git"
+[[ -d "${own}" && "$(cd "${own}" && pwd -P)" == "$(cd "$(git rev-parse --absolute-git-dir)" && pwd -P)" ]] ||
+  deny "not this session's repo"
+# What is already stored plus this push's quarantined objects (both are under the repo).
+kib="$(du -sk . | cut -f1)"
+[[ "${kib}" =~ ^[0-9]+$ ]] || deny "can't measure the repo size"
+((kib <= MAX_KIB)) || deny "the session repo would exceed $((MAX_KIB / 1024)) MiB"
+
+refs="$(git for-each-ref --format=x | wc -l)"
+n=0
+while IFS=' ' read -r old new ref; do
+  ((++n <= MAX_UPDATES)) || deny "too many ref updates in one push (over ${MAX_UPDATES})"
+  [[ "${old}" =~ ^[0-9a-f]{40,64}$ && "${new}" =~ ^[0-9a-f]{40,64}$ ]] || deny "malformed update"
+  case "${ref}" in
+    "refs/rangelight/sessions/${RL_SESSION}/"?*)
+      [[ "${new}" =~ [1-9a-f] ]] || deny "checkpoints are append-only, can't delete ${ref}"
+      if [[ "${old}" =~ [1-9a-f] ]]; then
+        git merge-base --is-ancestor "${old}" "${new}" 2>/dev/null ||
+          deny "checkpoints are append-only, can't rewind ${ref}"
+      fi
+      ;;
+    "refs/heads/rangelight/${RL_SESSION}/"?*) ;;
+    *) deny "ref not allowed: ${ref}" ;;
+  esac
+  [[ "${old}" =~ [1-9a-f] ]] || refs=$((refs + 1))
+done
+((refs <= MAX_REFS)) || deny "the session repo would exceed ${MAX_REFS} refs"

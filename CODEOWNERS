@@ -16,8 +16,8 @@
 /shared/rust/policy/                        @ArielLahiany
 /db/migrations/                             @ArielLahiany
 
-# The git mirror's push hooks
-/services/git-mirror/hooks/                 @ArielLahiany
+# The git mirror: its identity check, request mapping and push hooks
+/services/git-mirror/                       @ArielLahiany
 
 # The gate itself: CI, the checks, and this file
 /.github/workflows/                         @ArielLahiany

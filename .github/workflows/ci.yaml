@@ -270,7 +270,11 @@ jobs:
       - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
         with:
           persist-credentials: false
+      # Distro nginx and fcgiwrap, so the git mirror's tests also run through a real nginx.
+      - run: "sudo apt-get update && sudo apt-get install -y --no-install-recommends nginx fcgiwrap"
       - run: "scripts/check.sh hooks"
+        env:
+          RANGELIGHT_NGINX_REQUIRED: "true"
 
   # The one required check: every part passed, or was skipped because its paths didn't change.
   gate:

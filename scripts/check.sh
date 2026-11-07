@@ -355,8 +355,8 @@ deploy() {
 hooks() {
   has_files '^services/git-mirror/' || { skip hooks; return 0; }
   local tests=() t
-  mapfile -t tests < <(repo_files | grep -E '^services/git-mirror/test/[^/]+\.sh$')
-  [[ ${#tests[@]} -gt 0 ]] || { printf 'services/git-mirror/ has no tests in services/git-mirror/test/\n' >&2; failed hooks; }
+  mapfile -t tests < <(repo_files | grep -E '^services/git-mirror/.*_test\.sh$')
+  [[ ${#tests[@]} -gt 0 ]] || { printf 'services/git-mirror/ has no *_test.sh\n' >&2; failed hooks; }
   for t in "${tests[@]}"; do bash "${t}"; done
   ok hooks
 }

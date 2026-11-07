@@ -318,7 +318,7 @@ rust() {
 
 go() {
   has_files '\.go$' || { skip go; return 0; }
-  need go
+  need go helm
   local -x GOTOOLCHAIN
   GOTOOLCHAIN="$(go_toolchain)"
   command go run "${GOLANGCI_LINT}" run ./...

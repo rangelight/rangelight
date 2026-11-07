@@ -16,6 +16,10 @@
 /shared/rust/policy/                        @ArielLahiany
 /db/migrations/                             @ArielLahiany
 
+# The runner's lane identity (/auth/git) and its cluster-wide permissions
+/services/runner/internal/session/auth.go   @ArielLahiany
+/deployments/helm/rangelight/templates/runner/rbac.yaml @ArielLahiany
+
 # The git mirror: its identity check, request mapping and push hooks
 /services/git-mirror/                       @ArielLahiany
 

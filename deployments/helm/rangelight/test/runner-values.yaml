@@ -1,0 +1,6 @@
+---
+# The runner switched on, for test/lint.sh and test/template.sh. The digests are not real images.
+runner:
+  enabled: true
+  image: "ghcr.io/rangelight/runner:test@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  agentImage: "ghcr.io/rangelight/agent:test@sha256:3333333333333333333333333333333333333333333333333333333333333333"

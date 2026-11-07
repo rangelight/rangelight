@@ -12,6 +12,8 @@ STATUS=0
 FAILED=0
 
 PINNED_MIRROR="ghcr.io/rangelight/git-mirror:abc@sha256:$(printf '1%.0s' $(seq 1 64))"
+PINNED_RUNNER="ghcr.io/rangelight/runner:abc@sha256:$(printf '2%.0s' $(seq 1 64))"
+PINNED_AGENT="ghcr.io/rangelight/agent:abc@sha256:$(printf '3%.0s' $(seq 1 64))"
 
 new_dir() {
   DIR="$(mktemp -d /tmp/rl-cluster-test.XXXXXX)"
@@ -19,7 +21,8 @@ new_dir() {
   cp "${ROOT}/scripts/cluster.sh" "${DIR}/scripts/"
   cp "${ROOT}/deployments/dev/versions.env" "${ROOT}/deployments/dev/values.yaml" "${DIR}/deployments/dev/"
   # A pinned git mirror image, as after the first images.yaml run.
-  sed -i "s|^GIT_MIRROR_IMAGE=.*|GIT_MIRROR_IMAGE=${PINNED_MIRROR}|" "${DIR}/deployments/dev/versions.env"
+  sed -i -e "s|^GIT_MIRROR_IMAGE=.*|GIT_MIRROR_IMAGE=${PINNED_MIRROR}|" -e "s|^RUNNER_IMAGE=.*|RUNNER_IMAGE=${PINNED_RUNNER}|" \
+    -e "s|^AGENT_IMAGE=.*|AGENT_IMAGE=${PINNED_AGENT}|" "${DIR}/deployments/dev/versions.env"
   cp -R "${ROOT}/deployments/helm/rangelight" "${DIR}/deployments/helm/"
   : >"${DIR}/calls"
   # The kubectl stub knows one context, "dev", records every call, keeps what `apply` reads, reports that
@@ -183,6 +186,40 @@ test_up_refuses_an_unpinned_git_mirror_image() {
 test_the_checked_in_git_mirror_image_is_pinned_or_the_placeholder() {
   grep -qxE -e "GIT_MIRROR_IMAGE=(UNPINNED|[^@[:space:]]+:[^@[:space:]]+@sha256:[0-9a-f]{64})" "${ROOT}/deployments/dev/versions.env" ||
     fail "deployments/dev/versions.env: GIT_MIRROR_IMAGE is neither pinned nor UNPINNED"
+}
+
+# --- RAN-19: the runner and the lane agent, with their pinned images --------------------
+
+test_up_installs_the_runner_with_the_pinned_images() {
+  run up RANGELIGHT_KUBE_CONTEXT=dev
+  expect_status 0
+  [[ "$(grep -cF -e "--set-string runner.image=${PINNED_RUNNER} --set-string runner.agentImage=${PINNED_AGENT}" "${DIR}/calls")" -eq 2 ]] ||
+    fail "up did not pass the pinned runner and agent images to both passes"
+  run up RANGELIGHT_KUBE_CONTEXT=dev RANGELIGHT_DRY_RUN=true
+  expect_status 0
+  expect_out "image: \"${PINNED_RUNNER}\""
+  expect_out "value: \"${PINNED_AGENT}\""
+}
+
+test_up_refuses_unpinned_runner_or_agent_images() {
+  local name
+  for name in RUNNER_IMAGE AGENT_IMAGE; do
+    rm -rf "${DIR}"
+    new_dir
+    sed -i "s|^${name}=.*|${name}=UNPINNED|" "${DIR}/deployments/dev/versions.env"
+    run up RANGELIGHT_KUBE_CONTEXT=dev
+    expect_status 1
+    expect_out "pin ${name} after the first images.yaml run"
+    [[ "$(<"${DIR}/calls")" == "config get-contexts -o name" ]] || fail "up called the cluster before refusing"
+  done
+}
+
+test_the_checked_in_runner_and_agent_images_are_pinned_or_the_placeholder() {
+  local name
+  for name in RUNNER_IMAGE AGENT_IMAGE; do
+    grep -qxE -e "${name}=(UNPINNED|[^@[:space:]]+:[^@[:space:]]+@sha256:[0-9a-f]{64})" "${ROOT}/deployments/dev/versions.env" ||
+      fail "deployments/dev/versions.env: ${name} is neither pinned nor UNPINNED"
+  done
 }
 
 test_up_dry_run_changes_nothing_and_prints_the_install() {

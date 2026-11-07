@@ -1,0 +1,128 @@
+---
+# The Session resource (ADR 0012, ADR 0018): one ticket's lane, the runner's local desired state.
+# Go types: services/runner/internal/session/api.go. The runner's envtest suite installs this file.
+# Sessions live only in the runner's namespace; the spec mirrors runner.v1alpha1.SessionDesired.
+apiVersion: "apiextensions.k8s.io/v1"
+kind: "CustomResourceDefinition"
+metadata:
+  name: "sessions.rangelight.dev"
+  labels:
+    app.kubernetes.io/name: "session"
+    app.kubernetes.io/component: "runner"
+    app.kubernetes.io/part-of: "rangelight"
+    app.kubernetes.io/managed-by: "Helm"
+spec:
+  group: "rangelight.dev"
+  scope: "Namespaced"
+  names:
+    kind: "Session"
+    listKind: "SessionList"
+    plural: "sessions"
+    singular: "session"
+  versions:
+    - name: "v1alpha1"
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: "Ticket"
+          type: "string"
+          jsonPath: ".spec.ticket.key"
+        - name: "Phase"
+          type: "string"
+          jsonPath: ".status.phase"
+        - name: "Age"
+          type: "date"
+          jsonPath: ".metadata.creationTimestamp"
+      schema:
+        openAPIV3Schema:
+          type: "object"
+          required: ["spec"]
+          properties:
+            apiVersion:
+              type: "string"
+            kind:
+              type: "string"
+            metadata:
+              type: "object"
+            spec:
+              type: "object"
+              required: ["id", "ticket", "repo", "baseRef", "member"]
+              properties:
+                id:
+                  description: "The session's lowercase UUIDv7."
+                  type: "string"
+                  pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                  x-kubernetes-validations:
+                    - rule: "self == oldSelf"
+                      message: "id is immutable"
+                ticket:
+                  description: "Mounted in the lane as /etc/rangelight/ticket.json."
+                  type: "object"
+                  required: ["key", "title", "description", "criteria"]
+                  properties:
+                    key:
+                      description: "The ticket key; the lane namespace is rl-<key, lowercased>."
+                      type: "string"
+                      maxLength: 40
+                      pattern: "^[A-Z][A-Z0-9]*-[1-9][0-9]*$"
+                      x-kubernetes-validations:
+                        - rule: "self == oldSelf"
+                          message: "the ticket key is immutable"
+                    title:
+                      type: "string"
+                      minLength: 1
+                      maxLength: 300
+                    description:
+                      type: "string"
+                      maxLength: 20000
+                    criteria:
+                      description: "The acceptance criteria, AC1..ACn in order."
+                      type: "array"
+                      minItems: 1
+                      maxItems: 50
+                      items:
+                        type: "string"
+                        minLength: 1
+                        maxLength: 2000
+                repo:
+                  description: "The git mirror's name for the repo, served at /<repo>.git."
+                  type: "string"
+                  pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+                  x-kubernetes-validations:
+                    - rule: "!self.endsWith('.git')"
+                      message: "repo is the name without .git"
+                    - rule: "self == oldSelf"
+                      message: "repo is immutable"
+                baseRef:
+                  description: "The approved base branch; the profile is read from its tip (ADR 0041)."
+                  type: "string"
+                  maxLength: 200
+                  pattern: "^[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                  x-kubernetes-validations:
+                    - rule: "!self.contains('..') && !self.contains('//') && !self.endsWith('/') && !self.endsWith('.lock')"
+                      message: "baseRef is a branch name"
+                    - rule: "self == oldSelf"
+                      message: "baseRef is immutable"
+                member:
+                  description: "Whose Claude home the lane mounts (ADR 0046 amendment)."
+                  type: "string"
+                  pattern: "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+                  x-kubernetes-validations:
+                    - rule: "self == oldSelf"
+                      message: "member is immutable"
+            status:
+              type: "object"
+              properties:
+                phase:
+                  description: "Pending, Starting (the namespace exists), Hot (the agent pod is Ready), or Failed."
+                  type: "string"
+                  enum: ["Pending", "Starting", "Hot", "Failed"]
+                message:
+                  description: "Why the session failed."
+                  type: "string"
+                  maxLength: 2000
+                profileCommit:
+                  description: "The base-branch commit the profile was read from."
+                  type: "string"

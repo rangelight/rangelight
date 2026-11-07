@@ -832,6 +832,8 @@ type SessionDesired struct {
 	CredentialRefs   map[string]string      `protobuf:"bytes,13,rep,name=credential_refs,json=credentialRefs,proto3" json:"credential_refs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // name -> secret ref; never values (ADR 0004)
 	IdleAutostop     *durationpb.Duration   `protobuf:"bytes,14,opt,name=idle_autostop,json=idleAutostop,proto3" json:"idle_autostop,omitempty"`                                                                                 // delegated local timer (ADR 0018)
 	Owner            string                 `protobuf:"bytes,15,opt,name=owner,proto3" json:"owner,omitempty"`                                                                                                                   // OIDC subject, for labels/audit only
+	Ticket           *Ticket                `protobuf:"bytes,17,opt,name=ticket,proto3" json:"ticket,omitempty"`                                                                                                                 // mounted in the lane as /etc/rangelight/ticket.json
+	Member           string                 `protobuf:"bytes,18,opt,name=member,proto3" json:"member,omitempty"`                                                                                                                 // whose Claude home the lane mounts (ADR 0046 amendment): ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -978,19 +980,104 @@ func (x *SessionDesired) GetOwner() string {
 	return ""
 }
 
+func (x *SessionDesired) GetTicket() *Ticket {
+	if x != nil {
+		return x.Ticket
+	}
+	return nil
+}
+
+func (x *SessionDesired) GetMember() string {
+	if x != nil {
+		return x.Member
+	}
+	return ""
+}
+
+// The ticket a session works on: the lane's brief and its acceptance criteria (ADR 0045 §3).
+type Ticket struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"` // e.g. "RAN-19"; the lane namespace is rl-<key, lowercased>
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Criteria      []string               `protobuf:"bytes,4,rep,name=criteria,proto3" json:"criteria,omitempty"` // AC1..ACn, in order
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Ticket) Reset() {
+	*x = Ticket{}
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Ticket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Ticket) ProtoMessage() {}
+
+func (x *Ticket) ProtoReflect() protoreflect.Message {
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Ticket.ProtoReflect.Descriptor instead.
+func (*Ticket) Descriptor() ([]byte, []int) {
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Ticket) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *Ticket) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Ticket) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Ticket) GetCriteria() []string {
+	if x != nil {
+		return x.Criteria
+	}
+	return nil
+}
+
 type Worktree struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"` // owner/name
 	BaseSha       string                 `protobuf:"bytes,2,opt,name=base_sha,json=baseSha,proto3" json:"base_sha,omitempty"`
 	Branch        string                 `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`                                    // rangelight/<slug>
 	CheckpointRef string                 `protobuf:"bytes,4,opt,name=checkpoint_ref,json=checkpointRef,proto3" json:"checkpoint_ref,omitempty"` // refs/rangelight/sessions/<id>/cp/<n>, for wake/fork (ADR 0010)
+	BaseRef       string                 `protobuf:"bytes,5,opt,name=base_ref,json=baseRef,proto3" json:"base_ref,omitempty"`                   // the approved base branch: the worktree starts here and the profile is read here (ADR 0041)
+	MirrorRepo    string                 `protobuf:"bytes,6,opt,name=mirror_repo,json=mirrorRepo,proto3" json:"mirror_repo,omitempty"`          // the git mirror's name for repo, served at /<mirror_repo>.git
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Worktree) Reset() {
 	*x = Worktree{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[5]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1002,7 +1089,7 @@ func (x *Worktree) String() string {
 func (*Worktree) ProtoMessage() {}
 
 func (x *Worktree) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[5]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1015,7 +1102,7 @@ func (x *Worktree) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Worktree.ProtoReflect.Descriptor instead.
 func (*Worktree) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{5}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Worktree) GetRepo() string {
@@ -1046,6 +1133,20 @@ func (x *Worktree) GetCheckpointRef() string {
 	return ""
 }
 
+func (x *Worktree) GetBaseRef() string {
+	if x != nil {
+		return x.BaseRef
+	}
+	return ""
+}
+
+func (x *Worktree) GetMirrorRepo() string {
+	if x != nil {
+		return x.MirrorRepo
+	}
+	return ""
+}
+
 type LayerStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Layer         Layer                  `protobuf:"varint,1,opt,name=layer,proto3,enum=rangelight.runner.v1alpha1.Layer" json:"layer,omitempty"`
@@ -1058,7 +1159,7 @@ type LayerStatus struct {
 
 func (x *LayerStatus) Reset() {
 	*x = LayerStatus{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[6]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1070,7 +1171,7 @@ func (x *LayerStatus) String() string {
 func (*LayerStatus) ProtoMessage() {}
 
 func (x *LayerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[6]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1083,7 +1184,7 @@ func (x *LayerStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LayerStatus.ProtoReflect.Descriptor instead.
 func (*LayerStatus) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{6}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *LayerStatus) GetLayer() Layer {
@@ -1131,7 +1232,7 @@ type SessionStatus struct {
 
 func (x *SessionStatus) Reset() {
 	*x = SessionStatus{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[7]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1143,7 +1244,7 @@ func (x *SessionStatus) String() string {
 func (*SessionStatus) ProtoMessage() {}
 
 func (x *SessionStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[7]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1156,7 +1257,7 @@ func (x *SessionStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionStatus.ProtoReflect.Descriptor instead.
 func (*SessionStatus) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{7}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SessionStatus) GetSessionId() string {
@@ -1233,7 +1334,7 @@ type Command struct {
 
 func (x *Command) Reset() {
 	*x = Command{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[8]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1245,7 +1346,7 @@ func (x *Command) String() string {
 func (*Command) ProtoMessage() {}
 
 func (x *Command) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[8]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1258,7 +1359,7 @@ func (x *Command) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Command.ProtoReflect.Descriptor instead.
 func (*Command) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{8}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Command) GetCommandId() string {
@@ -1356,7 +1457,7 @@ type Hibernate struct {
 
 func (x *Hibernate) Reset() {
 	*x = Hibernate{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[9]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1368,7 +1469,7 @@ func (x *Hibernate) String() string {
 func (*Hibernate) ProtoMessage() {}
 
 func (x *Hibernate) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[9]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1381,7 +1482,7 @@ func (x *Hibernate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Hibernate.ProtoReflect.Descriptor instead.
 func (*Hibernate) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{9}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Hibernate) GetReason() string {
@@ -1407,7 +1508,7 @@ type Wake struct {
 
 func (x *Wake) Reset() {
 	*x = Wake{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[10]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1419,7 +1520,7 @@ func (x *Wake) String() string {
 func (*Wake) ProtoMessage() {}
 
 func (x *Wake) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[10]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1432,7 +1533,7 @@ func (x *Wake) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Wake.ProtoReflect.Descriptor instead.
 func (*Wake) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{10}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Wake) GetCheckpointRef() string {
@@ -1451,7 +1552,7 @@ type Teardown struct {
 
 func (x *Teardown) Reset() {
 	*x = Teardown{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[11]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1463,7 +1564,7 @@ func (x *Teardown) String() string {
 func (*Teardown) ProtoMessage() {}
 
 func (x *Teardown) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[11]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1476,7 +1577,7 @@ func (x *Teardown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Teardown.ProtoReflect.Descriptor instead.
 func (*Teardown) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{11}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Teardown) GetKeepNamespaceWarm() bool {
@@ -1503,7 +1604,7 @@ type RunGate struct {
 
 func (x *RunGate) Reset() {
 	*x = RunGate{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[12]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1515,7 +1616,7 @@ func (x *RunGate) String() string {
 func (*RunGate) ProtoMessage() {}
 
 func (x *RunGate) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[12]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1528,7 +1629,7 @@ func (x *RunGate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunGate.ProtoReflect.Descriptor instead.
 func (*RunGate) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{12}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RunGate) GetGateId() string {
@@ -1589,7 +1690,7 @@ type GateResult struct {
 
 func (x *GateResult) Reset() {
 	*x = GateResult{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[13]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1601,7 +1702,7 @@ func (x *GateResult) String() string {
 func (*GateResult) ProtoMessage() {}
 
 func (x *GateResult) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[13]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1614,7 +1715,7 @@ func (x *GateResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateResult.ProtoReflect.Descriptor instead.
 func (*GateResult) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{13}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GateResult) GetSessionId() string {
@@ -1678,7 +1779,7 @@ type Artifact struct {
 
 func (x *Artifact) Reset() {
 	*x = Artifact{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[14]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1690,7 +1791,7 @@ func (x *Artifact) String() string {
 func (*Artifact) ProtoMessage() {}
 
 func (x *Artifact) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[14]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1703,7 +1804,7 @@ func (x *Artifact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Artifact.ProtoReflect.Descriptor instead.
 func (*Artifact) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{14}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Artifact) GetName() string {
@@ -1745,7 +1846,7 @@ type CommandResult struct {
 
 func (x *CommandResult) Reset() {
 	*x = CommandResult{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[15]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1757,7 +1858,7 @@ func (x *CommandResult) String() string {
 func (*CommandResult) ProtoMessage() {}
 
 func (x *CommandResult) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[15]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1770,7 +1871,7 @@ func (x *CommandResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandResult.ProtoReflect.Descriptor instead.
 func (*CommandResult) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{15}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CommandResult) GetCommandId() string {
@@ -1805,7 +1906,7 @@ type Error struct {
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[16]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1817,7 +1918,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[16]
+	mi := &file_rangelight_runner_v1alpha1_runner_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1830,7 +1931,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{16}
+	return file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Error) GetCode() ErrorCode {
@@ -1898,7 +1999,7 @@ const file_rangelight_runner_v1alpha1_runner_proto_rawDesc = "" +
 	"\x16requested_memory_bytes\x18\x04 \x01(\x03R\x14requestedMemoryBytes\x12!\n" +
 	"\fhot_sessions\x18\x05 \x01(\x05R\vhotSessions\x122\n" +
 	"\x15warm_namespaces_ready\x18\x06 \x01(\x05R\x13warmNamespacesReady\x12.\n" +
-	"\x13pending_session_ids\x18\a \x03(\tR\x11pendingSessionIds\"\xa4\x06\n" +
+	"\x13pending_session_ids\x18\a \x03(\tR\x11pendingSessionIds\"\xf8\x06\n" +
 	"\x0eSessionDesired\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1e\n" +
@@ -1920,15 +2021,25 @@ const file_rangelight_runner_v1alpha1_runner_proto_rawDesc = "" +
 	"\funder_change\x18\f \x03(\tR\vunderChange\x12g\n" +
 	"\x0fcredential_refs\x18\r \x03(\v2>.rangelight.runner.v1alpha1.SessionDesired.CredentialRefsEntryR\x0ecredentialRefs\x12>\n" +
 	"\ridle_autostop\x18\x0e \x01(\v2\x19.google.protobuf.DurationR\fidleAutostop\x12\x14\n" +
-	"\x05owner\x18\x0f \x01(\tR\x05owner\x1aA\n" +
+	"\x05owner\x18\x0f \x01(\tR\x05owner\x12:\n" +
+	"\x06ticket\x18\x11 \x01(\v2\".rangelight.runner.v1alpha1.TicketR\x06ticket\x12\x16\n" +
+	"\x06member\x18\x12 \x01(\tR\x06member\x1aA\n" +
 	"\x13CredentialRefsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"x\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"n\n" +
+	"\x06Ticket\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1a\n" +
+	"\bcriteria\x18\x04 \x03(\tR\bcriteria\"\xb4\x01\n" +
 	"\bWorktree\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x19\n" +
 	"\bbase_sha\x18\x02 \x01(\tR\abaseSha\x12\x16\n" +
 	"\x06branch\x18\x03 \x01(\tR\x06branch\x12%\n" +
-	"\x0echeckpoint_ref\x18\x04 \x01(\tR\rcheckpointRef\"\xa9\x01\n" +
+	"\x0echeckpoint_ref\x18\x04 \x01(\tR\rcheckpointRef\x12\x19\n" +
+	"\bbase_ref\x18\x05 \x01(\tR\abaseRef\x12\x1f\n" +
+	"\vmirror_repo\x18\x06 \x01(\tR\n" +
+	"mirrorRepo\"\xa9\x01\n" +
 	"\vLayerStatus\x127\n" +
 	"\x05layer\x18\x01 \x01(\x0e2!.rangelight.runner.v1alpha1.LayerR\x05layer\x12\x14\n" +
 	"\x05ready\x18\x02 \x01(\bR\x05ready\x123\n" +
@@ -2048,7 +2159,7 @@ func file_rangelight_runner_v1alpha1_runner_proto_rawDescGZIP() []byte {
 }
 
 var file_rangelight_runner_v1alpha1_runner_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_rangelight_runner_v1alpha1_runner_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_rangelight_runner_v1alpha1_runner_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_rangelight_runner_v1alpha1_runner_proto_goTypes = []any{
 	(SessionKind)(0),              // 0: rangelight.runner.v1alpha1.SessionKind
 	(DesiredState)(0),             // 1: rangelight.runner.v1alpha1.DesiredState
@@ -2060,58 +2171,60 @@ var file_rangelight_runner_v1alpha1_runner_proto_goTypes = []any{
 	(*RunnerWelcome)(nil),         // 7: rangelight.runner.v1alpha1.RunnerWelcome
 	(*CapacityReport)(nil),        // 8: rangelight.runner.v1alpha1.CapacityReport
 	(*SessionDesired)(nil),        // 9: rangelight.runner.v1alpha1.SessionDesired
-	(*Worktree)(nil),              // 10: rangelight.runner.v1alpha1.Worktree
-	(*LayerStatus)(nil),           // 11: rangelight.runner.v1alpha1.LayerStatus
-	(*SessionStatus)(nil),         // 12: rangelight.runner.v1alpha1.SessionStatus
-	(*Command)(nil),               // 13: rangelight.runner.v1alpha1.Command
-	(*Hibernate)(nil),             // 14: rangelight.runner.v1alpha1.Hibernate
-	(*Wake)(nil),                  // 15: rangelight.runner.v1alpha1.Wake
-	(*Teardown)(nil),              // 16: rangelight.runner.v1alpha1.Teardown
-	(*RunGate)(nil),               // 17: rangelight.runner.v1alpha1.RunGate
-	(*GateResult)(nil),            // 18: rangelight.runner.v1alpha1.GateResult
-	(*Artifact)(nil),              // 19: rangelight.runner.v1alpha1.Artifact
-	(*CommandResult)(nil),         // 20: rangelight.runner.v1alpha1.CommandResult
-	(*Error)(nil),                 // 21: rangelight.runner.v1alpha1.Error
-	nil,                           // 22: rangelight.runner.v1alpha1.SessionDesired.CredentialRefsEntry
-	(*timestamppb.Timestamp)(nil), // 23: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 24: google.protobuf.Duration
+	(*Ticket)(nil),                // 10: rangelight.runner.v1alpha1.Ticket
+	(*Worktree)(nil),              // 11: rangelight.runner.v1alpha1.Worktree
+	(*LayerStatus)(nil),           // 12: rangelight.runner.v1alpha1.LayerStatus
+	(*SessionStatus)(nil),         // 13: rangelight.runner.v1alpha1.SessionStatus
+	(*Command)(nil),               // 14: rangelight.runner.v1alpha1.Command
+	(*Hibernate)(nil),             // 15: rangelight.runner.v1alpha1.Hibernate
+	(*Wake)(nil),                  // 16: rangelight.runner.v1alpha1.Wake
+	(*Teardown)(nil),              // 17: rangelight.runner.v1alpha1.Teardown
+	(*RunGate)(nil),               // 18: rangelight.runner.v1alpha1.RunGate
+	(*GateResult)(nil),            // 19: rangelight.runner.v1alpha1.GateResult
+	(*Artifact)(nil),              // 20: rangelight.runner.v1alpha1.Artifact
+	(*CommandResult)(nil),         // 21: rangelight.runner.v1alpha1.CommandResult
+	(*Error)(nil),                 // 22: rangelight.runner.v1alpha1.Error
+	nil,                           // 23: rangelight.runner.v1alpha1.SessionDesired.CredentialRefsEntry
+	(*timestamppb.Timestamp)(nil), // 24: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 25: google.protobuf.Duration
 }
 var file_rangelight_runner_v1alpha1_runner_proto_depIdxs = []int32{
-	23, // 0: rangelight.runner.v1alpha1.Envelope.sent_at:type_name -> google.protobuf.Timestamp
+	24, // 0: rangelight.runner.v1alpha1.Envelope.sent_at:type_name -> google.protobuf.Timestamp
 	6,  // 1: rangelight.runner.v1alpha1.Envelope.hello:type_name -> rangelight.runner.v1alpha1.RunnerHello
 	7,  // 2: rangelight.runner.v1alpha1.Envelope.welcome:type_name -> rangelight.runner.v1alpha1.RunnerWelcome
 	8,  // 3: rangelight.runner.v1alpha1.Envelope.capacity:type_name -> rangelight.runner.v1alpha1.CapacityReport
 	9,  // 4: rangelight.runner.v1alpha1.Envelope.desired:type_name -> rangelight.runner.v1alpha1.SessionDesired
-	12, // 5: rangelight.runner.v1alpha1.Envelope.status:type_name -> rangelight.runner.v1alpha1.SessionStatus
-	13, // 6: rangelight.runner.v1alpha1.Envelope.command:type_name -> rangelight.runner.v1alpha1.Command
-	20, // 7: rangelight.runner.v1alpha1.Envelope.result:type_name -> rangelight.runner.v1alpha1.CommandResult
-	21, // 8: rangelight.runner.v1alpha1.Envelope.error:type_name -> rangelight.runner.v1alpha1.Error
-	18, // 9: rangelight.runner.v1alpha1.Envelope.gate_result:type_name -> rangelight.runner.v1alpha1.GateResult
-	24, // 10: rangelight.runner.v1alpha1.RunnerWelcome.capacity_report_interval:type_name -> google.protobuf.Duration
+	13, // 5: rangelight.runner.v1alpha1.Envelope.status:type_name -> rangelight.runner.v1alpha1.SessionStatus
+	14, // 6: rangelight.runner.v1alpha1.Envelope.command:type_name -> rangelight.runner.v1alpha1.Command
+	21, // 7: rangelight.runner.v1alpha1.Envelope.result:type_name -> rangelight.runner.v1alpha1.CommandResult
+	22, // 8: rangelight.runner.v1alpha1.Envelope.error:type_name -> rangelight.runner.v1alpha1.Error
+	19, // 9: rangelight.runner.v1alpha1.Envelope.gate_result:type_name -> rangelight.runner.v1alpha1.GateResult
+	25, // 10: rangelight.runner.v1alpha1.RunnerWelcome.capacity_report_interval:type_name -> google.protobuf.Duration
 	9,  // 11: rangelight.runner.v1alpha1.RunnerWelcome.sessions:type_name -> rangelight.runner.v1alpha1.SessionDesired
 	0,  // 12: rangelight.runner.v1alpha1.SessionDesired.kind:type_name -> rangelight.runner.v1alpha1.SessionKind
 	1,  // 13: rangelight.runner.v1alpha1.SessionDesired.state:type_name -> rangelight.runner.v1alpha1.DesiredState
-	10, // 14: rangelight.runner.v1alpha1.SessionDesired.worktrees:type_name -> rangelight.runner.v1alpha1.Worktree
-	22, // 15: rangelight.runner.v1alpha1.SessionDesired.credential_refs:type_name -> rangelight.runner.v1alpha1.SessionDesired.CredentialRefsEntry
-	24, // 16: rangelight.runner.v1alpha1.SessionDesired.idle_autostop:type_name -> google.protobuf.Duration
-	3,  // 17: rangelight.runner.v1alpha1.LayerStatus.layer:type_name -> rangelight.runner.v1alpha1.Layer
-	24, // 18: rangelight.runner.v1alpha1.LayerStatus.elapsed:type_name -> google.protobuf.Duration
-	2,  // 19: rangelight.runner.v1alpha1.SessionStatus.phase:type_name -> rangelight.runner.v1alpha1.Phase
-	11, // 20: rangelight.runner.v1alpha1.SessionStatus.layers:type_name -> rangelight.runner.v1alpha1.LayerStatus
-	14, // 21: rangelight.runner.v1alpha1.Command.hibernate:type_name -> rangelight.runner.v1alpha1.Hibernate
-	15, // 22: rangelight.runner.v1alpha1.Command.wake:type_name -> rangelight.runner.v1alpha1.Wake
-	16, // 23: rangelight.runner.v1alpha1.Command.teardown:type_name -> rangelight.runner.v1alpha1.Teardown
-	17, // 24: rangelight.runner.v1alpha1.Command.run_gate:type_name -> rangelight.runner.v1alpha1.RunGate
-	24, // 25: rangelight.runner.v1alpha1.RunGate.timeout:type_name -> google.protobuf.Duration
-	19, // 26: rangelight.runner.v1alpha1.GateResult.artifacts:type_name -> rangelight.runner.v1alpha1.Artifact
-	24, // 27: rangelight.runner.v1alpha1.GateResult.elapsed:type_name -> google.protobuf.Duration
-	21, // 28: rangelight.runner.v1alpha1.CommandResult.error:type_name -> rangelight.runner.v1alpha1.Error
-	4,  // 29: rangelight.runner.v1alpha1.Error.code:type_name -> rangelight.runner.v1alpha1.ErrorCode
-	30, // [30:30] is the sub-list for method output_type
-	30, // [30:30] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	11, // 14: rangelight.runner.v1alpha1.SessionDesired.worktrees:type_name -> rangelight.runner.v1alpha1.Worktree
+	23, // 15: rangelight.runner.v1alpha1.SessionDesired.credential_refs:type_name -> rangelight.runner.v1alpha1.SessionDesired.CredentialRefsEntry
+	25, // 16: rangelight.runner.v1alpha1.SessionDesired.idle_autostop:type_name -> google.protobuf.Duration
+	10, // 17: rangelight.runner.v1alpha1.SessionDesired.ticket:type_name -> rangelight.runner.v1alpha1.Ticket
+	3,  // 18: rangelight.runner.v1alpha1.LayerStatus.layer:type_name -> rangelight.runner.v1alpha1.Layer
+	25, // 19: rangelight.runner.v1alpha1.LayerStatus.elapsed:type_name -> google.protobuf.Duration
+	2,  // 20: rangelight.runner.v1alpha1.SessionStatus.phase:type_name -> rangelight.runner.v1alpha1.Phase
+	12, // 21: rangelight.runner.v1alpha1.SessionStatus.layers:type_name -> rangelight.runner.v1alpha1.LayerStatus
+	15, // 22: rangelight.runner.v1alpha1.Command.hibernate:type_name -> rangelight.runner.v1alpha1.Hibernate
+	16, // 23: rangelight.runner.v1alpha1.Command.wake:type_name -> rangelight.runner.v1alpha1.Wake
+	17, // 24: rangelight.runner.v1alpha1.Command.teardown:type_name -> rangelight.runner.v1alpha1.Teardown
+	18, // 25: rangelight.runner.v1alpha1.Command.run_gate:type_name -> rangelight.runner.v1alpha1.RunGate
+	25, // 26: rangelight.runner.v1alpha1.RunGate.timeout:type_name -> google.protobuf.Duration
+	20, // 27: rangelight.runner.v1alpha1.GateResult.artifacts:type_name -> rangelight.runner.v1alpha1.Artifact
+	25, // 28: rangelight.runner.v1alpha1.GateResult.elapsed:type_name -> google.protobuf.Duration
+	22, // 29: rangelight.runner.v1alpha1.CommandResult.error:type_name -> rangelight.runner.v1alpha1.Error
+	4,  // 30: rangelight.runner.v1alpha1.Error.code:type_name -> rangelight.runner.v1alpha1.ErrorCode
+	31, // [31:31] is the sub-list for method output_type
+	31, // [31:31] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_rangelight_runner_v1alpha1_runner_proto_init() }
@@ -2130,7 +2243,7 @@ func file_rangelight_runner_v1alpha1_runner_proto_init() {
 		(*Envelope_Error)(nil),
 		(*Envelope_GateResult)(nil),
 	}
-	file_rangelight_runner_v1alpha1_runner_proto_msgTypes[8].OneofWrappers = []any{
+	file_rangelight_runner_v1alpha1_runner_proto_msgTypes[9].OneofWrappers = []any{
 		(*Command_Hibernate)(nil),
 		(*Command_Wake)(nil),
 		(*Command_Teardown)(nil),
@@ -2142,7 +2255,7 @@ func file_rangelight_runner_v1alpha1_runner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rangelight_runner_v1alpha1_runner_proto_rawDesc), len(file_rangelight_runner_v1alpha1_runner_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   18,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

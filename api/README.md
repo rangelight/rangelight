@@ -71,3 +71,6 @@ frozen (ADR 0027). Receipt predicate versions are never removed, so receipts ver
   server-streaming `WatchSession`, which ends with `ABORTED` on a seq gap), and `Change`, whose
   deterministic encoding is the payload of the session event chain. The chain hashes
   `prev_hash ‖ event id ‖ at (µs) ‖ payload` (ADR 0029; encoding in `shared/rust/chain`).
+- **v1alpha1** (RAN-19, additive): `SessionDesired` gains `ticket` (new message `Ticket`) and
+  `member`; `Worktree` gains `base_ref` and `mirror_repo`. Together they carry everything the
+  runner's `Session` resource holds.

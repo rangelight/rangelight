@@ -2,3 +2,7 @@
 {{- if ne .Release.Namespace "rangelight-system" }}
 {{- fail (printf "install into the namespace rangelight-system, not %q" .Release.Namespace) }}
 {{- end }}
+{{- /* The runner's ServiceAccount must be one no rangelight-system workload can mount (ADR 0046 amendment). */ -}}
+{{- if and .Values.runner.enabled (eq .Values.runner.namespace .Release.Namespace) }}
+{{- fail (printf "runner.namespace must not be %q: the runner runs in its own namespace" .Release.Namespace) }}
+{{- end }}

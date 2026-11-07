@@ -28,6 +28,8 @@ trap cleanup EXIT
 
 # The client side never reads the developer's own git config.
 export HOME="${TMP}" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="${TMP}/gitconfig" GIT_TERMINAL_PROMPT=0
+# A stalled HTTP transfer fails within seconds instead of hanging until CI cancels the job.
+export GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=15
 git config --global user.name test
 git config --global user.email test@example.invalid
 git config --global init.defaultBranch main
@@ -137,6 +139,8 @@ start_nginx() {
   # Its own process group (setsid), so cleanup can stop the workers with it.
   setsid fcgiwrap -c 16 -s "unix:${ng}/fcgiwrap/fcgiwrap.sock" 2>>"${W}/fcgiwrap.log" &
   PIDS+=("-$!")
+  # nginx answers /healthz on its own: without fcgiwrap's socket, the first git request gets a 502.
+  wait_for "[[ -S '${ng}/fcgiwrap/fcgiwrap.sock' ]]"
   nginx -e stderr -p "${ng}" -c "${ng}/nginx.conf" -g 'daemon off;' >>"${W}/nginx.log" 2>&1 &
   PIDS+=($!)
   BASE="http://127.0.0.1:${port}"

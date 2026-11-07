@@ -20,7 +20,7 @@ jobs:
           persist-credentials: false
       - name: Find fuzz targets
         run: |
-          if [[ -d control-plane/fuzz ]] || git grep -q -E '^func Fuzz[A-Z]' -- 'runner/**/*_test.go'; then
+          if [[ -d control-plane/fuzz ]] || git grep -q -E '^func Fuzz[A-Z]' -- '*_test.go'; then
             echo "fuzz targets exist but this workflow does not run them yet" >&2
             exit 1
           fi

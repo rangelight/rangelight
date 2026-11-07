@@ -41,13 +41,20 @@ jobs:
               - script/check.sh
             spec:
               - *shared
-              - spec/**
+              - api/**
+              - go.mod
+              - go.sum
+              - shared/go/gen/**
+              - services/runner/internal/session/schema/**
             rust:
               - *shared
               - control-plane/**
             go:
               - *shared
-              - runner/**
+              - '**/*.go'
+              - go.mod
+              - go.sum
+              - .golangci.yaml
             ts:
               - *shared
               - agent/**
@@ -131,12 +138,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Full history, so `buf breaking` can read origin/main (ADR 0027).
           fetch-depth: 0
           persist-credentials: false
-      - if: hashFiles('spec/**') != ''
-        uses: bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6 # v1.7.0
+      # Versions match BUF_VERSION and CHECK_JSONSCHEMA_VERSION in script/check.sh, which checks them.
+      # The runner's preinstalled Go fetches the toolchain and protoc-gen-go pinned in go.mod.
+      - uses: bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6 # v1.7.0
         with:
+          version: 1.75.0
           setup_only: true
+      - run: pipx install check-jsonschema==0.38.2
       - run: script/check.sh spec
 
   rust:
@@ -167,7 +178,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The runner's preinstalled Go fetches the toolchain pinned in runner/go.mod.
+      # The runner's preinstalled Go fetches the toolchain pinned in go.mod.
       - run: script/check.sh go
 
   ts:
@@ -197,6 +208,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The self-tests in script/test/ run the spec part too, so they need its tools.
+      - uses: bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6 # v1.7.0
+        with:
+          version: 1.75.0
+          setup_only: true
+      - run: pipx install check-jsonschema==0.38.2
       - if: hashFiles('charts/rangelight/Chart.yaml') != ''
         run: go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 && echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
       - run: script/check.sh deploy

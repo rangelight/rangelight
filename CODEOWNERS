@@ -2,7 +2,7 @@
 # checks plus one review. Changes here need the owner's approval.
 
 # Contracts
-/spec/                                      @ArielLahiany
+/api/                                       @ArielLahiany
 
 # Signer: receipts, the event chain and the Signer seam
 /control-plane/crates/rl-receipt/           @ArielLahiany

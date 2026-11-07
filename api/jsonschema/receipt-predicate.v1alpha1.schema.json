@@ -1,0 +1,920 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rangelight.dev/schemas/receipt-predicate.v1alpha1.schema.json",
+  "$comment": "Maturity: v1alpha1, may break with a changelog entry in api/README.md (ADR 0027). Frozen predicateType: https://rangelight.dev/receipt/v1alpha1 (ADR 0051). ADRs: 0021, 0022, 0024, 0029, 0030, 0033, 0034, 0038, 0041, 0042, 0045, 0046, 0048, 0054, 0056, 0057.",
+  "title": "Rangelight receipt predicate v1alpha1",
+  "description": "The predicate of an in-toto Statement whose predicateType is https://rangelight.dev/receipt/v1alpha1. The Statement is wrapped in a DSSE envelope and signed with the org key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session",
+    "checks",
+    "criteria",
+    "config",
+    "runtime",
+    "chain"
+  ],
+  "properties": {
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "org",
+        "team",
+        "owner",
+        "kind",
+        "startedAt",
+        "finishedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "UUIDv7 session id."
+        },
+        "org": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string",
+          "description": "OIDC subject of the human who owns the session."
+        },
+        "kind": {
+          "enum": [
+            "build",
+            "verify"
+          ],
+          "description": "build: a Rangelight lane. verify: verification of an external branch (ADR 0048)."
+        },
+        "ticket": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tracker",
+            "id",
+            "url"
+          ],
+          "properties": {
+            "tracker": {
+              "enum": [
+                "linear",
+                "github-issues"
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        "planSession": {
+          "type": "string",
+          "description": "Optional id of the plan session the ticket came from (ADR 0007)."
+        },
+        "pullRequest": {
+          "type": "string",
+          "format": "uri"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finishedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "enum": [
+            "rangelight",
+            "external"
+          ],
+          "default": "rangelight",
+          "description": "rangelight: a Rangelight lane produced the work. external: Rangelight only verified a branch it didn't produce (ADR 0048); agent-side fields are absent and shown as 'not recorded'."
+        },
+        "source": {
+          "enum": [
+            "label",
+            "workbench",
+            "dispatcher",
+            "mcp",
+            "pull-request"
+          ],
+          "description": "What started the session or verification (ADR 0048: lanes started over MCP are tagged mcp)."
+        }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "text",
+          "status",
+          "proofs"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "proven",
+              "failed",
+              "claimed",
+              "waived"
+            ]
+          },
+          "waivedBy": {
+            "type": "string",
+            "description": "Decision id; required when status is waived."
+          },
+          "proofs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/evidence"
+            }
+          },
+          "test": {
+            "type": "string",
+            "description": "Name of the test that proves it: contains AC<n>, was added by this branch (absent on main), and ran in Rangelight's own run (ADR 0045 §3)."
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "proven"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "proofs": {
+                  "contains": {
+                    "properties": {
+                      "class": {
+                        "const": "observed"
+                      }
+                    },
+                    "required": [
+                      "class"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "proven"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "test"
+              ]
+            }
+          }
+        ],
+        "description": "A criterion is proven only by observed evidence from a gate Job (ADR 0041). Claimed evidence may be listed but never proves."
+      }
+    },
+    "provenance": {
+      "type": "array",
+      "description": "One entry per diff hunk in the PR.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "repo",
+          "path",
+          "hunk",
+          "author"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "hunk": {
+            "type": "string",
+            "description": "Unified-diff hunk header, e.g. @@ -10,6 +10,9 @@."
+          },
+          "author": {
+            "enum": [
+              "agent",
+              "human",
+              "mixed"
+            ]
+          },
+          "agent": {
+            "type": "string",
+            "description": "agent:<session>/<lane>."
+          },
+          "model": {
+            "type": "string"
+          },
+          "promptDigest": {
+            "$ref": "#/$defs/digest"
+          },
+          "skillDigests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/digest"
+            }
+          },
+          "criterion": {
+            "type": "string",
+            "description": "Criterion id this hunk serves."
+          },
+          "humanTouchedBy": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "name",
+          "granted",
+          "used",
+          "blocked"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "llm",
+              "mcp-tool",
+              "egress-host",
+              "git",
+              "package-registry"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "granted": {
+            "type": "boolean"
+          },
+          "grantSource": {
+            "type": "string",
+            "description": "Policy id or decision id that granted it."
+          },
+          "used": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of calls."
+          },
+          "blocked": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of denied attempts."
+          }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "description": "Each decision is a control-plane event naming the authenticated user. WebAuthn signatures are deferred (ADR 0022 amendment).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "eventId",
+          "kind",
+          "decidedBy",
+          "decidedAt",
+          "choice"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string",
+            "description": "UUIDv7 of the event in the session chain."
+          },
+          "kind": {
+            "enum": [
+              "escalation",
+              "budget",
+              "blocked-tool",
+              "gate-skip",
+              "config-adopt",
+              "preemption",
+              "other"
+            ]
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "choice": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshotSha",
+        "profileDigest"
+      ],
+      "properties": {
+        "snapshotSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$",
+          "description": "rangelight-config commit the contract was frozen against (ADR 0005)."
+        },
+        "profileDigest": {
+          "$ref": "#/$defs/digest",
+          "description": "Digest of the rangelight.yaml used."
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtimeClass",
+        "podSecurity",
+        "images"
+      ],
+      "properties": {
+        "runtimeClass": {
+          "type": "string",
+          "description": "runc, gvisor, kata, ... (ADR 0015)."
+        },
+        "podSecurity": {
+          "enum": [
+            "restricted"
+          ]
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        },
+        "rangelightVersion": {
+          "type": "string"
+        },
+        "agentRuntime": {
+          "enum": [
+            "sdk",
+            "cli"
+          ],
+          "description": "AgentRuntime implementation (ADR 0046). Absent for external receipts."
+        },
+        "auth": {
+          "enum": [
+            "team-key",
+            "member-key",
+            "claude-plan"
+          ],
+          "description": "How the lane paid for Claude (ADR 0046). Never a token or key value."
+        }
+      }
+    },
+    "data": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "store",
+          "mode"
+        ],
+        "properties": {
+          "store": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "fixtures",
+              "masked-snapshot"
+            ]
+          },
+          "goldenCopyDigest": {
+            "$ref": "#/$defs/digest"
+          },
+          "maskingRulesSha": {
+            "type": "string"
+          },
+          "externalDeps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "mode"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "mode": {
+                  "enum": [
+                    "mock",
+                    "sandbox",
+                    "block"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currency",
+        "models",
+        "envHours",
+        "total"
+      ],
+      "properties": {
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "credentialRef": {
+          "type": "string",
+          "description": "Which credential paid, by reference only."
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "model",
+              "inputTokens",
+              "outputTokens",
+              "cacheReadTokens",
+              "amount"
+            ],
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "inputTokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "outputTokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cacheReadTokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cacheWriteTokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "amount": {
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]{2,6}$"
+              }
+            }
+          }
+        },
+        "envHours": {
+          "type": "number",
+          "minimum": 0
+        },
+        "envAmount": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]{2,6}$"
+        },
+        "total": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]{2,6}$"
+        }
+      }
+    },
+    "readiness": {
+      "type": "array",
+      "description": "Milliseconds from session start to each readiness layer (ADR 0024).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "layer",
+          "ms"
+        ],
+        "properties": {
+          "layer": {
+            "enum": [
+              "code",
+              "deps",
+              "neighbours",
+              "schema",
+              "service",
+              "preview"
+            ]
+          },
+          "ms": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "head",
+        "length",
+        "eventsBundle"
+      ],
+      "properties": {
+        "algorithm": {
+          "enum": [
+            "sha256"
+          ]
+        },
+        "head": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Hash of the last event in the session chain."
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "eventsUri": {
+          "type": "string",
+          "format": "uri",
+          "description": "Optional. Where an authorised verifier can fetch the event export online; the eventsBundle is the offline path."
+        },
+        "checkpoint": {
+          "type": "object",
+          "description": "Optional org Merkle checkpoint inclusion (ADR 0029).",
+          "additionalProperties": false,
+          "required": [
+            "checkpointId",
+            "root",
+            "leafIndex",
+            "proof"
+          ],
+          "properties": {
+            "checkpointId": {
+              "type": "string"
+            },
+            "root": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "leafIndex": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "proof": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "eventsBundle": {
+          "$ref": "#/$defs/artifact",
+          "description": "The session's events as an OCI artifact referenced by digest, so the chain verifies offline without API access (ADR 0042)."
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "description": "Rangelight's own checks on the pushed head, run in the observed gate Job (ADR 0045 §3).",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "ok",
+          "note"
+        ],
+        "properties": {
+          "id": {
+            "enum": [
+              "tests-pass",
+              "main-tests-still-pass",
+              "committed-and-pushed",
+              "merges-cleanly"
+            ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "gateJob": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "mainCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "description": "The main SHA the merge-based checks ran against."
+          },
+          "observer": {
+            "enum": [
+              "rangelight",
+              "ci"
+            ],
+            "default": "rangelight",
+            "description": "Who ran the check: Rangelight's own gate Job, or the rangelight/verify GitHub Action in the repo's CI (ADR 0056 §1)."
+          },
+          "workflow": {
+            "type": "string",
+            "description": "For observer 'ci': the workflow identity from the Sigstore certificate (repo, workflow path, ref)."
+          }
+        }
+      }
+    },
+    "external": {
+      "type": "array",
+      "description": "The org's own CI results on the pushed head, read from GitHub Check Runs (ADR 0054 §1). Provenance is 'reported': Rangelight saw the report, not the run.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "app",
+          "commit",
+          "conclusion",
+          "url",
+          "readAt"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "app": {
+            "type": "string",
+            "description": "Slug of the GitHub App that published the Check Run; must match rangelight.yaml."
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "conclusion": {
+            "enum": [
+              "success",
+              "failure",
+              "neutral",
+              "cancelled",
+              "skipped",
+              "timed_out",
+              "action_required",
+              "stale",
+              "missing"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "readAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "provenance": {
+            "const": "reported",
+            "default": "reported"
+          }
+        }
+      }
+    },
+    "attestations": {
+      "type": "array",
+      "description": "Human sign-offs, such as a product manager accepting a preview (ADR 0057 §2). Provenance is 'attested': a person said so; never shown as observed.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "who",
+          "commit",
+          "at"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "preview-accepted"
+            ]
+          },
+          "who": {
+            "type": "string",
+            "description": "The OIDC subject of the person."
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "description": "The commit the preview was built from."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "provenance": {
+            "const": "attested",
+            "default": "attested"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]+$"
+      },
+      "description": "in-toto DigestSet, e.g. {\"sha256\": \"...\"}."
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "digest"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "digest",
+        "class"
+      ],
+      "description": "A proof artifact with its provenance class (ADR 0041).",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "class": {
+          "enum": [
+            "observed",
+            "claimed"
+          ],
+          "description": "observed: produced by a runner-started gate Job on the committed SHA; claimed: reported by the agent."
+        },
+        "gateJob": {
+          "type": "string",
+          "description": "Gate Job id; required when class is observed."
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "The committed SHA the gate ran against."
+        }
+      },
+      "if": {
+        "properties": {
+          "class": {
+            "const": "observed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "gateJob",
+          "commit"
+        ]
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "session": {
+            "properties": {
+              "producer": {
+                "const": "external"
+              }
+            },
+            "required": [
+              "producer"
+            ]
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "contract",
+          "provenance",
+          "capabilities",
+          "decisions",
+          "data",
+          "cost",
+          "readiness"
+        ],
+        "properties": {
+          "session": {
+            "required": [
+              "ticket"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

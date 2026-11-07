@@ -1,0 +1,117 @@
+{
+  "session": {
+    "id": "019a4b10-2d3e-7f40-8a1b-3c4d5e6f7a8b",
+    "org": "acme",
+    "team": "checkout",
+    "owner": "github|maintainer",
+    "kind": "verify",
+    "producer": "rangelight",
+    "source": "pull-request",
+    "ticket": {
+      "tracker": "linear",
+      "id": "MEG-917",
+      "url": "https://linear.app/acme/issue/MEG-917"
+    },
+    "pullRequest": "https://github.com/acme/opentelemetry-demo/pull/430",
+    "startedAt": "2026-11-02T14:01:10Z",
+    "finishedAt": "2026-11-02T14:07:52Z"
+  },
+  "checks": [
+    {
+      "id": "tests-pass",
+      "ok": true,
+      "note": "57/57 pass",
+      "gateJob": "gate-019a4b10-1",
+      "commit": "7e1d2c3b4a5f60718293a4b5c6d7e8f901234567"
+    },
+    {
+      "id": "main-tests-still-pass",
+      "ok": true,
+      "note": "55 from main, run merged with this branch",
+      "gateJob": "gate-019a4b10-1",
+      "commit": "7e1d2c3b4a5f60718293a4b5c6d7e8f901234567",
+      "mainCommit": "a1b2c3d4e5f60718293a4b5c6d7e8f9001122334"
+    },
+    {
+      "id": "committed-and-pushed",
+      "ok": true,
+      "note": "verified SHA is the remote head",
+      "commit": "7e1d2c3b4a5f60718293a4b5c6d7e8f901234567"
+    },
+    {
+      "id": "merges-cleanly",
+      "ok": true,
+      "note": "no conflicts",
+      "mainCommit": "a1b2c3d4e5f60718293a4b5c6d7e8f9001122334"
+    }
+  ],
+  "external": [
+    {
+      "name": "build-test",
+      "app": "github-actions",
+      "commit": "7e1d2c3b4a5f60718293a4b5c6d7e8f901234567",
+      "conclusion": "success",
+      "required": true,
+      "url": "https://github.com/acme/opentelemetry-demo/runs/9001",
+      "readAt": "2026-11-02T14:08:01Z",
+      "provenance": "reported"
+    }
+  ],
+  "criteria": [
+    {
+      "id": "c1",
+      "text": "An expired discount code is rejected with a clear message",
+      "status": "proven",
+      "test": "AC1: an expired discount code is rejected",
+      "proofs": [
+        {
+          "name": "junit.xml",
+          "mediaType": "application/xml",
+          "digest": {
+            "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          },
+          "class": "observed",
+          "gateJob": "gate-019a4b10-1",
+          "commit": "7e1d2c3b4a5f60718293a4b5c6d7e8f901234567"
+        }
+      ]
+    },
+    {
+      "id": "c2",
+      "text": "The rejection is logged with the code's id",
+      "status": "claimed",
+      "proofs": []
+    }
+  ],
+  "config": {
+    "snapshotSha": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+    "profileDigest": {
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  },
+  "runtime": {
+    "runtimeClass": "runc",
+    "podSecurity": "restricted",
+    "images": [
+      {
+        "name": "ghcr.io/rangelight/gate:0.1.0",
+        "digest": {
+          "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      }
+    ],
+    "rangelightVersion": "0.1.0"
+  },
+  "chain": {
+    "algorithm": "sha256",
+    "head": "7777777777777777777777777777777777777777777777777777777777777777",
+    "length": 12,
+    "eventsBundle": {
+      "name": "zot.rangelight-system/receipts/019a4b10/events",
+      "mediaType": "application/vnd.rangelight.events.v1alpha1+protobuf",
+      "digest": {
+        "sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+      }
+    }
+  }
+}

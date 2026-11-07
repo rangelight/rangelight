@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rangelight.dev/schemas/agent-event.v1alpha1.schema.json",
+  "$comment": "Maturity: v1alpha1, may break with a changelog entry in api/README.md (ADR 0027). Versioned but internal: not promised to outsiders until a second agent implementation exists (ADR 0020 and ADR 0025 amendments). ADRs: 0020, 0021, 0045, 0048.",
+  "title": "Rangelight agent event v1alpha1",
+  "description": "One typed message from a lane's agent to Rangelight. The rld sidecar validates every outgoing message against this schema and its size caps before it publishes it; the model can say only what the schema allows (ADR 0045 §2 and §5). Free text to other lanes doesn't exist.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageId", "sessionId", "at", "type", "payload"],
+  "properties": {
+    "messageId": {
+      "$ref": "#/$defs/uuidv7",
+      "description": "Client event id, the idempotency key: receivers dedupe on it (ADR 0021, ADR 0045 §2)."
+    },
+    "sessionId": {
+      "$ref": "#/$defs/uuidv7",
+      "description": "The lane's session. rld sets it from its own credential; the agent can't choose it."
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the agent emitted the event."
+    },
+    "type": {
+      "enum": ["ask", "worker_done", "progress", "compacted"]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "ask" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/ask" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "worker_done" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/workerDone" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "progress" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/progress" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "compacted" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/compacted" } } }
+    }
+  ],
+  "$defs": {
+    "uuidv7": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "ask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question"],
+      "description": "The lane needs a member: it moves to waiting_for_you, and the dispatcher and the lane's owner see it (ADR 0045 §2).",
+      "properties": {
+        "question": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "description": "Optional choices to offer the member."
+        }
+      }
+    },
+    "workerDone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "headSha"],
+      "description": "The agent says it is done. This starts Rangelight's own checks on the pushed head; the summary is a claim, never proof (ADR 0045 §3).",
+      "properties": {
+        "summary": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "headSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "The commit the agent pushed and wants checked."
+        }
+      }
+    },
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "note"],
+      "description": "Feed only; it changes no state (ADR 0045 §2).",
+      "properties": {
+        "stage": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,39}$",
+          "description": "A short slug, e.g. 'tests' or 'migrations'."
+        },
+        "note": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "compacted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trigger", "summary"],
+      "description": "The agent session's context was compacted. The PreCompact hook persists the summary, so the receipt records that compaction happened (ADR 0020).",
+      "properties": {
+        "trigger": { "enum": ["auto", "manual"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 8000 }
+      }
+    }
+  }
+}

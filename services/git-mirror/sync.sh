@@ -32,7 +32,8 @@ for spec in "$@"; do
     continue
   fi
   # HEAD follows upstream's default branch, not this image's `git init` default, so clones check it out.
-  head="$(git -C "${repo}" -c credential.helper= ls-remote --symref "${upstream}" HEAD | awk '$1 == "ref:" { print $2; exit }')" ||
+  # awk reads to the end: exiting early would SIGPIPE ls-remote, and pipefail would discard the answer.
+  head="$(git -C "${repo}" -c credential.helper= ls-remote --symref "${upstream}" HEAD | awk '$1 == "ref:" && !h { h = $2 } END { print h }')" ||
     head=""
   if [[ "${head}" == refs/heads/?* && "${head}" != refs/heads/rangelight && "${head}" != refs/heads/rangelight/* ]]; then
     git -C "${repo}" symbolic-ref HEAD "${head}"

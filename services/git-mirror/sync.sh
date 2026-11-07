@@ -24,9 +24,18 @@ for spec in "$@"; do
   fi
   repo="${root}/${name}.git"
   [[ -d "${repo}" ]] || git init -q --bare "${repo}"
-  git -C "${repo}" -c credential.helper= -c gc.auto=0 -c maintenance.auto=false \
+  if ! git -C "${repo}" -c credential.helper= -c gc.auto=0 -c maintenance.auto=false \
     fetch --quiet --prune --no-tags "${upstream}" \
-    '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*' '^refs/heads/rangelight' '^refs/heads/rangelight/*' ||
-    { printf 'sync.sh: fetching %s failed\n' "${name}" >&2; failed=1; }
+    '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*' '^refs/heads/rangelight' '^refs/heads/rangelight/*'; then
+    printf 'sync.sh: fetching %s failed\n' "${name}" >&2
+    failed=1
+    continue
+  fi
+  # HEAD follows upstream's default branch, not this image's `git init` default, so clones check it out.
+  head="$(git -C "${repo}" -c credential.helper= ls-remote --symref "${upstream}" HEAD | awk '$1 == "ref:" { print $2; exit }')" ||
+    head=""
+  if [[ "${head}" == refs/heads/?* && "${head}" != refs/heads/rangelight && "${head}" != refs/heads/rangelight/* ]]; then
+    git -C "${repo}" symbolic-ref HEAD "${head}"
+  fi
 done
 exit "${failed}"

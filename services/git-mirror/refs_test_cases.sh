@@ -221,6 +221,16 @@ test_ac6_sync_keeps_session_refs() {
   check "AC6: the session's own repo is untouched" "[[ \$(ref_in sessions/a.git refs/rangelight/sessions/a/cp/1) == ${cp} ]]"
   check "AC6: main follows upstream" "[[ \$(ref_in demo.git refs/heads/main) == \$(git -C '${up}' rev-parse main) ]]"
   check "AC6: a branch deleted upstream is pruned" "! ref_in demo.git refs/heads/old >/dev/null"
+  git -C "${up}" branch -q trunk main
+  git -C "${up}" symbolic-ref HEAD refs/heads/trunk
+  ok "AC6: sync.sh creates a new repo" env GIT_ALLOW_PROTOCOL=file "${HERE}/sync.sh" "${SRV}" "fresh=file://${up}"
+  check "AC6: a new repo's HEAD is upstream's default branch" \
+    "[[ \$(git -C '${SRV}/fresh.git' symbolic-ref HEAD) == refs/heads/trunk ]]"
+  git -C "${up}" symbolic-ref HEAD refs/heads/rangelight
+  ok "AC6: sync.sh runs with upstream's HEAD on a session branch" env GIT_ALLOW_PROTOCOL=file "${HERE}/sync.sh" "${SRV}" "fresh=file://${up}"
+  check "AC6: HEAD never follows upstream into the session namespace" \
+    "[[ \$(git -C '${SRV}/fresh.git' symbolic-ref HEAD) == refs/heads/trunk ]]"
+  git -C "${up}" symbolic-ref HEAD refs/heads/main
   refused "sync.sh refuses a non-https upstream by default" "transport 'file' not allowed" \
     "${HERE}/sync.sh" "${SRV}" "demo=file://${up}"
   local spec

@@ -1,0 +1,27 @@
+# Security-critical paths only (ADR 0049 §9, ADR 0050 §4). Everything else merges on green
+# checks plus one review. Changes here need the owner's approval.
+
+# Contracts
+/spec/                                      @ArielLahiany
+
+# Signer: receipts, the event chain and the Signer seam
+/control-plane/crates/rl-receipt/           @ArielLahiany
+/control-plane/crates/rl-chain/             @ArielLahiany
+
+# Gateway and the per-session sidecar
+/control-plane/services/gateway/            @ArielLahiany
+/control-plane/services/rld/                @ArielLahiany
+
+# Policy and auth: Cedar authorisation, and the schema with its RLS and grants
+/control-plane/crates/rl-policy/            @ArielLahiany
+/control-plane/migrations/                  @ArielLahiany
+
+# The git mirror's push hooks
+/git-mirror/hooks/                          @ArielLahiany
+
+# The gate itself: CI, the checks, and this file
+/.github/workflows/                         @ArielLahiany
+/script/check.sh                            @ArielLahiany
+/script/scrub-allow.txt                     @ArielLahiany
+/script/size-exceptions.txt                 @ArielLahiany
+/CODEOWNERS                                 @ArielLahiany

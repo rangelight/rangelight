@@ -1,0 +1,4 @@
+# Limits from ADR 0049 §7.
+too-many-lines-threshold = 60
+cognitive-complexity-threshold = 15
+too-many-arguments-threshold = 5

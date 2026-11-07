@@ -2,9 +2,23 @@
 .env
 *.env
 
-# Helm
-charts
-
-# Visual Sutdio Code
+# Visual Studio Code
 .vscode
 
+
+# Rust
+target/
+
+# TypeScript
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Go
+runner/bin/
+
+# Editors and OS
+.idea/
+.DS_Store
+*.swp

@@ -1,0 +1,34 @@
+# The Rust workspace (ADR 0049 §3). Crates are created when first needed, not up front.
+[workspace]
+resolver = "3"
+# Cargo needs at least one crate to load this; until then `script/check.sh rust` skips.
+members = ["crates/*", "services/*"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+repository = "https://github.com/rangelight/rangelight"
+publish = false
+
+# Every dependency is declared here once; crates use `dep.workspace = true`.
+[workspace.dependencies]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+# Library crates raise this to deny with `#![deny(missing_docs)]` in lib.rs.
+missing_docs = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Off by default (nursery); on so clippy.toml's threshold of 15 applies (ADR 0049 §7).
+cognitive_complexity = "warn"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"

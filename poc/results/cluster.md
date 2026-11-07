@@ -40,13 +40,14 @@ Before `up` (exit 1):
 
 ```text
 FAIL  namespace rangelight-system does not exist (run: script/cluster.sh up)
-FAIL  Zot /v2/ not reachable (not installed)
-cluster.sh: smoke: 2 check(s) failed
+cluster.sh: smoke: 1 check(s) failed
 ```
 
 `script/cluster.sh up && script/cluster.sh smoke` (exit 0):
 
 ```text
 PASS  namespace rangelight-system exists
-PASS  Zot /v2/ returns 200
 ```
+
+There is no registry until a ticket needs one (RAN-32). The Zot that RAN-16 installed was removed
+with `script/cluster.sh down`; `kubectl get all,pvc -n rangelight-system` now shows no resources.

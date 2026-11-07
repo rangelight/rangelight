@@ -14,7 +14,7 @@ new_dir() {
   DIR="$(mktemp -d /tmp/rl-cluster-test.XXXXXX)"
   mkdir -p "${DIR}/script" "${DIR}/deployments/dev" "${DIR}/bin"
   cp "${ROOT}/script/cluster.sh" "${DIR}/script/"
-  cp "${ROOT}/deployments/dev/versions.env" "${ROOT}/deployments/dev/zot.yaml" "${DIR}/deployments/dev/"
+  cp "${ROOT}/deployments/dev/versions.env" "${DIR}/deployments/dev/"
   : >"${DIR}/calls"
   # The stub knows one context, "dev", records every call, keeps what `apply` reads,
   # and reports that no namespace exists.
@@ -104,31 +104,13 @@ test_up_never_deletes_or_makes_a_cluster() {
 test_up_applies_only_rangelight_system() {
   run up RANGELIGHT_KUBE_CONTEXT=dev
   expect_status 0
-  [[ -s "${DIR}/applied" ]] || fail "up applied nothing"
+  grep -qxF -e '  name: "rangelight-system"' "${DIR}/applied" || fail "up did not apply rangelight-system"
   ! grep -E -e '^\s*namespace:' "${DIR}/applied" | grep -vqE -e 'namespace: "rangelight-system"$' ||
     fail "up applies into a namespace other than rangelight-system"
   ! grep -qE -e 'rangelight-(gateway|runner)' "${DIR}/applied" "${DIR}/calls" || fail "up names an owner-only namespace"
 }
 
-test_up_refuses_a_manifest_naming_an_owner_only_namespace() {
-  # shellcheck disable=SC2016 # a literal placeholder
-  sed -i 's/namespace: "\${SYSTEM_NS}"/namespace: "rangelight-gateway"/' "${DIR}/deployments/dev/zot.yaml"
-  run up RANGELIGHT_KUBE_CONTEXT=dev
-  expect_status 1
-  expect_out "owner-only namespace"
-  expect_no_call ' apply '
-}
-
 # --- AC5: pinned versions --------------------------------------------------------
-
-test_up_applies_the_pinned_zot_image() {
-  run up RANGELIGHT_KUBE_CONTEXT=dev
-  local image
-  image="$(sed -n 's/^ZOT_IMAGE=//p' "${DIR}/deployments/dev/versions.env")"
-  grep -qF -e "image: \"${image}\"" "${DIR}/applied" || fail "the applied Zot image is not ${image}"
-  # shellcheck disable=SC2016 # a literal placeholder
-  ! grep -qF -e '${' "${DIR}/applied" || fail "an unfilled placeholder was applied"
-}
 
 test_images_are_pinned_by_tag_and_digest() {
   local line bad=0
@@ -141,8 +123,6 @@ test_images_are_pinned_by_tag_and_digest() {
   [[ "${bad}" -eq 0 ]] || fail "an image is not pinned by tag and digest"
   OUT="$(grep -rniE -e '[:= ]latest\b' "${DIR}/deployments/dev" "${DIR}/script/cluster.sh" || true)"
   [[ -z "${OUT}" ]] || fail "a 'latest' reference"
-  OUT="$(grep -nE -e 'image: "?[^"$]' "${DIR}/deployments/dev/zot.yaml" || true)"
-  [[ -z "${OUT}" ]] || fail "zot.yaml hard-codes an image instead of using versions.env"
 }
 
 # --- AC2: smoke fails before install ----------------------------------------------
@@ -151,7 +131,13 @@ test_smoke_fails_without_rangelight_system() {
   run smoke RANGELIGHT_KUBE_CONTEXT=dev
   expect_status 1
   expect_out "FAIL  namespace rangelight-system does not exist"
-  expect_out "FAIL  Zot /v2/"
+}
+
+test_smoke_passes_with_rangelight_system() {
+  sed -i '/ get namespace /d' "${DIR}/bin/kubectl"
+  run smoke RANGELIGHT_KUBE_CONTEXT=dev
+  expect_status 0
+  expect_out "PASS  namespace rangelight-system exists"
 }
 
 # --- runner -----------------------------------------------------------------------

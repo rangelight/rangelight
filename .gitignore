@@ -22,3 +22,6 @@ runner/bin/
 .idea/
 .DS_Store
 *.swp
+
+# The pinned versions of the dev environment are not secrets (RAN-16).
+!deployments/dev/versions.env

@@ -45,6 +45,17 @@ go() {
   ok go
 }
 
+# The Workbench's end-to-end tests need Playwright's browsers; install them only when missing.
+ts_browser() {
+  local dir
+  while IFS= read -r dir; do
+    if [[ ! -d "${dir}" ]]; then
+      pnpm --filter web exec playwright install chromium
+      return
+    fi
+  done < <(pnpm --filter web exec playwright install --dry-run chromium | awk '/Install location:/ { print $3 }')
+}
+
 ts() {
   has_files '^services/(agent|web)/.*\.tsx?$' || { skip ts; return 0; }
   need node pnpm || failed "ts (tools)"
@@ -52,6 +63,7 @@ ts() {
   pnpm exec prettier --check .
   pnpm exec eslint --max-warnings 0 .
   pnpm -r --if-present run typecheck
+  ts_browser
   pnpm -r --if-present run test
   pnpm audit --prod
   ok ts

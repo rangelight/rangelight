@@ -172,7 +172,7 @@ jobs:
           persist-credentials: false
       # The runner's preinstalled Go fetches the toolchain and protoc-gen-go pinned in go.mod.
       - uses: "./.github/actions/tools"
-      # json-schema-to-typescript, pinned in package.json, generates shared/ts/gen.
+      # json-schema-to-typescript and protoc-gen-es, pinned in package.json, generate shared/ts/gen.
       - uses: "pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115"  # v6.1.1
       - uses: "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1"  # v7.1.0
         with:
@@ -251,7 +251,7 @@ jobs:
           persist-credentials: false
       # The self-tests in scripts/test/ run the spec and yaml parts too, so they need their tools.
       - uses: "./.github/actions/tools"
-      # The gen and spec self-tests run json-schema-to-typescript (package.json).
+      # The gen and spec self-tests run json-schema-to-typescript and protoc-gen-es (package.json).
       - uses: "pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115"  # v6.1.1
       - uses: "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1"  # v7.1.0
         with:

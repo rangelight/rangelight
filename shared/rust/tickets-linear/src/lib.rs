@@ -30,7 +30,7 @@ const QUERY: &str = "query Intake($team: String!, $label: String!, $first: Int!,
     labels: { name: { eq: $label } },
     state: { type: { nin: [\"completed\", \"canceled\"] } }
   }) {
-    nodes { id identifier title description }
+    nodes { id identifier title description url }
     pageInfo { hasNextPage endCursor }
   }
 }";
@@ -154,7 +154,8 @@ impl Linear {
             node.identifier,
             node.title,
             node.description.unwrap_or_default(),
-        );
+        )
+        .and_then(|ticket| ticket.with_url(node.url));
         if let Err(error) = &ticket
             && self
                 .warned
@@ -198,4 +199,6 @@ struct Node {
     title: String,
     /// Markdown; Linear sends null for an empty one.
     description: Option<String>,
+    /// The issue's page.
+    url: String,
 }

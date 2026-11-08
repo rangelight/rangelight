@@ -16,6 +16,9 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+# Playwright's run output (the committed screenshots live in services/web/test/screenshots/).
+test-results/
+playwright-report/
 
 # Go
 services/runner/bin/

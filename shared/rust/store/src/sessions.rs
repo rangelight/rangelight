@@ -1,4 +1,9 @@
+use std::collections::HashMap;
+use std::time::SystemTime;
+
 use rl_domain::{ChangeState, NewSession, Phase, ReportPhase, SessionId, State};
+use time::OffsetDateTime;
+use uuid::Uuid;
 
 use crate::events::NewEvent;
 use crate::{Store, StoreError, events, outbox, timestamp, to_u64};
@@ -16,14 +21,20 @@ pub struct SessionRow {
     pub ticket_key: String,
     /// The ticket's title when the session was created.
     pub title: String,
+    /// The ticket's page in its tracker; empty for sessions created before it was recorded.
+    pub ticket_url: String,
     /// The session's namespace.
     pub namespace: String,
+    /// The git mirror repo it works in.
+    pub repo: String,
     /// The desired state.
     pub state: State,
     /// The phase its runner last reported, if it has.
     pub phase: Option<Phase>,
     /// The seq of the session's last event.
     pub generation: u64,
+    /// When the session was created.
+    pub created_at: SystemTime,
 }
 
 impl Store {
@@ -46,6 +57,7 @@ impl Store {
             command.ticket.title(),
             command.ticket.description(),
             command.ticket.criteria(),
+            command.ticket.url(),
             command.namespace(),
             command.workspace.repo(),
             command.workspace.base_ref(),
@@ -174,25 +186,110 @@ impl Store {
     /// The newest sessions first, at most `limit`.
     ///
     /// # Errors
-    /// [`StoreError::Db`], or [`StoreError::Domain`] for a stored state that isn't one.
+    /// [`StoreError::Db`], or [`StoreError::Domain`] for a stored state or phase that isn't one.
     pub async fn list_sessions(&self, limit: u16) -> Result<Vec<SessionRow>, StoreError> {
-        let rows = sqlx::query_file!("../../../db/queries/sessions/list.sql", i64::from(limit))
-            .fetch_all(&self.pool)
+        sqlx::query_file_as!(
+            Record,
+            "../../../db/queries/sessions/list.sql",
+            i64::from(limit)
+        )
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(SessionRow::try_from)
+        .collect()
+    }
+
+    /// One session, or `None` when there's no such session.
+    ///
+    /// # Errors
+    /// [`StoreError::Db`], or [`StoreError::Domain`] for a stored state or phase that isn't one.
+    pub async fn get_session(&self, id: SessionId) -> Result<Option<SessionRow>, StoreError> {
+        sqlx::query_file_as!(Record, "../../../db/queries/sessions/get.sql", id.0)
+            .fetch_optional(&self.pool)
+            .await?
+            .map(SessionRow::try_from)
+            .transpose()
+    }
+
+    /// What a `WatchSessions` stream starts from: the newest sessions to show (at most `limit`) and
+    /// every session's generation, read in one repeatable-read transaction so they agree.
+    ///
+    /// # Errors
+    /// [`StoreError::Db`], or [`StoreError::Domain`] for a stored state or phase that isn't one.
+    pub async fn snapshot(&self, limit: u16) -> Result<Snapshot, StoreError> {
+        let mut tx = self
+            .pool
+            .begin_with(include_str!(
+                "../../../../db/queries/sessions/begin_snapshot.sql"
+            ))
             .await?;
-        rows.into_iter()
-            .map(|row| {
-                Ok(SessionRow {
-                    id: SessionId(row.id),
-                    tracker: row.tracker,
-                    ticket_id: row.ticket_id,
-                    ticket_key: row.ticket_key,
-                    title: row.title,
-                    namespace: row.namespace,
-                    state: State::parse(&row.state)?,
-                    phase: row.phase.as_deref().map(Phase::parse).transpose()?,
-                    generation: to_u64(row.generation, "generation")?,
-                })
-            })
-            .collect()
+        let generations = sqlx::query_file!("../../../db/queries/sessions/generations.sql")
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .map(|row| Ok((SessionId(row.id), to_u64(row.generation, "generation")?)))
+            .collect::<Result<_, StoreError>>()?;
+        let sessions = sqlx::query_file_as!(
+            Record,
+            "../../../db/queries/sessions/list.sql",
+            i64::from(limit)
+        )
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .map(SessionRow::try_from)
+        .collect::<Result<_, _>>()?;
+        tx.commit().await?;
+        Ok(Snapshot {
+            sessions,
+            generations,
+        })
+    }
+}
+
+/// The sessions to show and every session's generation, at one instant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Snapshot {
+    /// The newest sessions first.
+    pub sessions: Vec<SessionRow>,
+    /// Every session's generation, shown or not.
+    pub generations: HashMap<SessionId, u64>,
+}
+
+/// A row of `list.sql` or `get.sql`.
+struct Record {
+    id: Uuid,
+    tracker: String,
+    ticket_id: String,
+    ticket_key: String,
+    title: String,
+    ticket_url: String,
+    namespace: String,
+    repo: String,
+    state: String,
+    phase: Option<String>,
+    generation: i64,
+    created_at: OffsetDateTime,
+}
+
+impl TryFrom<Record> for SessionRow {
+    type Error = StoreError;
+
+    fn try_from(row: Record) -> Result<SessionRow, StoreError> {
+        Ok(SessionRow {
+            id: SessionId(row.id),
+            tracker: row.tracker,
+            ticket_id: row.ticket_id,
+            ticket_key: row.ticket_key,
+            title: row.title,
+            ticket_url: row.ticket_url,
+            namespace: row.namespace,
+            repo: row.repo,
+            state: State::parse(&row.state)?,
+            phase: row.phase.as_deref().map(Phase::parse).transpose()?,
+            generation: to_u64(row.generation, "generation")?,
+            created_at: SystemTime::from(row.created_at),
+        })
     }
 }

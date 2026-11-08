@@ -100,6 +100,8 @@ impl NewSession {
             ticket_id: self.ticket.id().to_owned(),
             ticket_key: self.ticket.key().to_owned(),
             title: self.ticket.title().to_owned(),
+            ticket_url: self.ticket.url().to_owned(),
+            repo: self.workspace.repo().to_owned(),
             namespace: self.namespace(),
             state: State::Hot,
         }
@@ -244,6 +246,10 @@ pub enum Change {
         ticket_key: String,
         /// The ticket's title when the session was created.
         title: String,
+        /// The ticket's page in its tracker.
+        ticket_url: String,
+        /// The git mirror repo the session works in.
+        repo: String,
         /// The session's namespace.
         namespace: String,
         /// The first state, always hot.

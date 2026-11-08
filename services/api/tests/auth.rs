@@ -14,7 +14,9 @@ use connectrpc::ErrorCode;
 use rl_auth::{Provider, Started, Url};
 use rl_config::SecretRef;
 use rl_proto::rangelight::auth::v1alpha1::WhoAmIRequest;
-use rl_proto::rangelight::session::v1alpha1::{ListSessionsRequest, WatchSessionRequest};
+use rl_proto::rangelight::session::v1alpha1::{
+    GetSessionRequest, ListSessionsRequest, WatchSessionRequest, WatchSessionsRequest,
+};
 use rl_testkit::{Browser, Database, PUBLIC_URL};
 use secrecy::ExposeSecret;
 
@@ -30,7 +32,8 @@ async fn app(test: &'static str) -> (Database, common::Served) {
     (db, served)
 }
 
-/// Every RPC refuses `cookie` with UNAUTHENTICATED and a message that says nothing more.
+/// Every RPC (`ListSessions`, `GetSession`, `WatchSessions`, `WatchSession`, `WhoAmI`) refuses `cookie` with
+/// UNAUTHENTICATED and a message that says nothing more.
 async fn refused(served: &common::Served, cookie: &str) {
     let errors = [
         served
@@ -43,6 +46,26 @@ async fn refused(served: &common::Served, cookie: &str) {
             .who_am_i(WhoAmIRequest::default())
             .await
             .err(),
+        served
+            .sessions(cookie)
+            .get_session(GetSessionRequest {
+                session_id: uuid::Uuid::now_v7().to_string(),
+                ..Default::default()
+            })
+            .await
+            .err(),
+        match served
+            .sessions(cookie)
+            .watch_sessions(WatchSessionsRequest::default())
+            .await
+        {
+            // A wrongly accepted watch would send its snapshot: that's the failure.
+            Ok(mut stream) => tokio::time::timeout(Duration::from_secs(5), stream.message())
+                .await
+                .expect("refused, not streaming")
+                .err(),
+            Err(error) => Some(error),
+        },
         match served
             .sessions(cookie)
             .watch_session(WatchSessionRequest {

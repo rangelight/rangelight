@@ -129,6 +129,8 @@ fn payload_is_deterministic_and_decodes() {
         ticket_id: "issue-1".into(),
         ticket_key: "RAN-1".into(),
         title: "A title".into(),
+        ticket_url: "https://linear.app/example/issue/RAN-1".into(),
+        repo: "shop".into(),
         namespace: "rl-ran-1".into(),
         state: State::Hot,
     };

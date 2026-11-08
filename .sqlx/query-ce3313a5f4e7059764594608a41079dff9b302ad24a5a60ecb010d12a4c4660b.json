@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- The newest sessions first.\nSELECT id, tracker, ticket_id, ticket_key, title, namespace, state, phase, generation\nFROM sessions\nORDER BY created_at DESC, id DESC\nLIMIT $1\n",
+  "query": "-- One session.\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, state, phase,\n  generation, created_at\nFROM sessions\nWHERE id = $1\n",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "ticket_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "ticket_url"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "namespace",
         "type_info": "Text",
         "origin": {
@@ -70,7 +81,18 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
+        "name": "repo",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "repo"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
         "name": "state",
         "type_info": "Text",
         "origin": {
@@ -81,7 +103,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "phase",
         "type_info": "Text",
         "origin": {
@@ -92,7 +114,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "generation",
         "type_info": "Int8",
         "origin": {
@@ -101,11 +123,22 @@
             "name": "generation"
           }
         }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "created_at"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -116,9 +149,12 @@
       false,
       false,
       false,
+      false,
+      false,
       true,
+      false,
       false
     ]
   },
-  "hash": "19f25b4544183a5709f146ab08543664845ebc0a5bb66e639bd640327913cf65"
+  "hash": "ce3313a5f4e7059764594608a41079dff9b302ad24a5a60ecb010d12a4c4660b"
 }

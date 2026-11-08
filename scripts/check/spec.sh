@@ -10,6 +10,7 @@ SPEC_REQUIRED=(
   api/jsonschema/rangelight.v1alpha1.schema.json
   api/jsonschema/agent-event.v1alpha1.schema.json
   api/jsonschema/ticket.v1alpha1.schema.json
+  api/jsonschema/terminal.v1alpha1.schema.json
   go.mod go.sum
   services/runner/internal/session/schema/rangelight.v1alpha1.schema.json
 )
@@ -17,6 +18,8 @@ SPEC_REQUIRED=(
 SPEC_GO_GEN="shared/go/gen"
 # The TypeScript types of the JSON Schemas (ADR 0049 §2.3); `gen` writes them there.
 SPEC_TS_GEN="shared/ts/gen"
+# The TypeScript protobuf code (protoc-gen-es); buf.gen.yaml writes it there, beside the types.
+SPEC_ES_GEN="shared/ts/gen/proto"
 
 # Every file the spec needs is there.
 spec_files() {
@@ -43,7 +46,7 @@ spec_schema_for() {
   local name="${1##*/}"
   case "${name%%.*}" in
     receipt) printf 'api/jsonschema/receipt-predicate.v1alpha1.schema.json' ;;
-    rangelight | agent-event | ticket) printf 'api/jsonschema/%s.v1alpha1.schema.json' "${name%%.*}" ;;
+    rangelight | agent-event | ticket | terminal) printf 'api/jsonschema/%s.v1alpha1.schema.json' "${name%%.*}" ;;
     *) return 1 ;;
   esac
 }
@@ -74,10 +77,16 @@ spec_schemas() {
   [[ "${bad}" -eq 0 ]] || failed "spec (schemas)"
 }
 
-# buf format, lint and breaking (against main); the committed Go code is what buf generates.
+# buf format, lint and breaking (against main); the committed Go and TypeScript code is what buf
+# generates.
 spec_proto() {
   local base="${RANGELIGHT_SPEC_BASE:-origin/main}" tmp toolchain
   toolchain="$(go_toolchain)"
+  # protoc-gen-es is pinned in package.json, so pnpm installs it, not scripts/tools.sh.
+  if [[ ! -x node_modules/.bin/protoc-gen-es ]]; then
+    printf 'spec: protoc-gen-es is missing; run pnpm install\n' >&2
+    failed "spec (tools)"
+  fi
   (cd api && buf format --diff --exit-code && buf lint) || failed "spec (buf format or lint)"
   if git cat-file -e "${base}:api/buf.yaml" 2>/dev/null; then
     (cd api && buf breaking --against "${ROOT}/.git#ref=${base},subdir=api") ||
@@ -90,9 +99,12 @@ spec_proto() {
   trap "rm -rf '${tmp}'" EXIT
   cp -R api "${tmp}/api"
   cp go.mod go.sum "${tmp}/"
+  ln -s "${ROOT}/node_modules" "${tmp}/node_modules" # protoc-gen-es, pinned in package.json
   (cd "${tmp}/api" && GOTOOLCHAIN="${toolchain}" buf generate) || failed "spec (buf generate)"
   diff -r "${tmp}/${SPEC_GO_GEN}" "${SPEC_GO_GEN}" >&2 ||
     { printf 'spec: %s is stale; run buf generate in api/\n' "${SPEC_GO_GEN}" >&2; failed "spec (generated code)"; }
+  diff -r "${tmp}/${SPEC_ES_GEN}" "${SPEC_ES_GEN}" >&2 ||
+    { printf 'spec: %s is stale; run buf generate in api/\n' "${SPEC_ES_GEN}" >&2; failed "spec (generated code)"; }
 }
 
 # ts_types <dir>: writes the TypeScript types of api/jsonschema/*.schema.json to <dir>, with the
@@ -110,7 +122,7 @@ spec_ts() {
   # shellcheck disable=SC2064 # expand now: tmp is local
   trap "rm -rf '${tmp}'" EXIT
   ts_types "${tmp}/gen" || failed "spec (generate types)"
-  diff -r "${tmp}/gen" "${SPEC_TS_GEN}" >&2 ||
+  diff -r --exclude=proto "${tmp}/gen" "${SPEC_TS_GEN}" >&2 ||
     { printf 'spec: %s is stale; run scripts/check.sh gen\n' "${SPEC_TS_GEN}" >&2; failed "spec (generated types)"; }
 }
 
@@ -124,10 +136,11 @@ spec() {
   ok spec
 }
 
-# Rewrites shared/ts/gen from the schemas; not part of `all` (spec checks it is current).
+# Rewrites the schema types in shared/ts/gen; not part of `all` (spec checks they are current).
+# The protobuf code in its proto/ comes from buf generate and stays.
 gen() {
   need node pnpm || failed "gen (tools)"
-  rm -rf "${SPEC_TS_GEN}"
+  rm -f "${SPEC_TS_GEN}"/*.schema.d.ts
   ts_types "${SPEC_TS_GEN}"
   ok gen
 }

@@ -144,7 +144,7 @@ fn page(seeds: &[Seed], body: &Value) -> Value {
         .iter()
         .map(|seed| {
             let t = &seed.ticket;
-            json!({ "id": t.id(), "identifier": t.key(), "title": t.title(), "description": t.description() })
+            json!({ "id": t.id(), "identifier": t.key(), "title": t.title(), "description": t.description(), "url": t.url() })
         })
         .collect();
     json!({ "data": { "issues": {

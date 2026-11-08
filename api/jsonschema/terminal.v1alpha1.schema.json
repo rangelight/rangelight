@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rangelight.dev/schemas/terminal.v1alpha1.schema.json",
+  "$comment": "Maturity: v1alpha1, may break with a changelog entry in api/README.md (ADR 0027). Internal: only the Workbench speaks it. ADRs: 0040 §1, 0046, 0055.",
+  "title": "Rangelight terminal message v1alpha1",
+  "description": "One WebSocket text frame between the Workbench and the api, on GET /v1alpha1/sessions/{session}/terminal with the subprotocol terminal.v1alpha1.rangelight.dev. The api bridges the frames to the NATS subjects pty.<session>.in and pty.<session>.out; the browser never reaches NATS or a pod (ADR 0040 §1). Bytes travel as base64, so any byte sequence, split anywhere, survives a text frame.",
+  "oneOf": [{ "$ref": "#/$defs/input" }, { "$ref": "#/$defs/output" }, { "$ref": "#/$defs/resize" }],
+  "$defs": {
+    "bytes": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 65536,
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+      "contentEncoding": "base64",
+      "description": "Raw bytes, standard base64 with padding: at most 48 KiB a frame."
+    },
+    "input": {
+      "title": "Terminal input",
+      "description": "Browser to api: what the member typed or pasted, for the PTY's stdin.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data"],
+      "properties": {
+        "type": { "const": "input" },
+        "data": { "$ref": "#/$defs/bytes" }
+      }
+    },
+    "output": {
+      "title": "Terminal output",
+      "description": "Api to browser: what the PTY wrote.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data"],
+      "properties": {
+        "type": { "const": "output" },
+        "data": { "$ref": "#/$defs/bytes" }
+      }
+    },
+    "resize": {
+      "title": "Terminal resize",
+      "description": "Browser to api: the terminal's size in character cells changed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "cols", "rows"],
+      "properties": {
+        "type": { "const": "resize" },
+        "cols": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "rows": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      }
+    }
+  }
+}

@@ -14,9 +14,11 @@ The control plane's front door (ADR 0031, ADR 0033):
   after it commits; `UNIQUE (events.message_id)` makes a redelivery a no-op. A message that can
   never be recorded is terminated, with its reason logged.
 - **Session API**, Connect-RPC (`api/proto/rangelight/session/v1alpha1/session.proto`), on
-  `listen` (8080): `ListSessions`, and the server stream `WatchSession`, fed by the relay's NATS
-  fan-out (`rl.<org>.session.<id>.events`), never by polling Postgres. A seq gap (a slow
-  consumer) ends the stream with `ABORTED`.
+  `listen` (8080): `ListSessions`, `GetSession`, and the server streams `WatchSession` (one
+  session) and `WatchSessions` (a snapshot of every session, then each change), fed by the relay's
+  NATS fan-out (`rl.<org>.session.<id>.events`), never by polling Postgres. Each subscribes before
+  it reads Postgres. A seq gap (a lost event, or a viewer more than 1024 events behind: the
+  viewers' NATS client's subscription capacity) ends the stream with `ABORTED`.
 - **Sign-in** (ADR 0028, ADR 0033), OIDC against bundled Dex or any provider (`shared/rust/auth`):
   `GET /auth/login` starts the authorization-code flow with PKCE (S256), `state` (also in the
   cookie `__Host-rl_login`, so a callback only works in the browser that started it) and `nonce`;
@@ -31,7 +33,7 @@ The control plane's front door (ADR 0031, ADR 0033):
 - **Every RPC and WebSocket upgrade** needs a live login, else 401 `unauthenticated` with nothing
   more. Anything but a plain GET (every RPC, sign-out, every upgrade) must carry
   `Origin: <public_url>`, else 403 `permission_denied`. `AuthService.WhoAmI` names the member.
-  A long-lived response (`WatchSession`, later the terminal WebSocket) re-checks its login every
+  A long-lived response (`WatchSession`, `WatchSessions`, later the terminal WebSocket) re-checks its login every
   `login_recheck_seconds` (60) and ends with `UNAUTHENTICATED` once it is signed out, expired or
   idle (`Auth::while_signed_in`; an open stream doesn't count as use).
 - **Members** (AC5 of RAN-37): the member is the ID token's `oidc_member_claim`, by default

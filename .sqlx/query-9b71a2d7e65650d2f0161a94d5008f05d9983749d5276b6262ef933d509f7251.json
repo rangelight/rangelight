@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- Every session's last seq: what a WatchSessions stream checks each change against.\nSELECT id, generation FROM sessions\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "generation",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "generation"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9b71a2d7e65650d2f0161a94d5008f05d9983749d5276b6262ef933d509f7251"
+}

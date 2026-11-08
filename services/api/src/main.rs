@@ -6,7 +6,7 @@ use anyhow::Context;
 use api::config::Config;
 use std::time::Duration;
 
-use api::{Auth, SessionApi, intake_loop, serve, status};
+use api::{Auth, SessionApi, intake_loop, serve, status, viewers_client};
 use rl_store::Store;
 use rl_tickets_linear::Linear;
 use tokio::net::TcpListener;
@@ -25,6 +25,7 @@ async fn main() -> anyhow::Result<()> {
     let nats = async_nats::connect(&config.nats_url)
         .await
         .context("nats")?;
+    let viewers = viewers_client(&config.nats_url).await.context("nats")?;
     let linear = Linear::new(config.linear_url, config.linear_team, config.linear_api_key)?;
     let provider = rl_auth::Provider::new(
         config.oidc_issuer,
@@ -66,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(listen = %config.listen, "api started");
     serve(
         listener,
-        SessionApi::new(store, nats, config.org, auth.clone(), cancel.clone()),
+        SessionApi::new(store, viewers, config.org, auth.clone(), cancel.clone()),
         auth,
         cancel,
     )

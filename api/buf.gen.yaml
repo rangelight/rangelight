@@ -1,7 +1,8 @@
 ---
 # Generated code is committed and never edited by hand (ADR 0049 §2.3).
 # protoc-gen-go is pinned by the root go.mod (its `tool` directive), so the Go code always matches
-# the protobuf runtime the services compile against. Run from api/: `buf generate`.
+# the protobuf runtime the services compile against; protoc-gen-es is pinned by the root
+# package.json, and @bufbuild/protobuf in shared/ts/gen matches it. Run from api/: `buf generate`.
 version: "v2"
 clean: true
 plugins:
@@ -9,3 +10,9 @@ plugins:
     out: "../shared/go/gen"
     opt:
       - "paths=source_relative"
+  - local: ["../node_modules/.bin/protoc-gen-es"]
+    out: "../shared/ts/gen/proto"
+    # .ts imports: Node runs the files as they are (type stripping), bundlers resolve them too.
+    opt:
+      - "target=ts"
+      - "import_extension=ts"

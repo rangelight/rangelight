@@ -38,6 +38,7 @@ pub struct Ticket {
     title: String,
     description: String,
     criteria: Vec<String>,
+    url: String,
 }
 
 impl Ticket {
@@ -66,7 +67,19 @@ impl Ticket {
             title,
             description,
             criteria,
+            url: String::new(),
         })
+    }
+
+    /// The ticket with its page in the tracker, which the Workbench links to.
+    ///
+    /// # Errors
+    /// [`DomainError::InvalidTicket`] when `url` isn't `https://<host>` (see [`https_url`]).
+    pub fn with_url(self, url: String) -> Result<Ticket, DomainError> {
+        if !https_url(&url) {
+            return Err(DomainError::InvalidTicket("url"));
+        }
+        Ok(Ticket { url, ..self })
     }
 
     /// The tracker it came from.
@@ -104,6 +117,29 @@ impl Ticket {
     pub fn criteria(&self) -> &[String] {
         &self.criteria
     }
+
+    /// The ticket's page in its tracker, for example `https://linear.app/<org>/issue/RAN-34`;
+    /// empty until [`Ticket::with_url`] sets it.
+    #[must_use]
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+}
+
+/// `https://` with a host (letters, digits, `-`, `.`, an optional `:port`; no userinfo) that has a
+/// letter or digit before any `:`, at most 2048 bytes, with no whitespace or control characters.
+fn https_url(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let name = host.split(':').next().unwrap_or_default();
+    url.len() <= 2048
+        && name.bytes().any(|b| b.is_ascii_alphanumeric())
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b':'))
+        && !url.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
 /// The ticket rule (`api/jsonschema/ticket.v1alpha1.schema.json`), lengths in characters as JSON

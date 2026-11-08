@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "types": ["node", "vite/client"],
+    "paths": { "@/*": ["./src/*"], "@gen/*": ["../../shared/ts/gen/*"] }
+  },
+  "include": ["src", "test", "vite.config.ts", "playwright.config.ts"]
+}

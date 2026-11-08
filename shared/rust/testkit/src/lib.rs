@@ -87,7 +87,8 @@ impl IdGen for SeqIds {
     }
 }
 
-/// A seeded Linear ticket for tests: id `issue-<n>`, key `RAN-<n>`, two acceptance criteria.
+/// A seeded Linear ticket for tests: id `issue-<n>`, key `RAN-<n>`, two acceptance criteria, at
+/// `https://linear.app/example/issue/RAN-<n>`.
 #[must_use]
 pub fn ticket(n: u32, labels: &[&str]) -> Seed {
     let ticket = Ticket::new(
@@ -97,6 +98,7 @@ pub fn ticket(n: u32, labels: &[&str]) -> Seed {
         format!("Ticket {n}"),
         format!("Ticket {n}.\n\nAcceptance\n- AC1 one\n- AC2 two"),
     )
+    .and_then(|ticket| ticket.with_url(format!("https://linear.app/example/issue/RAN-{n}")))
     .unwrap();
     Seed {
         ticket,
@@ -147,14 +149,20 @@ pub fn workspace() -> Workspace {
     Workspace::new("shop".into(), "main".into(), "ariel".into()).unwrap()
 }
 
-/// A client of the test NATS server, with JetStream.
-pub async fn nats() -> async_nats::Client {
+/// The test NATS server's URL.
+#[must_use]
+pub fn nats_url() -> String {
     #[derive(serde::Deserialize)]
     struct Env {
         nats_url: String,
     }
     let env: Env = rl_config::load("testkit", "nats_url = \"nats://127.0.0.1:4222\"").unwrap();
-    async_nats::connect(&env.nats_url)
+    env.nats_url
+}
+
+/// A client of the test NATS server, with JetStream.
+pub async fn nats() -> async_nats::Client {
+    async_nats::connect(nats_url())
         .await
         .expect("NATS: run the tests via scripts/test/services.sh")
 }

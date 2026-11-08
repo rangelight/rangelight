@@ -1,14 +1,19 @@
 //! The `SessionService` handlers.
 
+use std::collections::HashMap;
+use std::pin::Pin;
+
 use buffa::Message;
 use connectrpc::{
     ConnectError, ErrorCode, RequestContext, Response, ServiceRequest, ServiceResult, ServiceStream,
 };
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use rl_domain::{SessionId, subject};
+use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::watch_sessions_response;
 use rl_proto::rangelight::session::v1alpha1::{
-    Event, ListSessionsRequest, ListSessionsResponse, Session, SessionService, WatchSessionRequest,
-    WatchSessionResponse,
+    Event, GetSessionRequest, GetSessionResponse, ListSessionsRequest, ListSessionsResponse,
+    Session, SessionService, Snapshot, WatchSessionRequest, WatchSessionResponse,
+    WatchSessionsRequest, WatchSessionsResponse,
 };
 use rl_store::{SessionRow, Store};
 use tokio_util::sync::CancellationToken;
@@ -16,8 +21,24 @@ use uuid::Uuid;
 
 use crate::Auth;
 
-/// The most sessions `ListSessions` returns.
+/// The most sessions `ListSessions` and a `WatchSessions` snapshot return.
 const LIST_LIMIT: u16 = 1000;
+
+/// How many events a viewer's stream may fall behind before it ends with ABORTED: the subscription
+/// capacity of the viewers' NATS client.
+const VIEWER_CAPACITY: usize = 1024;
+
+/// The NATS client for viewers' streams, separate from the api's other subscriptions (runner
+/// reports): its subscription capacity bounds how far a viewer may lag ([`VIEWER_CAPACITY`]).
+///
+/// # Errors
+/// NATS's, when it can't connect.
+pub async fn viewers_client(url: &str) -> Result<async_nats::Client, async_nats::ConnectError> {
+    async_nats::ConnectOptions::new()
+        .subscription_capacity(VIEWER_CAPACITY)
+        .connect(url)
+        .await
+}
 
 /// The session API: reads from Postgres, streams from NATS fan-out.
 #[derive(Debug, Clone)]
@@ -30,8 +51,8 @@ pub struct SessionApi {
 }
 
 impl SessionApi {
-    /// The API for one org. Open `WatchSession` streams end when `cancel` fires, or when their
-    /// login is gone (`auth`).
+    /// The API for one org. Open streams end when `cancel` fires, or when their login is gone
+    /// (`auth`). `nats` should come from [`viewers_client`].
     #[must_use]
     pub fn new(
         store: Store,
@@ -71,6 +92,9 @@ fn to_proto(row: SessionRow) -> Session {
             .unwrap_or_default()
             .into(),
         generation: row.generation,
+        repo: row.repo,
+        created_at: buffa_types::google::protobuf::Timestamp::from(row.created_at).into(),
+        ticket_url: row.ticket_url,
         ..Default::default()
     }
 }
@@ -102,6 +126,14 @@ fn missed() -> ConnectError {
     )
 }
 
+/// A session id from a request: a UUID can't hold `.`, `*` or `>`, so a subject built from it can't
+/// be widened.
+fn session_id(raw: &str) -> Result<SessionId, ConnectError> {
+    Uuid::parse_str(raw)
+        .map(SessionId)
+        .map_err(|_| ConnectError::new(ErrorCode::InvalidArgument, "session_id must be a UUID"))
+}
+
 impl SessionService for SessionApi {
     #[tracing::instrument(name = "list_sessions", skip_all)]
     async fn list_sessions(
@@ -120,71 +152,168 @@ impl SessionService for SessionApi {
         })
     }
 
+    #[tracing::instrument(name = "get_session", skip_all)]
+    async fn get_session(
+        &self,
+        _ctx: RequestContext,
+        request: ServiceRequest<'_, GetSessionRequest>,
+    ) -> ServiceResult<GetSessionResponse> {
+        let id = session_id(request.session_id)?;
+        let row = self
+            .store
+            .get_session(id)
+            .await
+            .map_err(|e| internal("store_unavailable", &e))?
+            .ok_or_else(|| ConnectError::new(ErrorCode::NotFound, "session_not_found"))?;
+        Response::ok(GetSessionResponse {
+            session: to_proto(row).into(),
+            ..Default::default()
+        })
+    }
+
     async fn watch_session(
         &self,
         ctx: RequestContext,
         request: ServiceRequest<'_, WatchSessionRequest>,
     ) -> ServiceResult<ServiceStream<WatchSessionResponse>> {
-        // A UUID can't hold `.`, `*` or `>`, so the subject can't be widened.
-        let id = Uuid::parse_str(request.session_id).map_err(|_| {
-            ConnectError::new(ErrorCode::InvalidArgument, "session_id must be a UUID")
-        })?;
-        let span = tracing::info_span!("watch_session", session_id = %id);
-        let subject = subject::session_events(&self.org, SessionId(id));
+        let id = session_id(request.session_id)?;
+        let span = tracing::info_span!("watch_session", session_id = %id.0);
         let subscription = self
-            .nats
-            .subscribe(subject)
-            .await
-            .map_err(|e| internal("nats_unavailable", &e))?;
-        // The subscription is registered before the stream starts, so no later event is missed.
-        self.nats
-            .flush()
-            .await
-            .map_err(|e| internal("nats_unavailable", &e))?;
-        let decoded = subscription
-            .take_until(self.cancel.clone().cancelled_owned())
-            .filter_map(move |message| {
-                let event = Event::decode_from_slice(&message.payload);
-                if let Err(error) = &event {
-                    span.in_scope(
-                        || tracing::warn!(%error, "skipped an event that doesn't decode"),
-                    );
-                }
-                std::future::ready(event.ok())
-            });
-        let events =
-            futures_util::stream::unfold(Some((Box::pin(decoded), None)), |state| async move {
-                let (mut decoded, mut last) = state?;
-                while let Some(event) = decoded.next().await {
-                    match step(last, event.seq) {
-                        Step::Skip => {}
-                        Step::Gap => return Some((Err(missed()), None)),
-                        Step::Send => {
-                            last = Some(event.seq);
-                            let response = WatchSessionResponse {
-                                event: event.into(),
-                                ..Default::default()
-                            };
-                            return Some((Ok(response), Some((decoded, last))));
-                        }
-                    }
-                }
-                None
-            });
+            .subscribe(subject::session_events(&self.org, id), span)
+            .await?;
+        // The stream starts with the next event, whatever its seq: there is nothing to check it
+        // against until one arrives.
+        let events = ordered(subscription, HashMap::new(), None).map(|event| {
+            event.map(|event| WatchSessionResponse {
+                event: event.into(),
+                ..Default::default()
+            })
+        });
         Response::stream_ok(self.auth.while_signed_in(&ctx, events)?)
     }
+
+    async fn watch_sessions(
+        &self,
+        ctx: RequestContext,
+        _request: ServiceRequest<'_, WatchSessionsRequest>,
+    ) -> ServiceResult<ServiceStream<WatchSessionsResponse>> {
+        let span = tracing::info_span!("watch_sessions");
+        let subscription = self
+            .subscribe(subject::sessions_events(&self.org), span)
+            .await?;
+        let store = self.store.clone();
+        let stream = futures_util::stream::once(async move {
+            let snapshot = match read_snapshot(&store, &subscription).await {
+                Ok(snapshot) => snapshot,
+                Err(e) => return Box::pin(futures_util::stream::iter([Err(e)])) as Changes,
+            };
+            let seen = snapshot
+                .generations
+                .into_iter()
+                .map(|(id, generation)| (id.0.to_string(), generation))
+                .collect();
+            let first = WatchSessionsResponse {
+                kind: Some(watch_sessions_response::Kind::from(Snapshot {
+                    sessions: snapshot.sessions.into_iter().map(to_proto).collect(),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            };
+            // A session the snapshot didn't hold is new: its first change must be seq 1.
+            let changes = ordered(subscription, seen, Some(0)).map(|event| {
+                event.map(|event| WatchSessionsResponse {
+                    kind: Some(watch_sessions_response::Kind::from(event)),
+                    ..Default::default()
+                })
+            });
+            Box::pin(futures_util::stream::iter([Ok(first)]).chain(changes)) as Changes
+        })
+        .flatten();
+        Response::stream_ok(self.auth.while_signed_in(&ctx, stream)?)
+    }
+}
+
+/// What `WatchSessions` sends after it has read the snapshot.
+type Changes = ServiceStream<WatchSessionsResponse>;
+
+/// The decoded events of a NATS subscription that was registered (flushed) when this was made.
+/// Postgres reads that must not miss an event take one by reference, so they can only run after
+/// the subscription exists.
+struct Subscription(Pin<Box<dyn Stream<Item = Event> + Send + Sync>>);
+
+/// The snapshot a `WatchSessions` stream starts from. It takes the subscription so it can't be read
+/// before one is open: a change committed in between is then in both, and `ordered` drops the copy.
+async fn read_snapshot(
+    store: &Store,
+    _subscribed: &Subscription,
+) -> Result<rl_store::Snapshot, ConnectError> {
+    store
+        .snapshot(LIST_LIMIT)
+        .await
+        .map_err(|e| internal("store_unavailable", &e))
+}
+
+impl SessionApi {
+    async fn subscribe(
+        &self,
+        subject: String,
+        span: tracing::Span,
+    ) -> Result<Subscription, ConnectError> {
+        subscribe(&self.nats, &self.cancel, subject, span).await
+    }
+}
+
+/// Subscribes to `subject` and flushes, so no event committed after this returns is missed. The
+/// stream ends at `cancel`. The client's subscription capacity bounds how far a viewer may lag
+/// ([`VIEWER_CAPACITY`]); events beyond it are dropped, and the gap ends the stream with ABORTED.
+async fn subscribe(
+    nats: &async_nats::Client,
+    cancel: &CancellationToken,
+    subject: String,
+    span: tracing::Span,
+) -> Result<Subscription, ConnectError> {
+    let subscription = nats
+        .subscribe(subject)
+        .await
+        .map_err(|e| internal("nats_unavailable", &e))?;
+    nats.flush()
+        .await
+        .map_err(|e| internal("nats_unavailable", &e))?;
+    let events = subscription
+        .take_until(cancel.clone().cancelled_owned())
+        .filter_map(move |message| {
+            let event = Event::decode_from_slice(&message.payload);
+            if let Err(error) = &event {
+                span.in_scope(|| tracing::warn!(%error, "skipped an event that doesn't decode"));
+            }
+            std::future::ready(event.ok())
+        });
+    Ok(Subscription(Box::pin(events)))
+}
+
+/// Each session's events in order: the next one is sent, a repeat or one at or below the
+/// session's entry in `seen` is dropped, and a gap ends the stream with ABORTED. A session not in
+/// `seen` starts at `unknown`: `None` takes whatever comes first, `Some(0)` wants seq 1.
+fn ordered(
+    subscription: Subscription,
+    seen: HashMap<String, u64>,
+    unknown: Option<u64>,
+) -> impl Stream<Item = Result<Event, ConnectError>> + Send + 'static {
+    futures_util::stream::unfold(Some((subscription.0, seen)), move |state| async move {
+        let (mut events, mut seen) = state?;
+        while let Some(event) = events.next().await {
+            match step(seen.get(&event.session_id).copied().or(unknown), event.seq) {
+                Step::Skip => {}
+                Step::Gap => return Some((Err(missed()), None)),
+                Step::Send => {
+                    seen.insert(event.session_id.clone(), event.seq);
+                    return Some((Ok(event), Some((events, seen))));
+                }
+            }
+        }
+        None
+    })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_watch_sends_in_order_skips_repeats_and_stops_at_a_gap() {
-        assert_eq!(step(None, 7), Step::Send);
-        assert_eq!(step(Some(7), 8), Step::Send);
-        assert_eq!(step(Some(7), 7), Step::Skip);
-        assert_eq!(step(Some(7), 3), Step::Skip);
-        assert_eq!(step(Some(7), 9), Step::Gap);
-    }
-}
+mod tests;

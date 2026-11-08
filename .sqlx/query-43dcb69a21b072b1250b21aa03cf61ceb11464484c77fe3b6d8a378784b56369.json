@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- A new session, unless its ticket already has one: then no row comes back.\nINSERT INTO sessions (\n  id, tracker, ticket_id, ticket_key, title, description, criteria, namespace, repo, base_ref, member,\n  state, generation, created_at, updated_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, $13, $13)\nON CONFLICT (tracker, ticket_id) DO NOTHING\nRETURNING id\n",
+  "query": "-- A new session, unless its ticket already has one: then no row comes back.\nINSERT INTO sessions (\n  id, tracker, ticket_id, ticket_key, title, description, criteria, ticket_url, namespace, repo,\n  base_ref, member, state, generation, created_at, updated_at\n)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 1, $14, $14)\nON CONFLICT (tracker, ticket_id) DO NOTHING\nRETURNING id\n",
   "describe": {
     "columns": [
       {
@@ -29,6 +29,7 @@
         "Text",
         "Text",
         "Text",
+        "Text",
         "Timestamptz"
       ]
     },
@@ -36,5 +37,5 @@
       false
     ]
   },
-  "hash": "efaee7673c94be2fcce2df2bd4dee1e42bcb9bd7cfc66ca9515e2f17110a2bca"
+  "hash": "43dcb69a21b072b1250b21aa03cf61ceb11464484c77fe3b6d8a378784b56369"
 }

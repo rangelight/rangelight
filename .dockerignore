@@ -2,6 +2,7 @@
 .git
 target
 **/node_modules
+**/dist
 # The agent image copies its src/ whole; its tests stay out.
 services/agent/**/*.test.ts
 services/agent/**/testdata

@@ -116,6 +116,50 @@ async fn create_writes_state_event_and_outbox() {
     assert_replays(&store).await;
 }
 
+/// Review 2: a snapshot shows at most `limit` sessions, the newest, but carries every session's
+/// generation, so a watch can check changes to sessions it doesn't show.
+#[tokio::test]
+async fn snapshot_shows_the_newest_and_counts_every_session() {
+    let store = rl_testkit::store("store::snapshot").await;
+    let ids = SeqIds::default();
+    let (older, newer) = (new_session(1, &ids).await, new_session(2, &ids).await);
+    create(&store, &older).await;
+    create(&store, &newer).await;
+    move_to(&store, older.id, State::Warm, &ids).await.unwrap();
+    let snapshot = store.snapshot(1).await.unwrap();
+    assert_eq!(snapshot.sessions.len(), 1);
+    assert_eq!(snapshot.generations.len(), 2);
+    assert_eq!(snapshot.generations[&older.id], 2);
+    assert_eq!(snapshot.generations[&newer.id], 1);
+}
+
+/// RAN-36: a listed session carries its ticket's url, its creation time and its repo's name.
+#[tokio::test]
+async fn list_carries_ticket_url_created_at_and_repo() {
+    let store = rl_testkit::store("store::list").await;
+    let command = new_session(1, &SeqIds::default()).await;
+    create(&store, &command).await;
+    let listed = store.list_sessions(10).await.unwrap();
+    assert_eq!(
+        listed[0].ticket_url,
+        "https://linear.app/example/issue/RAN-1"
+    );
+    assert_eq!(
+        listed[0].created_at,
+        rl_chain::time(rl_chain::micros(command.at))
+    );
+    assert_eq!(listed[0].repo, command.workspace.repo());
+    let got = store.get_session(command.id).await.unwrap();
+    assert_eq!(got.as_ref(), listed.first());
+    assert_eq!(
+        store
+            .get_session(SessionId(uuid::Uuid::now_v7()))
+            .await
+            .unwrap(),
+        None
+    );
+}
+
 #[tokio::test]
 async fn one_ticket_gets_one_session_by_constraint() {
     let store = rl_testkit::store("store::unique").await;

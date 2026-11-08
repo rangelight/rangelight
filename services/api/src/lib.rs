@@ -25,7 +25,7 @@ use tokio_util::task::TaskTracker;
 use tracing::Instrument;
 
 pub use auth::Auth;
-pub use sessions::SessionApi;
+pub use sessions::{SessionApi, viewers_client};
 
 /// The pause between two intake polls.
 const POLL: Duration = Duration::from_secs(30);

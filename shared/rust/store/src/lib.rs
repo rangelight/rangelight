@@ -20,7 +20,7 @@ mod sessions;
 pub use auth::NewLogin;
 pub use events::ChainEvent;
 pub use outbox::Unsent;
-pub use sessions::SessionRow;
+pub use sessions::{SessionRow, Snapshot};
 
 /// The schema, from `db/migrations/`.
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../../db/migrations");

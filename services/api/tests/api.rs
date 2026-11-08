@@ -19,8 +19,10 @@ use rl_domain::{INTAKE_LABEL, SessionId, State, Ticket, Tracker};
 use rl_proto::rangelight::runner::v1alpha1::__buffa::oneof::envelope::Body;
 use rl_proto::rangelight::runner::v1alpha1::{DesiredState, Envelope, Phase, SessionStatus};
 use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::change::Kind;
+use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::watch_sessions_response::Kind as Watched;
 use rl_proto::rangelight::session::v1alpha1::{
-    Event, ListSessionsRequest, SessionServiceClient, WatchSessionRequest,
+    Event, GetSessionRequest, ListSessionsRequest, SessionServiceClient, Snapshot,
+    WatchSessionRequest, WatchSessionsRequest,
 };
 use rl_store::Store;
 use rl_testkit::{FakeTickets, LinearStub, Reply, Seed, ticket};
@@ -115,6 +117,9 @@ async fn list_and_watch_with_a_real_client() {
         session.state.as_known(),
         Some(DesiredState::DESIRED_STATE_HOT)
     );
+    assert_eq!(session.ticket_url, "https://linear.app/example/issue/RAN-7");
+    assert!(session.created_at.is_set(), "created_at is filled");
+    assert_eq!(session.repo, rl_testkit::workspace().repo());
 
     let request = WatchSessionRequest {
         session_id: session.id.clone(),
@@ -149,6 +154,171 @@ async fn list_and_watch_with_a_real_client() {
     assert!(
         matches!(&seen[1], (2, Some(Kind::StateChanged(changed))) if changed.state.as_known() == Some(DesiredState::DESIRED_STATE_WARM))
     );
+}
+
+/// The next `WatchSessions` message's kind, within 5s.
+macro_rules! next_watched {
+    ($watch:expr) => {
+        tokio::time::timeout(Duration::from_secs(5), $watch.message())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .to_owned_message()
+            .kind
+            .unwrap()
+    };
+}
+
+fn snapshot(kind: Watched) -> Option<Box<Snapshot>> {
+    match kind {
+        Watched::Snapshot(snapshot) => Some(snapshot),
+        Watched::Change(_) => None,
+    }
+}
+
+fn change(kind: Watched) -> Option<Box<Event>> {
+    match kind {
+        Watched::Change(event) => Some(event),
+        Watched::Snapshot(_) => None,
+    }
+}
+
+/// Review 1 and 2: a change commits and fans out while the stream reads its snapshot, so it lands
+/// on one side of the snapshot or the other. Either way the client gets the snapshot and then
+/// every later seq exactly once, in order: nothing is lost or repeated. The filtering itself is
+/// pinned by the unit tests of `ordered`.
+#[tokio::test]
+async fn watch_sessions_sends_each_change_after_the_snapshot_once() {
+    let (store, org) = (rl_testkit::store("api::watch_all_race").await, org());
+    intake(&store, &FakeTickets(vec![ticket(1, &[INTAKE_LABEL])])).await;
+    assert_eq!(relay_once(&store, &org).await, 1, "the session's creation");
+    let id = store.list_sessions(1).await.unwrap()[0].id;
+    let (_served, client) = served(&store, &org).await;
+
+    let mut watch = tokio::time::timeout(
+        Duration::from_secs(5),
+        client.watch_sessions(WatchSessionsRequest::default()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    store
+        .change_state(&change_state(id, State::Warm, &SystemClock, &UuidV7))
+        .await
+        .unwrap();
+    assert_eq!(relay_once(&store, &org).await, 1, "seq 2 fans out");
+
+    let snapshot = snapshot(next_watched!(watch)).expect("the snapshot comes first");
+    assert_eq!(snapshot.sessions.len(), 1);
+    let from = snapshot.sessions[0].generation;
+    assert!(matches!(from, 1 | 2), "{from}");
+    store
+        .change_state(&change_state(id, State::Cold, &SystemClock, &UuidV7))
+        .await
+        .unwrap();
+    assert_eq!(relay_once(&store, &org).await, 1, "seq 3 fans out");
+    let mut seqs = Vec::new();
+    while seqs.last() != Some(&3) {
+        seqs.push(change(next_watched!(watch)).expect("changes").seq);
+    }
+    assert_eq!(seqs, ((from + 1)..=3).collect::<Vec<_>>());
+}
+
+/// Review 1: a session created while the Workbench watches appears, with its ticket link and repo.
+#[tokio::test]
+async fn watch_sessions_shows_a_new_session() {
+    let (store, org) = (rl_testkit::store("api::watch_all_new").await, org());
+    let (_served, client) = served(&store, &org).await;
+    let mut watch = client
+        .watch_sessions(WatchSessionsRequest::default())
+        .await
+        .unwrap();
+    let snapshot = snapshot(next_watched!(watch)).expect("the snapshot comes first");
+    assert_eq!(snapshot.sessions.len(), 0);
+
+    intake(&store, &FakeTickets(vec![ticket(4, &[INTAKE_LABEL])])).await;
+    assert_eq!(relay_once(&store, &org).await, 1);
+    let change = change(next_watched!(watch)).expect("a change");
+    let Some(Kind::Created(created)) = change.change.into_option().unwrap().kind else {
+        unreachable!("a creation")
+    };
+    assert_eq!(
+        (
+            created.ticket_key.as_str(),
+            created.ticket_url.as_str(),
+            created.repo.as_str()
+        ),
+        (
+            "RAN-4",
+            "https://linear.app/example/issue/RAN-4",
+            rl_testkit::workspace().repo()
+        )
+    );
+}
+
+/// Review 2: a session whose creation never reached this stream (its seq 1 lost) can't appear
+/// half-known: its first change, seq 2, ends the stream with ABORTED, and a new watch snapshots it.
+#[tokio::test]
+async fn watch_sessions_aborts_when_a_creation_was_lost() {
+    let (store, org) = (rl_testkit::store("api::watch_all_lost").await, org());
+    let (_served, client) = served(&store, &org).await;
+    let mut watch = client
+        .watch_sessions(WatchSessionsRequest::default())
+        .await
+        .unwrap();
+    snapshot(next_watched!(watch)).expect("the snapshot comes first");
+    let session = SessionId(uuid::Uuid::now_v7());
+    let lost = Event {
+        id: uuid::Uuid::now_v7().to_string(),
+        session_id: session.0.to_string(),
+        seq: 2,
+        ..Default::default()
+    };
+    let nats = rl_testkit::nats().await;
+    nats.publish(
+        rl_domain::subject::session_events(&org, session),
+        lost.encode_to_vec().into(),
+    )
+    .await
+    .unwrap();
+    nats.flush().await.unwrap();
+    let error = tokio::time::timeout(Duration::from_secs(5), watch.message())
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Aborted);
+}
+
+/// Review 2: `GetSession` serves one session, `NOT_FOUND` for an unknown id, `INVALID_ARGUMENT` for
+/// one that isn't a UUID.
+#[tokio::test]
+async fn get_session_finds_one_or_says_not_found() {
+    let (store, org) = (rl_testkit::store("api::get").await, org());
+    intake(&store, &FakeTickets(vec![ticket(5, &[INTAKE_LABEL])])).await;
+    let id = store.list_sessions(1).await.unwrap()[0].id;
+    let (_served, client) = served(&store, &org).await;
+    let get = |session_id: String| GetSessionRequest {
+        session_id,
+        ..Default::default()
+    };
+    let found = client
+        .get_session(get(id.0.to_string()))
+        .await
+        .unwrap()
+        .into_owned();
+    let session = found.session.into_option().unwrap();
+    assert_eq!(
+        (session.ticket_key.as_str(), session.ticket_url.as_str()),
+        ("RAN-5", "https://linear.app/example/issue/RAN-5")
+    );
+    let missing = client
+        .get_session(get(uuid::Uuid::now_v7().to_string()))
+        .await
+        .unwrap_err();
+    assert_eq!(missing.code, ErrorCode::NotFound);
+    let invalid = client.get_session(get("*".into())).await.unwrap_err();
+    assert_eq!(invalid.code, ErrorCode::InvalidArgument);
 }
 
 #[tokio::test]

@@ -159,7 +159,7 @@ impl Write for Capture {
 /// criteria) is skipped, never reaching a runner; the others still come through.
 #[tokio::test]
 async fn an_invalid_issue_is_skipped_not_fatal() {
-    let node = |id: &str, key: &str, description: serde_json::Value| serde_json::json!({ "id": id, "identifier": key, "title": "t", "description": description });
+    let node = |id: &str, key: &str, description: serde_json::Value| serde_json::json!({ "id": id, "identifier": key, "title": "t", "description": description, "url": format!("https://linear.app/example/issue/{key}") });
     let brief = serde_json::json!("Acceptance\n- AC1 it works");
     let answer = serde_json::json!({ "data": { "issues": {
         "nodes": [

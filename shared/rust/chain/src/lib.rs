@@ -146,12 +146,16 @@ pub fn to_proto(change: &Change) -> proto::Change {
             ticket_id,
             ticket_key,
             title,
+            ticket_url,
+            repo,
             namespace,
             state,
         } => Kind::from(proto::Created {
             ticket_id: ticket_id.clone(),
             ticket_key: ticket_key.clone(),
             title: title.clone(),
+            ticket_url: ticket_url.clone(),
+            repo: repo.clone(),
             namespace: namespace.clone(),
             state: desired_state(*state).into(),
             ..Default::default()

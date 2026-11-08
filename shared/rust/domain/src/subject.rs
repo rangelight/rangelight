@@ -30,6 +30,12 @@ pub fn runners_desired(org: &str) -> String {
     format!("rl.{org}.runner.*.desired.*")
 }
 
+/// The subjects of every session's committed events in an org: what `WatchSessions` follows.
+#[must_use]
+pub fn sessions_events(org: &str) -> String {
+    format!("rl.{org}.session.*.events")
+}
+
 /// The core NATS subject a session's committed events fan out on (ADR 0021, ADR 0033).
 #[must_use]
 pub fn session_events(org: &str, session: SessionId) -> String {

@@ -39,6 +39,9 @@ type Session struct {
 	State         v1alpha1.DesiredState  `protobuf:"varint,7,opt,name=state,proto3,enum=rangelight.runner.v1alpha1.DesiredState" json:"state,omitempty"`
 	Generation    uint64                 `protobuf:"varint,8,opt,name=generation,proto3" json:"generation,omitempty"`                             // the seq of the session's last event
 	Phase         v1alpha1.Phase         `protobuf:"varint,9,opt,name=phase,proto3,enum=rangelight.runner.v1alpha1.Phase" json:"phase,omitempty"` // as its runner last reported it; unspecified before the first report
+	Repo          string                 `protobuf:"bytes,10,opt,name=repo,proto3" json:"repo,omitempty"`                                         // the git mirror repo it works in
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	TicketUrl     string                 `protobuf:"bytes,12,opt,name=ticket_url,json=ticketUrl,proto3" json:"ticket_url,omitempty"` // the ticket in its tracker, https; empty for sessions from before it was recorded
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -136,6 +139,27 @@ func (x *Session) GetPhase() v1alpha1.Phase {
 	return v1alpha1.Phase(0)
 }
 
+func (x *Session) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *Session) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Session) GetTicketUrl() string {
+	if x != nil {
+		return x.TicketUrl
+	}
+	return ""
+}
+
 type ListSessionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -216,6 +240,94 @@ func (x *ListSessionsResponse) GetSessions() []*Session {
 	return nil
 }
 
+type GetSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // UUID
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSessionRequest) Reset() {
+	*x = GetSessionRequest{}
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSessionRequest) ProtoMessage() {}
+
+func (x *GetSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSessionRequest.ProtoReflect.Descriptor instead.
+func (*GetSessionRequest) Descriptor() ([]byte, []int) {
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GetSessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type GetSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Session       *Session               `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSessionResponse) Reset() {
+	*x = GetSessionResponse{}
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSessionResponse) ProtoMessage() {}
+
+func (x *GetSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSessionResponse.ProtoReflect.Descriptor instead.
+func (*GetSessionResponse) Descriptor() ([]byte, []int) {
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetSessionResponse) GetSession() *Session {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
 type WatchSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // UUID
@@ -225,7 +337,7 @@ type WatchSessionRequest struct {
 
 func (x *WatchSessionRequest) Reset() {
 	*x = WatchSessionRequest{}
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[3]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -237,7 +349,7 @@ func (x *WatchSessionRequest) String() string {
 func (*WatchSessionRequest) ProtoMessage() {}
 
 func (x *WatchSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[3]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -250,7 +362,7 @@ func (x *WatchSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSessionRequest.ProtoReflect.Descriptor instead.
 func (*WatchSessionRequest) Descriptor() ([]byte, []int) {
-	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{3}
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *WatchSessionRequest) GetSessionId() string {
@@ -269,7 +381,7 @@ type WatchSessionResponse struct {
 
 func (x *WatchSessionResponse) Reset() {
 	*x = WatchSessionResponse{}
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[4]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -281,7 +393,7 @@ func (x *WatchSessionResponse) String() string {
 func (*WatchSessionResponse) ProtoMessage() {}
 
 func (x *WatchSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[4]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -294,12 +406,174 @@ func (x *WatchSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchSessionResponse.ProtoReflect.Descriptor instead.
 func (*WatchSessionResponse) Descriptor() ([]byte, []int) {
-	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{4}
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *WatchSessionResponse) GetEvent() *Event {
 	if x != nil {
 		return x.Event
+	}
+	return nil
+}
+
+type WatchSessionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchSessionsRequest) Reset() {
+	*x = WatchSessionsRequest{}
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchSessionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchSessionsRequest) ProtoMessage() {}
+
+func (x *WatchSessionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchSessionsRequest.ProtoReflect.Descriptor instead.
+func (*WatchSessionsRequest) Descriptor() ([]byte, []int) {
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{7}
+}
+
+type WatchSessionsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*WatchSessionsResponse_Snapshot
+	//	*WatchSessionsResponse_Change
+	Kind          isWatchSessionsResponse_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchSessionsResponse) Reset() {
+	*x = WatchSessionsResponse{}
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchSessionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchSessionsResponse) ProtoMessage() {}
+
+func (x *WatchSessionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchSessionsResponse.ProtoReflect.Descriptor instead.
+func (*WatchSessionsResponse) Descriptor() ([]byte, []int) {
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *WatchSessionsResponse) GetKind() isWatchSessionsResponse_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *WatchSessionsResponse) GetSnapshot() *Snapshot {
+	if x != nil {
+		if x, ok := x.Kind.(*WatchSessionsResponse_Snapshot); ok {
+			return x.Snapshot
+		}
+	}
+	return nil
+}
+
+func (x *WatchSessionsResponse) GetChange() *Event {
+	if x != nil {
+		if x, ok := x.Kind.(*WatchSessionsResponse_Change); ok {
+			return x.Change
+		}
+	}
+	return nil
+}
+
+type isWatchSessionsResponse_Kind interface {
+	isWatchSessionsResponse_Kind()
+}
+
+type WatchSessionsResponse_Snapshot struct {
+	Snapshot *Snapshot `protobuf:"bytes,1,opt,name=snapshot,proto3,oneof"` // always the first message
+}
+
+type WatchSessionsResponse_Change struct {
+	Change *Event `protobuf:"bytes,2,opt,name=change,proto3,oneof"` // Event.session_id and Event.seq say whose and which generation
+}
+
+func (*WatchSessionsResponse_Snapshot) isWatchSessionsResponse_Kind() {}
+
+func (*WatchSessionsResponse_Change) isWatchSessionsResponse_Kind() {}
+
+type Snapshot struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sessions      []*Session             `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"` // the newest first, at most 1000
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Snapshot) Reset() {
+	*x = Snapshot{}
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Snapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Snapshot) ProtoMessage() {}
+
+func (x *Snapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Snapshot.ProtoReflect.Descriptor instead.
+func (*Snapshot) Descriptor() ([]byte, []int) {
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Snapshot) GetSessions() []*Session {
+	if x != nil {
+		return x.Sessions
 	}
 	return nil
 }
@@ -318,7 +592,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[5]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -330,7 +604,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[5]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -343,7 +617,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{5}
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Event) GetId() string {
@@ -399,7 +673,7 @@ type Change struct {
 
 func (x *Change) Reset() {
 	*x = Change{}
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[6]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -411,7 +685,7 @@ func (x *Change) String() string {
 func (*Change) ProtoMessage() {}
 
 func (x *Change) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[6]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -424,7 +698,7 @@ func (x *Change) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Change.ProtoReflect.Descriptor instead.
 func (*Change) Descriptor() ([]byte, []int) {
-	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{6}
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Change) GetKind() isChange_Kind {
@@ -490,13 +764,15 @@ type Created struct {
 	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
 	Namespace     string                 `protobuf:"bytes,4,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	State         v1alpha1.DesiredState  `protobuf:"varint,5,opt,name=state,proto3,enum=rangelight.runner.v1alpha1.DesiredState" json:"state,omitempty"` // always DESIRED_STATE_HOT
+	TicketUrl     string                 `protobuf:"bytes,6,opt,name=ticket_url,json=ticketUrl,proto3" json:"ticket_url,omitempty"`                      // the ticket in its tracker, https
+	Repo          string                 `protobuf:"bytes,7,opt,name=repo,proto3" json:"repo,omitempty"`                                                 // the git mirror repo it works in
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Created) Reset() {
 	*x = Created{}
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[7]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -508,7 +784,7 @@ func (x *Created) String() string {
 func (*Created) ProtoMessage() {}
 
 func (x *Created) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[7]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -521,7 +797,7 @@ func (x *Created) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Created.ProtoReflect.Descriptor instead.
 func (*Created) Descriptor() ([]byte, []int) {
-	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{7}
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Created) GetTicketId() string {
@@ -559,6 +835,20 @@ func (x *Created) GetState() v1alpha1.DesiredState {
 	return v1alpha1.DesiredState(0)
 }
 
+func (x *Created) GetTicketUrl() string {
+	if x != nil {
+		return x.TicketUrl
+	}
+	return ""
+}
+
+func (x *Created) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
 type StateChanged struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	State         v1alpha1.DesiredState  `protobuf:"varint,1,opt,name=state,proto3,enum=rangelight.runner.v1alpha1.DesiredState" json:"state,omitempty"`
@@ -568,7 +858,7 @@ type StateChanged struct {
 
 func (x *StateChanged) Reset() {
 	*x = StateChanged{}
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[8]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -580,7 +870,7 @@ func (x *StateChanged) String() string {
 func (*StateChanged) ProtoMessage() {}
 
 func (x *StateChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[8]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -593,7 +883,7 @@ func (x *StateChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StateChanged.ProtoReflect.Descriptor instead.
 func (*StateChanged) Descriptor() ([]byte, []int) {
-	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{8}
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *StateChanged) GetState() v1alpha1.DesiredState {
@@ -617,7 +907,7 @@ type PhaseChanged struct {
 
 func (x *PhaseChanged) Reset() {
 	*x = PhaseChanged{}
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[9]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -629,7 +919,7 @@ func (x *PhaseChanged) String() string {
 func (*PhaseChanged) ProtoMessage() {}
 
 func (x *PhaseChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[9]
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -642,7 +932,7 @@ func (x *PhaseChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PhaseChanged.ProtoReflect.Descriptor instead.
 func (*PhaseChanged) Descriptor() ([]byte, []int) {
-	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{9}
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *PhaseChanged) GetPhase() v1alpha1.Phase {
@@ -684,7 +974,7 @@ var File_rangelight_session_v1alpha1_session_proto protoreflect.FileDescriptor
 
 const file_rangelight_session_v1alpha1_session_proto_rawDesc = "" +
 	"\n" +
-	")rangelight/session/v1alpha1/session.proto\x12\x1brangelight.session.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a'rangelight/runner/v1alpha1/runner.proto\"\xbc\x02\n" +
+	")rangelight/session/v1alpha1/session.proto\x12\x1brangelight.session.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a'rangelight/runner/v1alpha1/runner.proto\"\xaa\x03\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\atracker\x18\x02 \x01(\tR\atracker\x12\x1b\n" +
@@ -697,15 +987,33 @@ const file_rangelight_session_v1alpha1_session_proto_rawDesc = "" +
 	"\n" +
 	"generation\x18\b \x01(\x04R\n" +
 	"generation\x127\n" +
-	"\x05phase\x18\t \x01(\x0e2!.rangelight.runner.v1alpha1.PhaseR\x05phase\"\x15\n" +
+	"\x05phase\x18\t \x01(\x0e2!.rangelight.runner.v1alpha1.PhaseR\x05phase\x12\x12\n" +
+	"\x04repo\x18\n" +
+	" \x01(\tR\x04repo\x129\n" +
+	"\n" +
+	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"ticket_url\x18\f \x01(\tR\tticketUrl\"\x15\n" +
 	"\x13ListSessionsRequest\"X\n" +
 	"\x14ListSessionsResponse\x12@\n" +
-	"\bsessions\x18\x01 \x03(\v2$.rangelight.session.v1alpha1.SessionR\bsessions\"4\n" +
+	"\bsessions\x18\x01 \x03(\v2$.rangelight.session.v1alpha1.SessionR\bsessions\"2\n" +
+	"\x11GetSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"T\n" +
+	"\x12GetSessionResponse\x12>\n" +
+	"\asession\x18\x01 \x01(\v2$.rangelight.session.v1alpha1.SessionR\asession\"4\n" +
 	"\x13WatchSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"P\n" +
 	"\x14WatchSessionResponse\x128\n" +
-	"\x05event\x18\x01 \x01(\v2\".rangelight.session.v1alpha1.EventR\x05event\"\xb1\x01\n" +
+	"\x05event\x18\x01 \x01(\v2\".rangelight.session.v1alpha1.EventR\x05event\"\x16\n" +
+	"\x14WatchSessionsRequest\"\xa2\x01\n" +
+	"\x15WatchSessionsResponse\x12C\n" +
+	"\bsnapshot\x18\x01 \x01(\v2%.rangelight.session.v1alpha1.SnapshotH\x00R\bsnapshot\x12<\n" +
+	"\x06change\x18\x02 \x01(\v2\".rangelight.session.v1alpha1.EventH\x00R\x06changeB\x06\n" +
+	"\x04kind\"L\n" +
+	"\bSnapshot\x12@\n" +
+	"\bsessions\x18\x01 \x03(\v2$.rangelight.session.v1alpha1.SessionR\bsessions\"\xb1\x01\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -717,14 +1025,17 @@ const file_rangelight_session_v1alpha1_session_proto_rawDesc = "" +
 	"\acreated\x18\x01 \x01(\v2$.rangelight.session.v1alpha1.CreatedH\x00R\acreated\x12P\n" +
 	"\rstate_changed\x18\x02 \x01(\v2).rangelight.session.v1alpha1.StateChangedH\x00R\fstateChanged\x12P\n" +
 	"\rphase_changed\x18\x03 \x01(\v2).rangelight.session.v1alpha1.PhaseChangedH\x00R\fphaseChangedB\x06\n" +
-	"\x04kind\"\xb9\x01\n" +
+	"\x04kind\"\xec\x01\n" +
 	"\aCreated\x12\x1b\n" +
 	"\tticket_id\x18\x01 \x01(\tR\bticketId\x12\x1d\n" +
 	"\n" +
 	"ticket_key\x18\x02 \x01(\tR\tticketKey\x12\x14\n" +
 	"\x05title\x18\x03 \x01(\tR\x05title\x12\x1c\n" +
 	"\tnamespace\x18\x04 \x01(\tR\tnamespace\x12>\n" +
-	"\x05state\x18\x05 \x01(\x0e2(.rangelight.runner.v1alpha1.DesiredStateR\x05state\"N\n" +
+	"\x05state\x18\x05 \x01(\x0e2(.rangelight.runner.v1alpha1.DesiredStateR\x05state\x12\x1d\n" +
+	"\n" +
+	"ticket_url\x18\x06 \x01(\tR\tticketUrl\x12\x12\n" +
+	"\x04repo\x18\a \x01(\tR\x04repo\"N\n" +
 	"\fStateChanged\x12>\n" +
 	"\x05state\x18\x01 \x01(\x0e2(.rangelight.runner.v1alpha1.DesiredStateR\x05state\"\xe6\x01\n" +
 	"\fPhaseChanged\x127\n" +
@@ -733,10 +1044,13 @@ const file_rangelight_session_v1alpha1_session_proto_rawDesc = "" +
 	"\x13observed_generation\x18\x03 \x01(\x04R\x12observedGeneration\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x04 \x01(\tR\tmessageId\x123\n" +
-	"\asent_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt2\xfc\x01\n" +
+	"\asent_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt2\xe5\x03\n" +
 	"\x0eSessionService\x12s\n" +
-	"\fListSessions\x120.rangelight.session.v1alpha1.ListSessionsRequest\x1a1.rangelight.session.v1alpha1.ListSessionsResponse\x12u\n" +
-	"\fWatchSession\x120.rangelight.session.v1alpha1.WatchSessionRequest\x1a1.rangelight.session.v1alpha1.WatchSessionResponse0\x01B\\ZZgithub.com/rangelight/rangelight/shared/go/gen/rangelight/session/v1alpha1;sessionv1alpha1b\x06proto3"
+	"\fListSessions\x120.rangelight.session.v1alpha1.ListSessionsRequest\x1a1.rangelight.session.v1alpha1.ListSessionsResponse\x12m\n" +
+	"\n" +
+	"GetSession\x12..rangelight.session.v1alpha1.GetSessionRequest\x1a/.rangelight.session.v1alpha1.GetSessionResponse\x12u\n" +
+	"\fWatchSession\x120.rangelight.session.v1alpha1.WatchSessionRequest\x1a1.rangelight.session.v1alpha1.WatchSessionResponse0\x01\x12x\n" +
+	"\rWatchSessions\x121.rangelight.session.v1alpha1.WatchSessionsRequest\x1a2.rangelight.session.v1alpha1.WatchSessionsResponse0\x01B\\ZZgithub.com/rangelight/rangelight/shared/go/gen/rangelight/session/v1alpha1;sessionv1alpha1b\x06proto3"
 
 var (
 	file_rangelight_session_v1alpha1_session_proto_rawDescOnce sync.Once
@@ -750,45 +1064,59 @@ func file_rangelight_session_v1alpha1_session_proto_rawDescGZIP() []byte {
 	return file_rangelight_session_v1alpha1_session_proto_rawDescData
 }
 
-var file_rangelight_session_v1alpha1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_rangelight_session_v1alpha1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_rangelight_session_v1alpha1_session_proto_goTypes = []any{
 	(*Session)(nil),               // 0: rangelight.session.v1alpha1.Session
 	(*ListSessionsRequest)(nil),   // 1: rangelight.session.v1alpha1.ListSessionsRequest
 	(*ListSessionsResponse)(nil),  // 2: rangelight.session.v1alpha1.ListSessionsResponse
-	(*WatchSessionRequest)(nil),   // 3: rangelight.session.v1alpha1.WatchSessionRequest
-	(*WatchSessionResponse)(nil),  // 4: rangelight.session.v1alpha1.WatchSessionResponse
-	(*Event)(nil),                 // 5: rangelight.session.v1alpha1.Event
-	(*Change)(nil),                // 6: rangelight.session.v1alpha1.Change
-	(*Created)(nil),               // 7: rangelight.session.v1alpha1.Created
-	(*StateChanged)(nil),          // 8: rangelight.session.v1alpha1.StateChanged
-	(*PhaseChanged)(nil),          // 9: rangelight.session.v1alpha1.PhaseChanged
-	(v1alpha1.DesiredState)(0),    // 10: rangelight.runner.v1alpha1.DesiredState
-	(v1alpha1.Phase)(0),           // 11: rangelight.runner.v1alpha1.Phase
-	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
+	(*GetSessionRequest)(nil),     // 3: rangelight.session.v1alpha1.GetSessionRequest
+	(*GetSessionResponse)(nil),    // 4: rangelight.session.v1alpha1.GetSessionResponse
+	(*WatchSessionRequest)(nil),   // 5: rangelight.session.v1alpha1.WatchSessionRequest
+	(*WatchSessionResponse)(nil),  // 6: rangelight.session.v1alpha1.WatchSessionResponse
+	(*WatchSessionsRequest)(nil),  // 7: rangelight.session.v1alpha1.WatchSessionsRequest
+	(*WatchSessionsResponse)(nil), // 8: rangelight.session.v1alpha1.WatchSessionsResponse
+	(*Snapshot)(nil),              // 9: rangelight.session.v1alpha1.Snapshot
+	(*Event)(nil),                 // 10: rangelight.session.v1alpha1.Event
+	(*Change)(nil),                // 11: rangelight.session.v1alpha1.Change
+	(*Created)(nil),               // 12: rangelight.session.v1alpha1.Created
+	(*StateChanged)(nil),          // 13: rangelight.session.v1alpha1.StateChanged
+	(*PhaseChanged)(nil),          // 14: rangelight.session.v1alpha1.PhaseChanged
+	(v1alpha1.DesiredState)(0),    // 15: rangelight.runner.v1alpha1.DesiredState
+	(v1alpha1.Phase)(0),           // 16: rangelight.runner.v1alpha1.Phase
+	(*timestamppb.Timestamp)(nil), // 17: google.protobuf.Timestamp
 }
 var file_rangelight_session_v1alpha1_session_proto_depIdxs = []int32{
-	10, // 0: rangelight.session.v1alpha1.Session.state:type_name -> rangelight.runner.v1alpha1.DesiredState
-	11, // 1: rangelight.session.v1alpha1.Session.phase:type_name -> rangelight.runner.v1alpha1.Phase
-	0,  // 2: rangelight.session.v1alpha1.ListSessionsResponse.sessions:type_name -> rangelight.session.v1alpha1.Session
-	5,  // 3: rangelight.session.v1alpha1.WatchSessionResponse.event:type_name -> rangelight.session.v1alpha1.Event
-	12, // 4: rangelight.session.v1alpha1.Event.at:type_name -> google.protobuf.Timestamp
-	6,  // 5: rangelight.session.v1alpha1.Event.change:type_name -> rangelight.session.v1alpha1.Change
-	7,  // 6: rangelight.session.v1alpha1.Change.created:type_name -> rangelight.session.v1alpha1.Created
-	8,  // 7: rangelight.session.v1alpha1.Change.state_changed:type_name -> rangelight.session.v1alpha1.StateChanged
-	9,  // 8: rangelight.session.v1alpha1.Change.phase_changed:type_name -> rangelight.session.v1alpha1.PhaseChanged
-	10, // 9: rangelight.session.v1alpha1.Created.state:type_name -> rangelight.runner.v1alpha1.DesiredState
-	10, // 10: rangelight.session.v1alpha1.StateChanged.state:type_name -> rangelight.runner.v1alpha1.DesiredState
-	11, // 11: rangelight.session.v1alpha1.PhaseChanged.phase:type_name -> rangelight.runner.v1alpha1.Phase
-	12, // 12: rangelight.session.v1alpha1.PhaseChanged.sent_at:type_name -> google.protobuf.Timestamp
-	1,  // 13: rangelight.session.v1alpha1.SessionService.ListSessions:input_type -> rangelight.session.v1alpha1.ListSessionsRequest
-	3,  // 14: rangelight.session.v1alpha1.SessionService.WatchSession:input_type -> rangelight.session.v1alpha1.WatchSessionRequest
-	2,  // 15: rangelight.session.v1alpha1.SessionService.ListSessions:output_type -> rangelight.session.v1alpha1.ListSessionsResponse
-	4,  // 16: rangelight.session.v1alpha1.SessionService.WatchSession:output_type -> rangelight.session.v1alpha1.WatchSessionResponse
-	15, // [15:17] is the sub-list for method output_type
-	13, // [13:15] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	15, // 0: rangelight.session.v1alpha1.Session.state:type_name -> rangelight.runner.v1alpha1.DesiredState
+	16, // 1: rangelight.session.v1alpha1.Session.phase:type_name -> rangelight.runner.v1alpha1.Phase
+	17, // 2: rangelight.session.v1alpha1.Session.created_at:type_name -> google.protobuf.Timestamp
+	0,  // 3: rangelight.session.v1alpha1.ListSessionsResponse.sessions:type_name -> rangelight.session.v1alpha1.Session
+	0,  // 4: rangelight.session.v1alpha1.GetSessionResponse.session:type_name -> rangelight.session.v1alpha1.Session
+	10, // 5: rangelight.session.v1alpha1.WatchSessionResponse.event:type_name -> rangelight.session.v1alpha1.Event
+	9,  // 6: rangelight.session.v1alpha1.WatchSessionsResponse.snapshot:type_name -> rangelight.session.v1alpha1.Snapshot
+	10, // 7: rangelight.session.v1alpha1.WatchSessionsResponse.change:type_name -> rangelight.session.v1alpha1.Event
+	0,  // 8: rangelight.session.v1alpha1.Snapshot.sessions:type_name -> rangelight.session.v1alpha1.Session
+	17, // 9: rangelight.session.v1alpha1.Event.at:type_name -> google.protobuf.Timestamp
+	11, // 10: rangelight.session.v1alpha1.Event.change:type_name -> rangelight.session.v1alpha1.Change
+	12, // 11: rangelight.session.v1alpha1.Change.created:type_name -> rangelight.session.v1alpha1.Created
+	13, // 12: rangelight.session.v1alpha1.Change.state_changed:type_name -> rangelight.session.v1alpha1.StateChanged
+	14, // 13: rangelight.session.v1alpha1.Change.phase_changed:type_name -> rangelight.session.v1alpha1.PhaseChanged
+	15, // 14: rangelight.session.v1alpha1.Created.state:type_name -> rangelight.runner.v1alpha1.DesiredState
+	15, // 15: rangelight.session.v1alpha1.StateChanged.state:type_name -> rangelight.runner.v1alpha1.DesiredState
+	16, // 16: rangelight.session.v1alpha1.PhaseChanged.phase:type_name -> rangelight.runner.v1alpha1.Phase
+	17, // 17: rangelight.session.v1alpha1.PhaseChanged.sent_at:type_name -> google.protobuf.Timestamp
+	1,  // 18: rangelight.session.v1alpha1.SessionService.ListSessions:input_type -> rangelight.session.v1alpha1.ListSessionsRequest
+	3,  // 19: rangelight.session.v1alpha1.SessionService.GetSession:input_type -> rangelight.session.v1alpha1.GetSessionRequest
+	5,  // 20: rangelight.session.v1alpha1.SessionService.WatchSession:input_type -> rangelight.session.v1alpha1.WatchSessionRequest
+	7,  // 21: rangelight.session.v1alpha1.SessionService.WatchSessions:input_type -> rangelight.session.v1alpha1.WatchSessionsRequest
+	2,  // 22: rangelight.session.v1alpha1.SessionService.ListSessions:output_type -> rangelight.session.v1alpha1.ListSessionsResponse
+	4,  // 23: rangelight.session.v1alpha1.SessionService.GetSession:output_type -> rangelight.session.v1alpha1.GetSessionResponse
+	6,  // 24: rangelight.session.v1alpha1.SessionService.WatchSession:output_type -> rangelight.session.v1alpha1.WatchSessionResponse
+	8,  // 25: rangelight.session.v1alpha1.SessionService.WatchSessions:output_type -> rangelight.session.v1alpha1.WatchSessionsResponse
+	22, // [22:26] is the sub-list for method output_type
+	18, // [18:22] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_rangelight_session_v1alpha1_session_proto_init() }
@@ -796,7 +1124,11 @@ func file_rangelight_session_v1alpha1_session_proto_init() {
 	if File_rangelight_session_v1alpha1_session_proto != nil {
 		return
 	}
-	file_rangelight_session_v1alpha1_session_proto_msgTypes[6].OneofWrappers = []any{
+	file_rangelight_session_v1alpha1_session_proto_msgTypes[8].OneofWrappers = []any{
+		(*WatchSessionsResponse_Snapshot)(nil),
+		(*WatchSessionsResponse_Change)(nil),
+	}
+	file_rangelight_session_v1alpha1_session_proto_msgTypes[11].OneofWrappers = []any{
 		(*Change_Created)(nil),
 		(*Change_StateChanged)(nil),
 		(*Change_PhaseChanged)(nil),
@@ -807,7 +1139,7 @@ func file_rangelight_session_v1alpha1_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rangelight_session_v1alpha1_session_proto_rawDesc), len(file_rangelight_session_v1alpha1_session_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

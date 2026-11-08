@@ -15,10 +15,18 @@ option go_package = "github.com/rangelight/rangelight/shared/go/gen/rangelight/s
 service SessionService {
   // The newest sessions first, at most 1000.
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  // One session. NOT_FOUND when there's none with this id.
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
   // A session's events as they commit, from the next one on. Fed from NATS fan-out, never by
   // polling Postgres. Receivers dedupe on Event.id. Ends with ABORTED when events went missing
   // (seq gap): reread the session and watch again.
   rpc WatchSession(WatchSessionRequest) returns (stream WatchSessionResponse);
+  // Every session, live: one snapshot (what ListSessions returns), then each committed event of
+  // any session as a change, new sessions included. The api subscribes before it reads the
+  // snapshot and checks every change against each session's generation at that instant (a session
+  // it didn't hold starts at 0): at or below is dropped, the next is sent, a gap (a lost event, or a
+  // viewer that fell too far behind) ends the stream with ABORTED. Watch again for a fresh snapshot.
+  rpc WatchSessions(WatchSessionsRequest) returns (stream WatchSessionsResponse);
 }
 
 message Session {
@@ -31,6 +39,9 @@ message Session {
   rangelight.runner.v1alpha1.DesiredState state = 7;
   uint64 generation = 8; // the seq of the session's last event
   rangelight.runner.v1alpha1.Phase phase = 9; // as its runner last reported it; unspecified before the first report
+  string repo = 10; // the git mirror repo it works in
+  google.protobuf.Timestamp created_at = 11;
+  string ticket_url = 12; // the ticket in its tracker, https; empty for sessions from before it was recorded
 }
 
 message ListSessionsRequest {}
@@ -39,12 +50,33 @@ message ListSessionsResponse {
   repeated Session sessions = 1;
 }
 
+message GetSessionRequest {
+  string session_id = 1; // UUID
+}
+
+message GetSessionResponse {
+  Session session = 1;
+}
+
 message WatchSessionRequest {
   string session_id = 1; // UUID
 }
 
 message WatchSessionResponse {
   Event event = 1;
+}
+
+message WatchSessionsRequest {}
+
+message WatchSessionsResponse {
+  oneof kind {
+    Snapshot snapshot = 1; // always the first message
+    Event change = 2; // Event.session_id and Event.seq say whose and which generation
+  }
+}
+
+message Snapshot {
+  repeated Session sessions = 1; // the newest first, at most 1000
 }
 
 // A committed event of a session's chained log (ADR 0029).
@@ -74,6 +106,8 @@ message Created {
   string title = 3;
   string namespace = 4;
   rangelight.runner.v1alpha1.DesiredState state = 5; // always DESIRED_STATE_HOT
+  string ticket_url = 6; // the ticket in its tracker, https
+  string repo = 7; // the git mirror repo it works in
 }
 
 message StateChanged {

@@ -72,6 +72,14 @@ test_spec_fails_on_stale_generated_code() {
   expect_out "shared/go/gen is stale"
 }
 
+test_spec_fails_on_stale_protobuf_typescript() {
+  spec_fixture
+  printf '// edited by hand\n' >>"${REPO}/shared/ts/gen/proto/rangelight/session/v1alpha1/session_pb.ts"
+  run spec
+  expect_status 1
+  expect_out "shared/ts/gen/proto is stale; run buf generate in api/"
+}
+
 test_spec_fails_on_stale_typescript_types() {
   spec_fixture
   printf '// edited by hand\n' >>"${REPO}/shared/ts/gen/agent-event.v1alpha1.schema.d.ts"
@@ -81,9 +89,10 @@ test_spec_fails_on_stale_typescript_types() {
   expect_out "FAIL: spec (generated types)"
 }
 
+# gen rewrites the schema types and leaves buf's proto/ beside them alone.
 test_gen_writes_the_typescript_types() {
   spec_fixture
-  rm -r "${REPO}/shared/ts/gen"
+  rm "${REPO}/shared/ts/gen/"*.schema.d.ts
   run gen
   expect_status 0
   diff -r "${ROOT}/shared/ts/gen" "${REPO}/shared/ts/gen" >/dev/null || fail "gen output differs from shared/ts/gen"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Self-tests for scripts/cluster.sh that need no cluster: kubectl and helm are stubs that record their calls
-# (helm template runs the real helm). Each test copies cluster.sh, deployments/dev/ and the chart into
-# /tmp/rl-cluster-test.*.
+# (helm template runs the real helm). Each test copies cluster.sh, scripts/cluster/, deployments/dev/ and the chart
+# into /tmp/rl-cluster-test.*.
 # Usage: scripts/test/cluster.sh [test_name...]   (no argument runs every test)
 set -euo pipefail
 
@@ -19,6 +19,7 @@ new_dir() {
   DIR="$(mktemp -d /tmp/rl-cluster-test.XXXXXX)"
   mkdir -p "${DIR}/scripts" "${DIR}/deployments/dev" "${DIR}/deployments/helm" "${DIR}/bin"
   cp "${ROOT}/scripts/cluster.sh" "${DIR}/scripts/"
+  cp -R "${ROOT}/scripts/cluster" "${DIR}/scripts/"
   cp "${ROOT}/deployments/dev/versions.env" "${ROOT}/deployments/dev/values.yaml" "${DIR}/deployments/dev/"
   # A pinned git mirror image, as after the first images.yaml run.
   sed -i -e "s|^GIT_MIRROR_IMAGE=.*|GIT_MIRROR_IMAGE=${PINNED_MIRROR}|" -e "s|^RUNNER_IMAGE=.*|RUNNER_IMAGE=${PINNED_RUNNER}|" \
@@ -46,14 +47,15 @@ printf 'helm %s\n' "\$*" >>"${DIR}/calls"
 [[ "\$1" != template ]] || exec "$(command -v helm)" "\$@"
 EOF
   chmod +x "${DIR}/bin/kubectl" "${DIR}/bin/helm"
+  printf -- '---\npublicUrl: "https://rangelight.example.com"\ndex:\n  github:\n    org: "rangelight"\n' >"${DIR}/values.yaml"
 }
 
-# run <command> [env assignments...]: run cluster.sh with the stub kubectl first on PATH.
+# run <command> [env assignments...]: run cluster.sh with the stub kubectl first on PATH, and the test values.
 run() {
   local command="$1"
   shift
   STATUS=0
-  OUT="$(env -u RANGELIGHT_KUBE_CONTEXT PATH="${DIR}/bin:${PATH}" "$@" \
+  OUT="$(env -u RANGELIGHT_KUBE_CONTEXT PATH="${DIR}/bin:${PATH}" RANGELIGHT_VALUES="${DIR}/values.yaml" "$@" \
     bash "${DIR}/scripts/cluster.sh" ${command:+"${command}"} 2>&1)" || STATUS=$?
 }
 
@@ -168,8 +170,8 @@ test_up_installs_the_chart_twice_into_rangelight_system() {
 test_up_installs_the_git_mirror_with_the_pinned_image() {
   run up RANGELIGHT_KUBE_CONTEXT=dev
   expect_status 0
-  [[ "$(grep -cF -e "--values ${DIR}/deployments/dev/values.yaml --set-string gitMirror.image=${PINNED_MIRROR}" "${DIR}/calls")" -eq 2 ]] ||
-    fail "up did not pass the dev values and the pinned git mirror image to both passes"
+  [[ "$(grep -cF -e "--values ${DIR}/deployments/dev/values.yaml --values ${DIR}/values.yaml --set-string gitMirror.image=${PINNED_MIRROR}" "${DIR}/calls")" -eq 2 ]] ||
+    fail "up did not pass the dev values, your values and the pinned git mirror image to both passes"
   run up RANGELIGHT_KUBE_CONTEXT=dev RANGELIGHT_DRY_RUN=true
   expect_status 0
   expect_out "image: \"${PINNED_MIRROR}\""
@@ -220,6 +222,13 @@ test_the_checked_in_runner_and_agent_images_are_pinned_or_the_placeholder() {
     grep -qxE -e "${name}=(UNPINNED|[^@[:space:]]+:[^@[:space:]]+@sha256:[0-9a-f]{64})" "${ROOT}/deployments/dev/versions.env" ||
       fail "deployments/dev/versions.env: ${name} is neither pinned nor UNPINNED"
   done
+}
+
+test_up_needs_your_values() {
+  run up RANGELIGHT_KUBE_CONTEXT=dev RANGELIGHT_VALUES=
+  expect_status 1
+  expect_out "RANGELIGHT_VALUES is not a file"
+  expect_no_call '^helm '
 }
 
 test_up_dry_run_changes_nothing_and_prints_the_install() {

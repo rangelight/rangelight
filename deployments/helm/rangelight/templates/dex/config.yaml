@@ -1,0 +1,42 @@
+{{- if .Values.dex.enabled }}
+---
+# Dex's config (the upstream chart mounts it from this Secret). It holds no credential: Dex fills the
+# $VARIABLES from the Secrets in dex.envVars. Dex reads it at start: after a change, restart Dex.
+apiVersion: "v1"
+kind: "Secret"
+metadata:
+  name: {{ .Values.dex.configSecret.name | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "dex" "component" "identity") | nindent 4 }}
+type: "Opaque"
+stringData:
+  config.yaml: |
+    ---
+    issuer: {{ printf "%s/dex" .Values.publicUrl | quote }}
+    # Dex only brokers sign-ins; logins live in Postgres. A restart costs the sign-ins in flight.
+    storage:
+      type: "memory"
+    web:
+      http: "0.0.0.0:5556"
+    oauth2:
+      responseTypes: ["code"]
+      skipApprovalScreen: true
+    enablePasswordDB: false
+    connectors:
+      - type: "github"
+        id: "github"
+        name: "GitHub"
+        config:
+          clientID: "$GITHUB_CLIENT_ID"
+          clientSecret: "$GITHUB_CLIENT_SECRET"
+          redirectURI: {{ printf "%s/dex/callback" .Values.publicUrl | quote }}
+          # Only this organisation's members get through, checked at every sign-in.
+          orgs:
+            - name: {{ .Values.dex.github.org | quote }}
+    staticClients:
+      - id: {{ .Values.oidc.clientId | quote }}
+        name: "Rangelight"
+        secretEnv: "RANGELIGHT_OIDC_CLIENT_SECRET"
+        redirectURIs: [{{ printf "%s/auth/callback" .Values.publicUrl | quote }}]
+{{- end }}

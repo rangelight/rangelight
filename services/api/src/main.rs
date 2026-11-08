@@ -1,9 +1,11 @@
-//! The api binary: loads config, starts telemetry, migrates, wires Postgres, NATS and Linear,
-//! and runs the intake loop and the Connect server until SIGTERM or Ctrl-C.
+//! The api binary: loads config, starts telemetry, migrates, wires Postgres, NATS, Linear and the
+//! OIDC provider, and runs the intake loop and the server until SIGTERM or Ctrl-C.
 
 use anyhow::Context;
 use api::config::Config;
-use api::{SessionApi, intake_loop, serve};
+use std::time::Duration;
+
+use api::{Auth, SessionApi, intake_loop, serve};
 use rl_app::{SystemClock, UuidV7};
 use rl_store::Store;
 use rl_tickets_linear::Linear;
@@ -23,6 +25,17 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("nats")?;
     let linear = Linear::new(config.linear_url, config.linear_team, config.linear_api_key)?;
+    let provider = rl_auth::Provider::new(
+        config.oidc_issuer,
+        config.oidc_client_id,
+        config.oidc_client_secret,
+        config.public_url.join("/auth/callback")?,
+        config.oidc_member_claim,
+    )?;
+    // The client secret keys the sign-in cookie: a weak one stops the api here.
+    provider.check_secret()?;
+    let recheck = Duration::from_secs(config.login_recheck_seconds);
+    let auth = Auth::new(store.clone(), provider, &config.public_url, recheck);
     let listener = TcpListener::bind(config.listen).await?;
 
     let cancel = CancellationToken::new();
@@ -46,10 +59,11 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(listen = %config.listen, "api started");
     serve(
         listener,
-        SessionApi::new(store, nats, config.org, cancel.clone()),
+        SessionApi::new(store, nats, config.org, auth.clone(), cancel.clone()),
+        auth,
         cancel,
     )
-    .await?;
+    .await;
     intake.await?;
     Ok(())
 }

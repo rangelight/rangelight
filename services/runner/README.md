@@ -30,9 +30,10 @@ ValidatingAdmissionPolicy confines every write of the runner's ServiceAccount to
 (`rl-*`, labelled `rangelight.dev/lane=true`), its Sessions to its own namespace, and lane pods to
 the `default` ServiceAccount. The tests run the runner as that ServiceAccount, under both.
 
-**Cluster DNS.** Lanes reach DNS at pods labelled `k8s-app: kube-dns` in `kube-system` (CoreDNS
-on k3s, kubeadm, EKS and most others). A cluster with NodeLocal DNSCache, or another DNS
-deployment, needs that selector changed in `internal/session/lane.go`.
+**Cluster DNS.** Lanes reach DNS only at the cluster DNS pods: by default those labelled
+`k8s-app: kube-dns` in `kube-system` (CoreDNS on k3s, kubeadm, EKS and most others). The chart's one
+`clusterDns` setting (`namespace`, `podLabel`) changes it for the lanes and for Dex alike (RKE2:
+`k8s-app=coredns`).
 
 Config: `configs/runner.default.toml`, then `/etc/rangelight/runner.toml`, then `RANGELIGHT_RUNNER_*`.
 It sets the lane's disk sizes and `workers` (Sessions reconciled at once; a profile read is a

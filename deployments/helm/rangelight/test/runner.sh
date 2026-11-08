@@ -92,11 +92,14 @@ test_runner_is_reachable_only_from_the_git_mirror() {
 test_runner_gets_the_cluster_dns_from_values() {
   render "${RUNNER[@]}" --show-only templates/runner/deployment.yaml
   expect_line '              value: "k8s-app=kube-dns"'
-  render "${RUNNER[@]}" --show-only templates/runner/deployment.yaml --set runner.dns.podLabel=k8s-app=coredns --set runner.dns.namespace=dns
+  # One cluster DNS setting for the whole chart (RAN-37 security review round 2): clusterDns.
+  render "${RUNNER[@]}" --show-only templates/runner/deployment.yaml --set clusterDns.podLabel=k8s-app=coredns --set clusterDns.namespace=dns
   expect_line '              value: "k8s-app=coredns"'
   expect_line '              value: "dns"'
-  render "${RUNNER[@]}" --set "runner.dns.podLabel=k8s-app"
-  expect_refused "/runner/dns/podLabel"
+  render "${RUNNER[@]}" --set "clusterDns.podLabel=k8s-app"
+  expect_refused "/clusterDns/podLabel"
+  render "${RUNNER[@]}" --set "runner.dns.podLabel=k8s-app=coredns"
+  expect_refused "additional properties 'dns' not allowed"
 }
 
 test_refuses_the_runner_in_rangelight_system() {

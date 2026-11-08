@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The chart tests' helpers, sourced by template.sh, git-mirror.sh and runner.sh.
+# The chart tests' helpers, sourced by template.sh, git-mirror.sh, runner.sh and dex.sh.
 # main runs the sourcing file's test_* functions (or the named ones) and fails if any failed.
 # One sort order everywhere: the expected lists are in C order.
 export LC_ALL=C
@@ -7,14 +7,20 @@ export LC_ALL=C
 CHART="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC2034 # used by the files that source this one
 CNPG_API="postgresql.cnpg.io/v1/Cluster"
+# Your own OIDC provider instead of Dex (RAN-37).
+# shellcheck disable=SC2034 # used by the files that source this one
+EXTERNAL_OIDC=(--set dex.enabled=false --set oidc.issuer=https://idp.example.com/realms/eng
+  --set oidc.clientSecretRef.name=idp-client)
 OUT=""
 STATUS=0
 FAILED=0
 
-# render [helm template flags...]: the chart in rangelight-system, into OUT and STATUS.
+# render [helm template flags...]: the chart in rangelight-system with the sign-in values it requires (publicUrl,
+# dex.github.org; later flags win), into OUT and STATUS.
 render() {
   STATUS=0
-  OUT="$(helm template rangelight "${CHART}" --namespace rangelight-system "$@" 2>&1)" || STATUS=$?
+  OUT="$(helm template rangelight "${CHART}" --namespace rangelight-system \
+    --set publicUrl=https://rangelight.example.com --set dex.github.org=rangelight "$@" 2>&1)" || STATUS=$?
 }
 
 fail() {

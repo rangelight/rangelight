@@ -60,7 +60,8 @@ jobs:
             rust:
               - *shared
               - "**/*.rs"
-              - "Cargo.toml"
+              - "**/Cargo.toml"
+              - "**/tests/*.sql"
               - "Cargo.lock"
               - "rust-toolchain.toml"
               - "rustfmt.toml"

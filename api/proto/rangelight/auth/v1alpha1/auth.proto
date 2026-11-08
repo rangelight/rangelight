@@ -1,0 +1,23 @@
+// Sign-in, v1alpha1: who the Workbench is signed in as (ADR 0028, ADR 0033). Signing in and out
+// are browser redirects and a form post on the api (/auth/login, /auth/callback, /auth/logout),
+// not RPCs.
+// Maturity: v1alpha1 may break, with a changelog entry in api/README.md (ADR 0027).
+syntax = "proto3";
+
+package rangelight.auth.v1alpha1;
+
+option go_package = "github.com/rangelight/rangelight/shared/go/gen/rangelight/auth/v1alpha1;authv1alpha1";
+
+// The signed-in member. Like every RPC, it answers UNAUTHENTICATED without a live login.
+service AuthService {
+  // Who is signed in.
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
+}
+
+message WhoAmIRequest {}
+
+message WhoAmIResponse {
+  // The member: the lowercased GitHub login (preferred_username), also the sessions' member
+  // label value, ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$.
+  string member = 1;
+}

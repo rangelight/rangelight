@@ -8,6 +8,7 @@ types: code generated from them is never edited by hand or re-declared
 |---|---|---|
 | Runner protocol: control plane ↔ runner, protobuf over NATS | `proto/rangelight/runner/v1alpha1/runner.proto` | public |
 | Session API: Connect-RPC `SessionService`, and the session event payload | `proto/rangelight/session/v1alpha1/session.proto` | public |
+| Sign-in: Connect-RPC `AuthService` (who is signed in) | `proto/rangelight/auth/v1alpha1/auth.proto` | public |
 | Receipt predicate: `predicateType` `https://rangelight.dev/receipt/v1alpha1` | `jsonschema/receipt-predicate.v1alpha1.schema.json` | public |
 | `rangelight.yaml`: the repo's preview profile, `apiVersion: rangelight.dev/v1alpha1` | `jsonschema/rangelight.v1alpha1.schema.json` | public |
 | Agent event: the typed messages a lane may send (`ask`, `worker_done`, `progress`, `compacted`) | `jsonschema/agent-event.v1alpha1.schema.json` | internal, versioned |
@@ -74,3 +75,5 @@ frozen (ADR 0027). Receipt predicate versions are never removed, so receipts ver
 - **v1alpha1** (RAN-19, additive): `SessionDesired` gains `ticket` (new message `Ticket`) and
   `member`; `Worktree` gains `base_ref` and `mirror_repo`. Together they carry everything the
   runner's `Session` resource holds.
+- **v1alpha1** (RAN-37): `rangelight.auth.v1alpha1`: `AuthService.WhoAmI`, the signed-in member.
+  Every RPC now answers `UNAUTHENTICATED` (HTTP 401) without a live login.

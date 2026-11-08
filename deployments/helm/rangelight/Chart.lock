@@ -5,5 +5,8 @@ dependencies:
 - name: nats
   repository: https://nats-io.github.io/k8s/helm/charts/
   version: 2.15.1
-digest: sha256:aa3e2deae925dac16bcc0441a150557ab1979420aa03155d5837366416fdd2c4
-generated: "2026-11-07T19:00:26.710759975+02:00"
+- name: dex
+  repository: https://charts.dexidp.io
+  version: 0.26.0
+digest: sha256:33afcdbf892bc580ed977083181e1f8856204411455a239dd1443a3785e82bd0
+generated: "2026-11-07T21:31:26.430356284+02:00"

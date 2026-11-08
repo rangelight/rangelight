@@ -1,5 +1,6 @@
 # The api's defaults (ADR 0049 §6). Override in /etc/rangelight/api.toml or with
-# RANGELIGHT_API_<KEY>, for example RANGELIGHT_API_LINEAR_TEAM=RAN. `linear_team` has no default.
+# RANGELIGHT_API_<KEY>, for example RANGELIGHT_API_LINEAR_TEAM=RAN. `linear_team`, `public_url` and
+# `oidc_issuer` have no default.
 
 # `tracing` filter directives.
 log = "info"
@@ -13,3 +14,13 @@ org = "default"
 linear_url = "https://api.linear.app/graphql"
 # The Linear API key, as a secret reference, read at each poll.
 linear_api_key = "secret://linear#api-key"
+# Sign-in (OIDC). `public_url` is where browsers reach the Workbench: https://<host>[:<port>].
+# `oidc_issuer` is <public_url>/dex for the bundled Dex, or your own provider's issuer (https).
+oidc_client_id = "rangelight-api"
+# The api's client secret at the issuer, as a secret reference, read at each sign-in.
+oidc_client_secret = "secret://rangelight-oidc#client-secret"
+# The ID-token claim that names the member: the GitHub login through Dex. With your own provider,
+# a claim the provider sets and keeps unique, never one users can edit.
+oidc_member_claim = "preferred_username"
+# Seconds between a WatchSession stream's checks that its login still lives; it ends when not.
+login_recheck_seconds = 60

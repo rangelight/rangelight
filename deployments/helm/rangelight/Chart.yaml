@@ -6,7 +6,7 @@ description: "Rangelight: agent sessions on your own cluster"
 type: "application"
 version: "0.1.0"
 kubeVersion: ">=1.32.0-0"
-# The bundled Postgres operator and NATS (ADR 0009): vendored in charts/ and locked in Chart.lock.
+# The bundled Postgres operator, NATS and Dex (ADR 0009): vendored in charts/ and locked in Chart.lock.
 # After a version bump: helm dependency update deployments/helm/rangelight
 dependencies:
   - name: "cloudnative-pg"
@@ -17,3 +17,7 @@ dependencies:
     version: "2.15.1"
     repository: "https://nats-io.github.io/k8s/helm/charts/"
     condition: "nats.enabled"
+  - name: "dex"
+    version: "0.26.0"
+    repository: "https://charts.dexidp.io"
+    condition: "dex.enabled"

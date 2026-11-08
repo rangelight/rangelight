@@ -1,0 +1,75 @@
+{{- if .Values.dex.enabled }}
+---
+# Dex serves the api and whatever routes <publicUrl>/dex to it (dex.ingressFrom), on 5556 only. It calls out
+# only to the cluster's DNS and to HTTPS outside the cluster (GitHub): never to a pod or Service inside it.
+apiVersion: "networking.k8s.io/v1"
+kind: "NetworkPolicy"
+metadata:
+  name: "rangelight-dex"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "dex" "component" "identity") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "dex"
+      app.kubernetes.io/instance: {{ .Release.Name | quote }}
+  policyTypes:
+    - "Ingress"
+    - "Egress"
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "api"
+              app.kubernetes.io/instance: {{ .Release.Name | quote }}
+              app.kubernetes.io/part-of: "rangelight"
+        {{- with .Values.dex.ingressFrom }}
+        {{- if or .namespaceLabels .podLabels }}
+        {{- if .podLabels }}
+        - podSelector:
+            matchLabels:
+              {{- range $key, $value := .podLabels }}
+              {{ $key }}: {{ $value | quote }}
+              {{- end }}
+        {{- else }}
+        - podSelector: {}
+        {{- end }}
+          {{- if .namespaceLabels }}
+          namespaceSelector:
+            matchLabels:
+              {{- range $key, $value := .namespaceLabels }}
+              {{ $key }}: {{ $value | quote }}
+              {{- end }}
+          {{- end }}
+        {{- end }}
+        {{- end }}
+      ports:
+        - protocol: "TCP"
+          port: 5556
+  egress:
+    # The cluster DNS (clusterDns), the same pods the lanes use.
+    {{- $dns := splitn "=" 2 .Values.clusterDns.podLabel }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.clusterDns.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{ $dns._0 }}: {{ $dns._1 | quote }}
+      ports:
+        - protocol: "UDP"
+          port: 53
+        - protocol: "TCP"
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: "0.0.0.0/0"
+            except:
+              {{- range .Values.dex.clusterCidrs }}
+              - {{ . | quote }}
+              {{- end }}
+      ports:
+        - protocol: "TCP"
+          port: 443
+{{- end }}

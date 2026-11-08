@@ -1,6 +1,6 @@
 [package]
 name = "rl-store"
-description = "The only Postgres access: sessions, events and outbox in one transaction per command (ADR 0031)."
+description = "The only Postgres access: sessions, events and outbox in one transaction per command (ADR 0031), and sign-in."
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true

@@ -3,7 +3,8 @@
 
 use std::process::Command;
 
-const FILES: [&str; 2] = [
+const FILES: [&str; 3] = [
+    "rangelight/auth/v1alpha1/auth.proto",
     "rangelight/runner/v1alpha1/runner.proto",
     "rangelight/session/v1alpha1/session.proto",
 ];

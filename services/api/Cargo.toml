@@ -1,6 +1,6 @@
 [package]
 name = "api"
-description = "The api: Linear intake and the Connect-RPC session API."
+description = "The api: Linear intake, the Connect-RPC session API, and sign-in."
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -11,10 +11,14 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-nats.workspace = true
+axum.workspace = true
 buffa.workspace = true
 connectrpc.workspace = true
 futures-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
 rl-app.workspace = true
+rl-auth.workspace = true
 rl-chain.workspace = true
 rl-config.workspace = true
 rl-domain.workspace = true
@@ -22,7 +26,9 @@ rl-proto.workspace = true
 rl-store.workspace = true
 rl-telemetry.workspace = true
 rl-tickets-linear.workspace = true
+secrecy.workspace = true
 serde.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
@@ -33,6 +39,7 @@ uuid.workspace = true
 relay.workspace = true
 rl-testkit.workspace = true
 tempfile.workspace = true
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

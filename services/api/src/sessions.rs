@@ -14,6 +14,8 @@ use rl_store::{SessionRow, Store};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use crate::Auth;
+
 /// The most sessions `ListSessions` returns.
 const LIST_LIMIT: u16 = 1000;
 
@@ -23,22 +25,26 @@ pub struct SessionApi {
     store: Store,
     nats: async_nats::Client,
     org: String,
+    auth: Auth,
     cancel: CancellationToken,
 }
 
 impl SessionApi {
-    /// The API for one org. Open `WatchSession` streams end when `cancel` fires.
+    /// The API for one org. Open `WatchSession` streams end when `cancel` fires, or when their
+    /// login is gone (`auth`).
     #[must_use]
     pub fn new(
         store: Store,
         nats: async_nats::Client,
         org: String,
+        auth: Auth,
         cancel: CancellationToken,
     ) -> SessionApi {
         SessionApi {
             store,
             nats,
             org,
+            auth,
             cancel,
         }
     }
@@ -111,7 +117,7 @@ impl SessionService for SessionApi {
 
     async fn watch_session(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, WatchSessionRequest>,
     ) -> ServiceResult<ServiceStream<WatchSessionResponse>> {
         // A UUID can't hold `.`, `*` or `>`, so the subject can't be widened.
@@ -160,7 +166,7 @@ impl SessionService for SessionApi {
                 }
                 None
             });
-        Response::stream_ok(events)
+        Response::stream_ok(self.auth.while_signed_in(&ctx, events)?)
     }
 }
 

@@ -173,6 +173,7 @@ suite() {
   MODE="$1"
   setup
   t8_t9_identity_fails_closed
+  [[ "${MODE}" != nginx ]] || t8_t9_git_cli_signs_in_after_the_challenge
   [[ "${MODE}" != cgi ]] || t8_t9_hook_fails_closed_on_its_own
   t8_t9_ac1_session_pushes_into_its_own_repo
   t8_t9_ac2_session_cannot_push_main

@@ -24,6 +24,15 @@ t8_t9_identity_fails_closed() {
   done
 }
 
+# git's own client: no credentials until a 401 names a scheme, then the helper's Basic password.
+t8_t9_git_cli_signs_in_after_the_challenge() {
+  check "a 401 names Basic, so git sends its credentials" \
+    "curl -s -o /dev/null -D - -H 'X-Stub-User: deny' '${MAIN}/info/refs?service=git-upload-pack' | grep -qi '^www-authenticate: Basic realm=\"rangelight\"'"
+  # deny gets the first request a 401; git's retry carries the helper's password, r (the runner).
+  ok "git with a credential helper clones after the challenge" \
+    git -c "http.extraHeader=X-Stub-User: deny" -c "credential.helper=!f() { echo username=session; echo password=r; }; f" ls-remote "${MAIN}"
+}
+
 # The hook on its own, without backend.sh: it must fail closed by itself.
 t8_t9_hook_fails_closed_on_its_own() {
   local srv="${W}/hook" copy="${W}/hook-copy" line

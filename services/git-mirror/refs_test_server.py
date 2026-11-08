@@ -6,7 +6,9 @@ auth <portfile> <dir>                     plays the runner's /auth/git, behind a
 Both record checkpoint events POSTed to /events in <dir>/events; auth also logs each of its calls
 in <dir>/auth-calls. The stub identity is the X-Stub-User header: a -> session-a, b -> session-b,
 r -> runner, "deny" -> 401, anything else is passed on as it is, no header -> no identity.
+A Basic password, when there is one, is the stub user instead, the way the runner reads a token.
 """
+import base64
 import http.server
 import subprocess
 import sys
@@ -18,6 +20,9 @@ MODE = sys.argv[1]
 def identity(headers):
     """(status, user): 401 for "deny", else 200 and the user ("" when there is none)."""
     user = headers.get("X-Stub-User")
+    auth = headers.get("Authorization", "")
+    if auth.startswith("Basic "):
+        user = base64.b64decode(auth[6:]).decode().partition(":")[2]
     if user == "deny":
         return 401, ""
     return 200, STUB.get(user, user) if user is not None else ""

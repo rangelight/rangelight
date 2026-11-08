@@ -65,6 +65,11 @@ fn to_proto(row: SessionRow) -> Session {
         title: row.title,
         namespace: row.namespace,
         state: rl_chain::desired_state(row.state).into(),
+        phase: row
+            .phase
+            .map(rl_chain::proto_phase)
+            .unwrap_or_default()
+            .into(),
         generation: row.generation,
         ..Default::default()
     }

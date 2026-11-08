@@ -1,7 +1,8 @@
 //! The relay (ADR 0031): publishes each committed event in the outbox to NATS, then marks it
 //! sent. Two messages per event:
 //!
-//! - the session's `SessionDesired`, in an `Envelope`, to JetStream on
+//! - for an event that sets the desired state, the session's whole `SessionDesired` (its state,
+//!   ticket and workspace), in an `Envelope`, to JetStream on
 //!   `rl.<org>.runner.<runner>.desired`, with `Nats-Msg-Id` = the event id. The row is marked
 //!   sent only after JetStream acknowledges, so a crash in between republishes; a quick restart
 //!   falls inside JetStream's duplicate window, and consumers dedupe on the event id and
@@ -15,10 +16,13 @@ pub mod config;
 use std::time::Duration;
 
 use async_nats::jetstream::{self, message::PublishMessage, stream};
+use buffa::EnumValue;
 use buffa::Message;
 use rl_domain::subject;
 use rl_proto::rangelight::runner::v1alpha1::__buffa::oneof::envelope::Body;
-use rl_proto::rangelight::runner::v1alpha1::{Envelope, SessionDesired};
+use rl_proto::rangelight::runner::v1alpha1::{
+    DesiredState, Envelope, SessionDesired, Ticket, Worktree,
+};
 use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::change::Kind;
 use rl_proto::rangelight::session::v1alpha1::Event;
 use rl_store::{Store, StoreError, Unsent};
@@ -35,8 +39,6 @@ const MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// How long JetStream drops a repeated `Nats-Msg-Id`. It covers a quick crash and restart, not
 /// every outage: consumers still dedupe on the event id and `generation`.
 const DUPLICATE_WINDOW: Duration = Duration::from_secs(120);
-/// How long a desired state stays in the stream for a runner that is away.
-const MAX_AGE: Duration = Duration::from_hours(7 * 24);
 
 /// Why a relay round failed. The rows it didn't mark stay unsent and go out next round.
 #[derive(Debug, thiserror::Error)]
@@ -63,11 +65,13 @@ pub struct Relay {
 }
 
 impl Relay {
-    /// A relay; creates the org's desired-state stream if it doesn't exist. `org` and `runner`
-    /// are checked subject tokens (`rl_domain::subject::token`).
+    /// A relay; creates the org's desired-state stream, or updates it to this config (say, a
+    /// changed `replicas`). It keeps one message per subject, the session's latest desired state,
+    /// so a runner that starts over reads only those, and a cold one is a closed session's
+    /// tombstone. `org` and `runner` are checked subject tokens (`rl_domain::subject::token`).
     ///
     /// # Errors
-    /// [`RelayError::Nats`] if the stream can't be created.
+    /// [`RelayError::Nats`] if the stream can't be created or updated.
     pub async fn new(
         store: Store,
         nats: async_nats::Client,
@@ -77,11 +81,15 @@ impl Relay {
     ) -> Result<Relay, RelayError> {
         let jetstream = jetstream::new(nats.clone());
         jetstream
-            .get_or_create_stream(stream::Config {
+            .create_or_update_stream(stream::Config {
                 name: format!("rl-{org}-desired"),
                 subjects: vec![subject::runners_desired(&org)],
+                // No max_age: a hot session's desired state stays however long it runs.
+                // ponytail: a closed session's tombstone stays for ever, one small message each.
+                // Ceiling: stream size at millions of sessions. Upgrade: purge a subject once the
+                // runner reported the session gone.
+                max_messages_per_subject: 1,
                 retention: stream::RetentionPolicy::Limits,
-                max_age: MAX_AGE,
                 num_replicas: replicas,
                 duplicate_window: DUPLICATE_WINDOW,
                 ..Default::default()
@@ -97,8 +105,9 @@ impl Relay {
         })
     }
 
-    /// Publishes one event: JetStream first, waiting for its acknowledgement, then the fan-out.
-    /// Doesn't mark it sent.
+    /// Publishes one event: for a change of the desired state, JetStream first, waiting for its
+    /// acknowledgement; then the fan-out. A runner's own report goes only to the fan-out. Doesn't
+    /// mark it sent.
     ///
     /// # Errors
     /// [`RelayError::Payload`] or [`RelayError::Nats`].
@@ -106,39 +115,26 @@ impl Relay {
     pub async fn publish(&self, event: &Unsent) -> Result<(), RelayError> {
         let change =
             rl_chain::decode(&event.payload).map_err(|_| RelayError::Payload(event.event.0))?;
+        let id = event.event.0.to_string();
+        let nats = |e: &dyn std::fmt::Display| RelayError::Nats(e.to_string());
         let state = match &change.kind {
-            Some(Kind::Created(created)) => created.state,
-            Some(Kind::StateChanged(changed)) => changed.state,
+            Some(Kind::Created(created)) => Some(created.state),
+            Some(Kind::StateChanged(changed)) => Some(changed.state),
+            Some(Kind::PhaseChanged(_)) => None,
             None => return Err(RelayError::Payload(event.event.0)),
         };
-        let id = event.event.0.to_string();
-        let desired = SessionDesired {
-            session_id: event.session.0.to_string(),
-            generation: event.seq,
-            state,
-            namespace: event.namespace.clone(),
-            ..Default::default()
-        };
-        let envelope = Envelope {
-            message_id: id.clone(),
-            protocol_version: PROTOCOL.into(),
-            runner_id: self.runner.clone(),
-            // The event's time, so a republish is byte-for-byte the same message.
-            sent_at: buffa_types::google::protobuf::Timestamp::from(event.at).into(),
-            body: Some(Body::from(desired)),
-            ..Default::default()
-        };
-        let publish = PublishMessage::build()
-            .message_id(id.as_str())
-            .payload(envelope.encode_to_vec().into());
-        let nats = |e: &dyn std::fmt::Display| RelayError::Nats(e.to_string());
-        let subject = subject::runner_desired(&self.org, &self.runner);
-        let ack = self
-            .jetstream
-            .send_publish(subject, publish)
-            .await
-            .map_err(|e| nats(&e))?;
-        ack.await.map_err(|e| nats(&e))?;
+        if let Some(state) = state {
+            let publish = PublishMessage::build()
+                .message_id(id.as_str())
+                .payload(self.desired(event, state).encode_to_vec().into());
+            let subject = subject::runner_desired(&self.org, &self.runner, event.session);
+            let ack = self
+                .jetstream
+                .send_publish(subject, publish)
+                .await
+                .map_err(|e| nats(&e))?;
+            ack.await.map_err(|e| nats(&e))?;
+        }
 
         let fanout = Event {
             id,
@@ -155,6 +151,41 @@ impl Relay {
             )
             .await
             .map_err(|e| nats(&e))
+    }
+
+    /// The whole desired session as of `event`, in its envelope: what the runner's `Session`
+    /// resource holds.
+    fn desired(&self, event: &Unsent, state: EnumValue<DesiredState>) -> Envelope {
+        let desired = SessionDesired {
+            session_id: event.session.0.to_string(),
+            generation: event.seq,
+            state,
+            namespace: event.namespace.clone(),
+            worktrees: vec![Worktree {
+                base_ref: event.base_ref.clone(),
+                mirror_repo: event.repo.clone(),
+                ..Default::default()
+            }],
+            ticket: Ticket {
+                key: event.ticket_key.clone(),
+                title: event.title.clone(),
+                description: event.description.clone(),
+                criteria: event.criteria.clone(),
+                ..Default::default()
+            }
+            .into(),
+            member: event.member.clone(),
+            ..Default::default()
+        };
+        Envelope {
+            message_id: event.event.0.to_string(),
+            protocol_version: PROTOCOL.into(),
+            runner_id: self.runner.clone(),
+            // The event's time, so a republish is byte-for-byte the same message.
+            sent_at: buffa_types::google::protobuf::Timestamp::from(event.at).into(),
+            body: Some(Body::from(desired)),
+            ..Default::default()
+        }
     }
 
     /// One round: publishes the oldest unsent events in order and marks each sent after its

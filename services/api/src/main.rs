@@ -1,12 +1,12 @@
 //! The api binary: loads config, starts telemetry, migrates, wires Postgres, NATS, Linear and the
-//! OIDC provider, and runs the intake loop and the server until SIGTERM or Ctrl-C.
+//! OIDC provider, and runs the intake loop, the status consumer and the server until SIGTERM or
+//! Ctrl-C.
 
 use anyhow::Context;
 use api::config::Config;
 use std::time::Duration;
 
-use api::{Auth, SessionApi, intake_loop, serve};
-use rl_app::{SystemClock, UuidV7};
+use api::{Auth, SessionApi, intake_loop, serve, status};
 use rl_store::Store;
 use rl_tickets_linear::Linear;
 use tokio::net::TcpListener;
@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 async fn main() -> anyhow::Result<()> {
     let config = Config::load()?;
     rl_telemetry::init(&config.log)?;
+    let workspace = config.workspace()?;
     let store = Store::connect(&config.database_url.read()?)
         .await
         .context("postgres")?;
@@ -52,8 +53,14 @@ async fn main() -> anyhow::Result<()> {
     let intake = tokio::spawn(intake_loop(
         store.clone(),
         linear,
-        SystemClock,
-        UuidV7,
+        workspace,
+        cancel.clone(),
+    ));
+    let reports = tokio::spawn(status::consume(
+        store.clone(),
+        nats.clone(),
+        config.org.clone(),
+        config.stream_replicas,
         cancel.clone(),
     ));
     tracing::info!(listen = %config.listen, "api started");
@@ -65,5 +72,6 @@ async fn main() -> anyhow::Result<()> {
     )
     .await;
     intake.await?;
+    reports.await?;
     Ok(())
 }

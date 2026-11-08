@@ -9,6 +9,7 @@ SPEC_REQUIRED=(
   api/jsonschema/receipt-predicate.v1alpha1.schema.json
   api/jsonschema/rangelight.v1alpha1.schema.json
   api/jsonschema/agent-event.v1alpha1.schema.json
+  api/jsonschema/ticket.v1alpha1.schema.json
   go.mod go.sum
   services/runner/internal/session/schema/rangelight.v1alpha1.schema.json
 )
@@ -42,7 +43,7 @@ spec_schema_for() {
   local name="${1##*/}"
   case "${name%%.*}" in
     receipt) printf 'api/jsonschema/receipt-predicate.v1alpha1.schema.json' ;;
-    rangelight | agent-event) printf 'api/jsonschema/%s.v1alpha1.schema.json' "${name%%.*}" ;;
+    rangelight | agent-event | ticket) printf 'api/jsonschema/%s.v1alpha1.schema.json' "${name%%.*}" ;;
     *) return 1 ;;
   esac
 }

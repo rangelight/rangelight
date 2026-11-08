@@ -1,8 +1,10 @@
 package session
 
 import (
+	"fmt"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"strings"
 )
 
 // agentPod is the lane's agent (ADR 0015): non-root, read-only root filesystem, no capabilities,
@@ -74,8 +76,44 @@ func agentPod(s *Session, o Options) *corev1.Pod {
 	}
 }
 
-// ready reports whether a pod's Ready condition is true.
-func ready(p *corev1.Pod) bool {
+// crashLoops is how many restarts of a crash-looping agent container fail its session. The pod
+// restarts it (restartPolicy Always: the agent resumes from its checkpoint), so fewer are Starting.
+const crashLoops = 3
+
+// podPhase is the session's phase as its agent pod shows it: Hot only while the agent container is
+// Ready (and the pod with it); Failed, with the last exit's reason and code, once it crash-loops
+// crashLoops times; Starting otherwise, with why it isn't up (an exit, a restart, ImagePullBackOff,
+// CreateContainerConfigError, ...) for status.message.
+func podPhase(p *corev1.Pod) (Phase, string, error) {
+	for _, c := range p.Status.ContainerStatuses {
+		if c.Name != agentName {
+			continue
+		}
+		exit := func(t *corev1.ContainerStateTerminated) string {
+			if t == nil {
+				return "no exit recorded"
+			}
+			return strings.TrimSpace(fmt.Sprintf("%s (exit code %d) %s", t.Reason, t.ExitCode, t.Message))
+		}
+		waiting := c.State.Waiting
+		switch {
+		case waiting != nil && waiting.Reason == "CrashLoopBackOff" && c.RestartCount >= crashLoops:
+			return "", "", failed("agent container is crash-looping after %d restarts: %s", c.RestartCount, exit(c.LastTerminationState.Terminated))
+		case waiting != nil && waiting.Reason == "CrashLoopBackOff":
+			return PhaseStarting, fmt.Sprintf("agent container restarting (%d): %s", c.RestartCount, exit(c.LastTerminationState.Terminated)), nil
+		case c.State.Terminated != nil:
+			return PhaseStarting, "agent container exited: " + exit(c.State.Terminated), nil
+		case waiting != nil && waiting.Reason != "" && waiting.Reason != "ContainerCreating" && waiting.Reason != "PodInitializing":
+			return PhaseStarting, fmt.Sprintf("agent container waiting: %s: %s", waiting.Reason, waiting.Message), nil
+		case c.Ready && podReady(p):
+			return PhaseHot, "", nil
+		}
+	}
+	return PhaseStarting, "", nil
+}
+
+// podReady reports whether a pod's Ready condition is true.
+func podReady(p *corev1.Pod) bool {
 	for _, c := range p.Status.Conditions {
 		if c.Type == corev1.PodReady {
 			return c.Status == corev1.ConditionTrue

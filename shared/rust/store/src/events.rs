@@ -32,6 +32,8 @@ pub(crate) struct NewEvent<'a> {
     pub(crate) change: &'a Change,
     /// Microseconds since the epoch (`rl_chain::micros`): what is hashed is what is stored.
     pub(crate) at: i64,
+    /// The runner message it records, if one.
+    pub(crate) message_id: Option<uuid::Uuid>,
 }
 
 /// Appends the session's next event, chained to its last one, and returns its seq. The caller
@@ -71,6 +73,7 @@ pub(crate) async fn append(
         prev_hash,
         &hash[..],
         timestamp(event.at),
+        event.message_id,
     )
     .execute(&mut **tx)
     .await?;

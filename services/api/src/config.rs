@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 
 use rl_auth::Url;
 use rl_config::{ConfigError, SecretRef};
-use rl_domain::subject;
+use rl_domain::{Workspace, subject};
 use serde::Deserialize;
 
 /// What the api is configured with.
@@ -40,6 +40,14 @@ pub struct Config {
     pub oidc_member_claim: String,
     /// Seconds between a long-lived stream's checks that its login still lives.
     pub login_recheck_seconds: u64,
+    /// JetStream replicas of the runners' status stream.
+    pub stream_replicas: usize,
+    /// The git mirror's name for the repo the team's sessions work on.
+    pub repo: String,
+    /// That repo's approved base branch.
+    pub base_ref: String,
+    /// Whose Claude home the team's lanes mount.
+    pub member: String,
 }
 
 impl Config {
@@ -53,8 +61,25 @@ impl Config {
         config.validate()
     }
 
+    /// The workspace every session of the team starts in.
+    ///
+    /// # Errors
+    /// [`ConfigError`] when `repo`, `base_ref` or `member` is invalid.
+    pub fn workspace(&self) -> Result<Workspace, ConfigError> {
+        Workspace::new(
+            self.repo.clone(),
+            self.base_ref.clone(),
+            self.member.clone(),
+        )
+        .map_err(|e| ConfigError(e.to_string()))
+    }
+
     fn validate(self) -> Result<Config, ConfigError> {
         subject::token(&self.org).map_err(|e| ConfigError(e.to_string()))?;
+        self.workspace()?;
+        if !matches!(self.stream_replicas, 1..=5) {
+            return Err(ConfigError("stream_replicas must be 1 to 5".into()));
+        }
         let team_ok = !self.linear_team.is_empty()
             && self.linear_team.len() <= 16
             && self.linear_team.bytes().all(|b| b.is_ascii_alphanumeric());
@@ -102,6 +127,8 @@ mod tests {
 linear_team = \"RAN\"
 public_url = \"https://rangelight.example.com\"
 oidc_issuer = \"https://rangelight.example.com/dex\"
+repo = \"shop\"
+member = \"ariel\"
 ";
 
     fn defaults() -> Config {
@@ -177,6 +204,26 @@ oidc_issuer = \"https://rangelight.example.com/dex\"
             ..defaults()
         };
         assert!(no_recheck.validate().is_err());
+    }
+
+    #[test]
+    fn the_workspace_and_replicas_are_checked() {
+        for bad in [
+            Config {
+                repo: "shop.git".into(),
+                ..defaults()
+            },
+            Config {
+                member: String::new(),
+                ..defaults()
+            },
+            Config {
+                stream_replicas: 0,
+                ..defaults()
+            },
+        ] {
+            assert!(bad.validate().is_err());
+        }
     }
 
     #[test]

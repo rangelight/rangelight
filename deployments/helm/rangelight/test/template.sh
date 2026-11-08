@@ -67,8 +67,38 @@ test_bundled_nats_single_server_with_jetstream_on_a_pvc() {
 test_bundled_exposes_cnpg_secret_and_nats_service() {
   render --show-only templates/api/configmap.yaml
   expect_ok
-  expect_line '  RANGELIGHT_API_POSTGRES_URL: "secret://rangelight-pg-app#uri"'
+  expect_line '  RANGELIGHT_API_DATABASE_URL: "secret://rangelight-pg-app#uri"'
   expect_line '  RANGELIGHT_API_NATS_URL: "nats://rangelight-nats.rangelight-system.svc:4222"'
+}
+
+# RAN-35: the api's real keys (configs/api.default.toml), every required one set from values.
+test_api_settings_are_its_config_keys() {
+  render --show-only templates/api/configmap.yaml --set api.baseRef=release/2 --set api.streamReplicas=3
+  expect_ok
+  expect_line '  RANGELIGHT_API_REPO: "shop"'
+  expect_line '  RANGELIGHT_API_BASE_REF: "release/2"'
+  expect_line '  RANGELIGHT_API_MEMBER: "owner"'
+  expect_line '  RANGELIGHT_API_STREAM_REPLICAS: "3"'
+  expect_no_match 'POSTGRES_URL'
+  local key
+  for key in $(grep -oE '^  RANGELIGHT_API_[A-Z_]+' <<<"${OUT}" | sed 's/^  RANGELIGHT_API_//' | tr '[:upper:]' '[:lower:]'); do
+    grep -qE "^    pub ${key}: " "${CHART}/../../../services/api/src/config.rs" || fail "RANGELIGHT_API_${key^^} isn't an api config key"
+  done
+}
+
+test_refuses_an_api_without_its_workspace() {
+  render --set api.repo=
+  expect_refused "api.repo is required"
+  render --set api.member=
+  expect_refused "api.member is required"
+  render --set api.repo=shop.git
+  expect_refused "/api/repo"
+  render --set api.member=Owner
+  expect_refused "/api/member"
+  render --set api.baseRef=a..b
+  expect_refused "/api/baseRef"
+  render --set api.streamReplicas=0
+  expect_refused "/api/streamReplicas"
 }
 
 # --- AC3: your own Postgres and NATS --------------------------------------------
@@ -77,7 +107,7 @@ test_external_installs_only_the_api_settings() {
   render --api-versions "${CNPG_API}" "${EXTERNAL[@]}" "${EXTERNAL_OIDC[@]}"
   expect_ok
   [[ "$(kinds)" == "ConfigMap/rangelight-api" ]] || fail "external mode renders more than the api ConfigMap: $(kinds | paste -sd' ')"
-  expect_line '  RANGELIGHT_API_POSTGRES_URL: "secret://pg-api#uri"'
+  expect_line '  RANGELIGHT_API_DATABASE_URL: "secret://pg-api#uri"'
   expect_line '  RANGELIGHT_API_NATS_URL: "tls://nats.example.com:4222"'
 }
 
@@ -87,7 +117,7 @@ test_external_postgres_alone_keeps_bundled_nats() {
   expect_ok
   [[ "$(kinds | paste -sd' ')" == "ConfigMap/rangelight-api ConfigMap/rangelight-nats-config NetworkPolicy/rangelight-nats Service/rangelight-nats Service/rangelight-nats-headless StatefulSet/rangelight-nats" ]] ||
     fail "external Postgres with bundled NATS renders: $(kinds | paste -sd' ')"
-  expect_line '  RANGELIGHT_API_POSTGRES_URL: "secret://pg-api#url"'
+  expect_line '  RANGELIGHT_API_DATABASE_URL: "secret://pg-api#url"'
 }
 
 # --- AC5: NetworkPolicies --------------------------------------------------------
@@ -105,9 +135,15 @@ test_nats_ingress_only_from_rangelight() {
   render --show-only templates/nats/networkpolicy.yaml
   expect_ok
   expect_line '      app.kubernetes.io/name: "nats"'
-  expect_line '              app.kubernetes.io/part-of: "rangelight"'
+  expect_line '              app.kubernetes.io/name: "api"'
+  expect_line '              app.kubernetes.io/name: "relay"'
   expect_line '          port: 4222'
-  expect_no_match 'namespaceSelector|ipBlock|port: 8222'
+  [[ "$(grep -c 'podSelector:' <<<"${OUT}")" -eq 3 ]] || fail "NATS admits more than the api and the relay"
+  expect_no_match 'namespaceSelector|ipBlock|port: 8222|^ {14}app.kubernetes.io/part-of'
+  # Review M2: the git mirror isn't a NATS client.
+  render -f "${CHART}/test/git-mirror-values.yaml" --show-only templates/nats/networkpolicy.yaml
+  expect_ok
+  expect_no_match 'git-mirror|^ {14}app.kubernetes.io/part-of'
 }
 
 test_our_objects_carry_the_labels() {
@@ -154,8 +190,8 @@ test_refuses_an_unknown_key() {
 
 test_refuses_another_namespace() {
   STATUS=0
-  OUT="$(helm template rangelight "${CHART}" --namespace default --set publicUrl=https://rangelight.example.com \
-    --set dex.github.org=rangelight 2>&1)" || STATUS=$?
+  OUT="$(helm template rangelight "${CHART}" --namespace default -f "${CHART}/test/api-values.yaml" \
+    --set publicUrl=https://rangelight.example.com --set dex.github.org=rangelight 2>&1)" || STATUS=$?
   expect_refused 'install into the namespace rangelight-system, not "default"'
 }
 

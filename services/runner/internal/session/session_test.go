@@ -20,6 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+
+	runnerv1 "github.com/rangelight/rangelight/shared/go/gen/rangelight/runner/v1alpha1"
 )
 
 var nextID = 0
@@ -246,6 +248,75 @@ func env(c corev1.Container, name string) string {
 	return c.Env[i].Value
 }
 
+// setAgentStatus sets the agent pod's status as the kubelet would: the pod Ready with its agent
+// container, the container's state, and its last termination.
+func setAgentStatus(t *testing.T, pod *corev1.Pod, ready bool, state corev1.ContainerState, last *corev1.ContainerStateTerminated, restarts ...int32) {
+	t.Helper()
+	condition := corev1.ConditionFalse
+	if ready {
+		condition = corev1.ConditionTrue
+	}
+	pod.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: condition}}
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: agentName, Ready: ready, State: state, Image: testImage, ImageID: testImage,
+		LastTerminationState: corev1.ContainerState{Terminated: last},
+	}}
+	if len(restarts) > 0 {
+		pod.Status.ContainerStatuses[0].RestartCount = restarts[0]
+	}
+	if err := k8s.Status().Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// RAN-35 AC2 (live check, review M1): an agent container that can't start (ImagePullBackOff) stays
+// Starting with its reason in status.message, reported; one that crash-loops crashLoops times isn't
+// Hot: the Session fails with the last exit's reason and code, and reports FAILED.
+func TestStuckOrCrashLoopingAgent(t *testing.T) {
+	demoRepo(t, "crash")
+	s := newSession(t, "crash")
+	ensureServiceAccount(t, Namespace(s))
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: Namespace(s)}}
+	get(t, pod)
+	// The pod's Ready condition alone (what phase used to follow) doesn't make it Hot.
+	pod.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}
+	if err := k8s.Status().Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	phase(t, s, PhaseStarting)
+	// A container that can't start yet stays Starting, with the reason the Workbench shows, reported.
+	setAgentStatus(t, pod, false,
+		corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff", Message: "Back-off pulling image"}}, nil)
+	const pulling = "agent container waiting: ImagePullBackOff: Back-off pulling image"
+	eventually(t, "waiting reason", func() error {
+		var got Session
+		if err := k8s.Get(context.Background(), client.ObjectKeyFromObject(s), &got); err != nil {
+			return err
+		}
+		if got.Status.Phase != PhaseStarting || got.Status.Message != pulling {
+			return fmt.Errorf("%s %q", got.Status.Phase, got.Status.Message)
+		}
+		return nil
+	})
+	eventually(t, "waiting reason reported", func() error {
+		found, err := statuses(s.Spec.ID, runnerv1.Phase_PHASE_STARTING)
+		if err == nil && !slices.ContainsFunc(found, func(e *runnerv1.Envelope) bool { return e.GetStatus().GetMessage() == pulling }) {
+			err = errors.New("not reported")
+		}
+		return err
+	})
+	setAgentStatus(t, pod, false,
+		corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff", Message: "back-off 40s"}},
+		&corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 3}, crashLoops)
+	failed := phase(t, s, PhaseFailed)
+	if want := "agent container is crash-looping after 3 restarts: Error (exit code 3)"; !strings.Contains(failed.Status.Message, want) {
+		t.Errorf("message %q, want it to contain %q", failed.Status.Message, want)
+	}
+	if got := reported(t, s.Spec.ID, runnerv1.Phase_PHASE_FAILED); got.GetStatus().GetMessage() != failed.Status.Message {
+		t.Errorf("FAILED reported %q, want %q", got.GetStatus().GetMessage(), failed.Status.Message)
+	}
+}
+
 func TestHotWhenAgentPodReady(t *testing.T) {
 	demoRepo(t, "hot")
 	s := newSession(t, "hot")
@@ -253,10 +324,7 @@ func TestHotWhenAgentPodReady(t *testing.T) {
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "agent", Namespace: Namespace(s)}}
 	get(t, pod)
 	phase(t, s, PhaseStarting)
-	pod.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}
-	if err := k8s.Status().Update(context.Background(), pod); err != nil {
-		t.Fatal(err)
-	}
+	setAgentStatus(t, pod, true, corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, nil)
 	phase(t, s, PhaseHot)
 }
 
@@ -400,6 +468,32 @@ func TestRejectsAnInvalidSpec(t *testing.T) {
 				t.Errorf("created, or not refused as invalid: %v", err)
 			}
 		})
+	}
+}
+
+// Review: the CRD's workspace rules are rl_domain::Workspace's: both check test/workspace.cases.json.
+func TestWorkspaceRulesAreTheSharedCases(t *testing.T) {
+	raw, err := os.ReadFile("../../../../test/workspace.cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Repo, BaseRef, Member string
+		Valid                 bool
+	}
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cases {
+		s := &Session{
+			ObjectMeta: metav1.ObjectMeta{Name: "workspace-case", Namespace: runnerNS},
+			Spec: Spec{ID: "019a5e1c-0000-7000-8000-999999999998", Repo: c.Repo, BaseRef: c.BaseRef, Member: c.Member,
+				Ticket: Ticket{Key: "RAN-1", Title: "t", Criteria: []string{"c"}}},
+		}
+		err := k8s.Create(context.Background(), s, client.DryRunAll)
+		if (err == nil) != c.Valid || (err != nil && !apierrors.IsInvalid(err)) {
+			t.Errorf("%+v: the API server says %v", c, err)
+		}
 	}
 }
 

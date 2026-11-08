@@ -48,14 +48,16 @@ To drop the database, delete it by hand: `kubectl -n rangelight-system delete cl
 
 ## What the api gets
 
-The ConfigMap `rangelight-api` holds the api's connection settings (ADR 0049 §6):
+The ConfigMap `rangelight-api` holds the api's settings (`configs/api.default.toml`, ADR 0049 §6):
 
-- `RANGELIGHT_API_POSTGRES_URL`: `secret://rangelight-pg-app#uri` (bundled), the Secret CloudNativePG
+- `RANGELIGHT_API_DATABASE_URL`: `secret://rangelight-pg-app#uri` (bundled), the Secret CloudNativePG
   generates, or `secret://<postgres.external.secretRef.name>#<key>`. There's no password in values or git.
 - `RANGELIGHT_API_NATS_URL`: `nats://rangelight-nats.rangelight-system.svc:4222`, or `nats.external.url`.
 - `RANGELIGHT_API_PUBLIC_URL`, `RANGELIGHT_API_OIDC_ISSUER` (`<publicUrl>/dex`, or `oidc.issuer`),
   `RANGELIGHT_API_OIDC_CLIENT_ID`, `RANGELIGHT_API_OIDC_MEMBER_CLAIM`, and `RANGELIGHT_API_OIDC_CLIENT_SECRET` as a reference to
   `oidc.clientSecretRef`.
+- `RANGELIGHT_API_REPO`, `_BASE_REF`, `_MEMBER`, `_STREAM_REPLICAS` from `api.repo` (required), `api.baseRef`,
+  `api.member` (required) and `api.streamReplicas`: where the sessions work, and for whom.
 
 ## Sign-in
 
@@ -93,7 +95,8 @@ at start: after changing `publicUrl`, `dex.github.org` or `oidc.clientId`, run
 ## Network
 
 NetworkPolicies let only pods labelled `app.kubernetes.io/part-of: "rangelight"` in `rangelight-system` reach
-Postgres (5432) and NATS (4222), plus the CloudNativePG operator to its instances (5432, 8000). The git mirror
+Postgres (5432), plus the CloudNativePG operator to its instances (5432, 8000). NATS (4222) admits only its
+clients: the api and the relay, and the runner from its own namespace. The git mirror
 (8080) accepts only namespaces labelled `rangelight.dev/lane: "true"` (the runner labels each lane's) and the
 namespace `rangelight-runner`. Dex takes connections on 5556 only, from the api and from `dex.ingressFrom`
 (your ingress controller); it calls out only to the cluster DNS (`clusterDns`, shared with the lanes) and to

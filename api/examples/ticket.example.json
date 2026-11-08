@@ -1,0 +1,9 @@
+{
+  "key": "RAN-35",
+  "title": "The runner takes sessions from the api over NATS and reports status back",
+  "description": "Acceptance\n- AC1 The runner creates the Session from SessionDesired.\n- AC2 The runner reports SessionStatus on every phase change.",
+  "criteria": [
+    "AC1 The runner creates the Session from SessionDesired.",
+    "AC2 The runner reports SessionStatus on every phase change."
+  ]
+}

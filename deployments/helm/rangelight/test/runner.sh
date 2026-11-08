@@ -16,6 +16,15 @@ runner_objects() {
   render "${RUNNER[@]}" "$@" "${args[@]}"
 }
 
+# RAN-35: NATS admits the runner's pod from its own namespace (the runner protocol), and nothing else.
+test_nats_ingress_admits_the_runner() {
+  render "${RUNNER[@]}" --show-only templates/nats/networkpolicy.yaml
+  expect_ok
+  expect_line '              kubernetes.io/metadata.name: "rangelight-runner"'
+  expect_line '              app.kubernetes.io/name: "runner"'
+  expect_no_match 'ipBlock|port: 8222'
+}
+
 test_runner_is_off_by_default() {
   render --api-versions "${CNPG_API}"
   expect_ok
@@ -74,7 +83,7 @@ ClusterRole  configmaps  get list watch create update
 ClusterRole networking.k8s.io networkpolicies  get list watch create update
 ClusterRole cilium.io ciliumnetworkpolicies  get list watch create update
 ClusterRole authentication.k8s.io tokenreviews  create
-Role rangelight.dev sessions  get list watch update
+Role rangelight.dev sessions  get list watch create patch update delete
 Role rangelight.dev sessions/status  patch" ]] || fail "RBAC rules changed:
 ${rules}"
   expect_no_match 'secrets|pods/exec|serviceaccounts|"\*"|escalate|bind|impersonate'

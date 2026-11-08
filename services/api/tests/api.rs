@@ -8,6 +8,7 @@ use std::io::Write;
 use std::time::Duration;
 
 use api::intake_once;
+use async_nats::jetstream::message::PublishMessage;
 use buffa::Message;
 use connectrpc::ErrorCode;
 use connectrpc::client::HttpClient;
@@ -15,7 +16,8 @@ use relay::Relay;
 use rl_app::{SystemClock, UuidV7, change_state};
 use rl_config::SecretRef;
 use rl_domain::{INTAKE_LABEL, SessionId, State, Ticket, Tracker};
-use rl_proto::rangelight::runner::v1alpha1::DesiredState;
+use rl_proto::rangelight::runner::v1alpha1::__buffa::oneof::envelope::Body;
+use rl_proto::rangelight::runner::v1alpha1::{DesiredState, Envelope, Phase, SessionStatus};
 use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::change::Kind;
 use rl_proto::rangelight::session::v1alpha1::{
     Event, ListSessionsRequest, SessionServiceClient, WatchSessionRequest,
@@ -29,6 +31,19 @@ const KEY: &str = "lin_api_APITESTKEY9876543210";
 
 fn org() -> String {
     format!("t{}", uuid::Uuid::now_v7().simple())
+}
+
+/// One intake round in the test workspace; returns how many sessions it created.
+async fn intake(store: &Store, source: &impl rl_app::TicketSource) -> usize {
+    intake_once(
+        store,
+        source,
+        &rl_testkit::workspace(),
+        &SystemClock,
+        &UuidV7,
+    )
+    .await
+    .unwrap()
 }
 
 fn key_file() -> tempfile::NamedTempFile {
@@ -47,19 +62,8 @@ async fn linear_intake_creates_one_session_per_labelled_issue() {
     let stub = LinearStub::start(Reply::Tickets(issues)).await;
     let linear = Linear::new(stub.url.clone(), "RAN".into(), SecretRef::file(key.path())).unwrap();
 
-    assert_eq!(
-        intake_once(&store, &linear, &SystemClock, &UuidV7)
-            .await
-            .unwrap(),
-        1
-    );
-    assert_eq!(
-        intake_once(&store, &linear, &SystemClock, &UuidV7)
-            .await
-            .unwrap(),
-        0,
-        "re-poll"
-    );
+    assert_eq!(intake(&store, &linear).await, 1);
+    assert_eq!(intake(&store, &linear).await, 0, "re-poll");
 
     let sessions = store.list_sessions(10).await.unwrap();
     assert_eq!(sessions.len(), 1);
@@ -93,9 +97,7 @@ async fn list_and_watch_with_a_real_client() {
     let stub = LinearStub::start(Reply::Tickets(vec![ticket(7, &[INTAKE_LABEL])])).await;
     let key = key_file();
     let linear = Linear::new(stub.url.clone(), "RAN".into(), SecretRef::file(key.path())).unwrap();
-    intake_once(&store, &linear, &SystemClock, &UuidV7)
-        .await
-        .unwrap();
+    intake(&store, &linear).await;
     let (_served, client) = served(&store, &org).await;
 
     let listed = client
@@ -176,6 +178,7 @@ async fn a_failing_command_doesnt_stop_the_intake_round() {
             "issue-x".into(),
             "RAN-1".into(),
             "t".into(),
+            "- AC1 one".into(),
         )
         .unwrap(),
         labels: vec![INTAKE_LABEL.into()],
@@ -185,12 +188,7 @@ async fn a_failing_command_doesnt_stop_the_intake_round() {
         same_key,
         ticket(2, &[INTAKE_LABEL]),
     ]);
-    assert_eq!(
-        intake_once(&store, &source, &SystemClock, &UuidV7)
-            .await
-            .unwrap(),
-        2
-    );
+    assert_eq!(intake(&store, &source).await, 2);
     assert_eq!(store.list_sessions(10).await.unwrap().len(), 2);
 }
 
@@ -249,8 +247,7 @@ async fn shutdown_doesnt_wait_for_a_stuck_round() {
     let intake = tokio::spawn(api::intake_loop(
         store,
         Hangs,
-        SystemClock,
-        UuidV7,
+        rl_testkit::workspace(),
         cancel.clone(),
     ));
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -307,4 +304,136 @@ async fn a_silent_connection_is_closed() {
         (Duration::from_secs(8)..Duration::from_secs(15)).contains(&waited),
         "closed after {waited:?}"
     );
+}
+
+/// A runner's status for `session`, as the runner sends it.
+fn status(session: &str, message_id: uuid::Uuid) -> Vec<u8> {
+    let status = SessionStatus {
+        session_id: session.into(),
+        observed_generation: 1,
+        phase: Phase::PHASE_RUNNING.into(),
+        ..Default::default()
+    };
+    Envelope {
+        message_id: message_id.to_string(),
+        protocol_version: "v1alpha1".into(),
+        runner_id: "r1".into(),
+        body: Some(Body::from(status)),
+        ..Default::default()
+    }
+    .encode_to_vec()
+}
+
+/// Publishes a status on the runner's subject with its own `Nats-Msg-Id`, retrying until the
+/// consumer has created the stream.
+async fn publish_status(org: &str, payload: Vec<u8>) {
+    let jetstream = async_nats::jetstream::new(rl_testkit::nats().await);
+    let publish = PublishMessage::build()
+        .message_id(uuid::Uuid::now_v7().to_string().as_str())
+        .payload(payload.into());
+    let subject = rl_domain::subject::runner_status(org, "r1");
+    loop {
+        if let Ok(ack) = jetstream
+            .send_publish(subject.clone(), publish.clone())
+            .await
+            && ack.await.is_ok()
+        {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// One relay round for runner `r1`; returns how many events it sent.
+async fn relay_once(store: &Store, org: &str) -> usize {
+    let nats = rl_testkit::nats().await;
+    let relay = Relay::new(store.clone(), nats, org.into(), "r1".into(), 1);
+    relay.await.unwrap().run_once().await.unwrap()
+}
+
+/// How many messages the org's desired stream holds.
+async fn desired_messages(org: &str) -> u64 {
+    let jetstream = async_nats::jetstream::new(rl_testkit::nats().await);
+    let mut stream = jetstream
+        .get_stream(format!("rl-{org}-desired"))
+        .await
+        .unwrap();
+    stream.info().await.unwrap().state.messages
+}
+
+/// The session's phase, once the status consumer has set one.
+async fn reported_phase(store: &Store) -> Option<rl_domain::Phase> {
+    for _ in 0..100 {
+        if let Some(phase) = store.list_sessions(1).await.unwrap()[0].phase {
+            tokio::time::sleep(Duration::from_millis(300)).await; // time for a second one too
+            return Some(phase);
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    None
+}
+
+/// RAN-35 AC2 and AC5: a runner's status, delivered twice (past JetStream's duplicate window:
+/// another Nats-Msg-Id) and then a third time, becomes exactly one chained event and the session's
+/// phase; the relay fans it out to `WatchSession` and sends the runner nothing back for it.
+#[tokio::test]
+async fn a_status_becomes_exactly_one_chained_event() {
+    let (store, org) = (rl_testkit::store("api::status").await, org());
+    intake(&store, &FakeTickets(vec![ticket(8, &[INTAKE_LABEL])])).await;
+    let id = store.list_sessions(1).await.unwrap()[0].id;
+    let cancel = CancellationToken::new();
+    let consumer = tokio::spawn(api::status::consume(
+        store.clone(),
+        rl_testkit::nats().await,
+        org.clone(),
+        1,
+        cancel.clone(),
+    ));
+    let (_served, client) = served(&store, &org).await;
+    let request = WatchSessionRequest {
+        session_id: id.0.to_string(),
+        ..Default::default()
+    };
+    let mut watch = client.watch_session(request).await.unwrap();
+
+    let message_id = uuid::Uuid::now_v7();
+    let payload = status(&id.0.to_string(), message_id);
+    publish_status(&org, payload.clone()).await;
+    publish_status(&org, payload.clone()).await;
+    assert_eq!(
+        reported_phase(&store).await,
+        Some(rl_domain::Phase::Running)
+    );
+    let third = api::status::record(&store, &payload, "r1", &SystemClock, &UuidV7).await;
+    assert_eq!(third.unwrap(), api::status::Outcome::Duplicate);
+    assert_eq!(
+        store.chain(id).await.unwrap().len(),
+        2,
+        "created, then one phase change"
+    );
+
+    assert_eq!(relay_once(&store, &org).await, 2);
+    let mut last = None;
+    for _ in 0..2 {
+        let message = tokio::time::timeout(Duration::from_secs(5), watch.message()).await;
+        let event = message.unwrap().unwrap().unwrap().to_owned_message().event;
+        last = event
+            .into_option()
+            .unwrap()
+            .change
+            .into_option()
+            .unwrap()
+            .kind;
+    }
+    assert!(
+        matches!(&last, Some(Kind::PhaseChanged(p)) if p.phase.as_known() == Some(Phase::PHASE_RUNNING) && p.message_id == message_id.to_string()),
+        "{last:?}"
+    );
+    assert_eq!(
+        desired_messages(&org).await,
+        1,
+        "only the created event goes to the runner"
+    );
+    cancel.cancel();
+    consumer.await.unwrap();
 }

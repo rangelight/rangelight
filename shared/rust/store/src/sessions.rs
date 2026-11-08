@@ -1,4 +1,4 @@
-use rl_domain::{ChangeState, NewSession, SessionId, State};
+use rl_domain::{ChangeState, NewSession, Phase, ReportPhase, SessionId, State};
 
 use crate::events::NewEvent;
 use crate::{Store, StoreError, events, outbox, timestamp, to_u64};
@@ -20,6 +20,8 @@ pub struct SessionRow {
     pub namespace: String,
     /// The desired state.
     pub state: State,
+    /// The phase its runner last reported, if it has.
+    pub phase: Option<Phase>,
     /// The seq of the session's last event.
     pub generation: u64,
 }
@@ -42,8 +44,14 @@ impl Store {
             command.ticket.id(),
             command.ticket.key(),
             command.ticket.title(),
+            command.ticket.description(),
+            command.ticket.criteria(),
             command.namespace(),
-            change.state().as_str(),
+            command.workspace.repo(),
+            command.workspace.base_ref(),
+            command.workspace.member(),
+            // NewSession::change records it: sessions start hot.
+            State::Hot.as_str(),
             timestamp(at),
         )
         .fetch_optional(&mut *tx)
@@ -58,6 +66,7 @@ impl Store {
                 session: command.id,
                 change: &change,
                 at,
+                message_id: None,
             },
         )
         .await?;
@@ -92,6 +101,7 @@ impl Store {
                 session: command.session,
                 change: &change,
                 at,
+                message_id: None,
             },
         )
         .await?;
@@ -107,6 +117,58 @@ impl Store {
         outbox::insert(&mut tx, command.event).await?;
         tx.commit().await?;
         to_u64(seq, "seq")
+    }
+
+    /// Records a runner's status: locks the session's row, and unless the status's message is
+    /// already recorded, appends its event, sets the phase (unless a later report already did)
+    /// and inserts the outbox row, in one transaction. Returns false, writing nothing, for a message already recorded.
+    ///
+    /// # Errors
+    /// [`StoreError::NotFound`], or [`StoreError::Db`] or [`StoreError::Timeout`]; nothing is
+    /// written.
+    #[tracing::instrument(skip_all, fields(session_id = %command.session.0, message_id = %command.message_id))]
+    pub async fn report_phase(&self, command: &ReportPhase) -> Result<bool, StoreError> {
+        let at = rl_chain::micros(command.at);
+        let change = command.change();
+        let mut tx = self.pool.begin().await?;
+        sqlx::query_file_scalar!("../../../db/queries/sessions/lock.sql", command.session.0)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        // The row lock serializes a session's reports; UNIQUE (message_id) backs this check.
+        let recorded = sqlx::query_file_scalar!(
+            "../../../db/queries/events/recorded.sql",
+            command.message_id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if recorded {
+            return Ok(false);
+        }
+        let seq = events::append(
+            &mut tx,
+            NewEvent {
+                id: command.event,
+                session: command.session,
+                change: &change,
+                at,
+                message_id: Some(command.message_id),
+            },
+        )
+        .await?;
+        sqlx::query_file!(
+            "../../../db/queries/sessions/set_phase.sql",
+            command.session.0,
+            command.phase.as_str(),
+            seq,
+            timestamp(at),
+            command.message_id,
+        )
+        .execute(&mut *tx)
+        .await?;
+        outbox::insert(&mut tx, command.event).await?;
+        tx.commit().await?;
+        Ok(true)
     }
 
     /// The newest sessions first, at most `limit`.
@@ -127,6 +189,7 @@ impl Store {
                     title: row.title,
                     namespace: row.namespace,
                     state: State::parse(&row.state)?,
+                    phase: row.phase.as_deref().map(Phase::parse).transpose()?,
                     generation: to_u64(row.generation, "generation")?,
                 })
             })

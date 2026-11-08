@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -135,4 +135,39 @@ fn payload_is_deterministic_and_decodes() {
     assert_eq!(payload(&change), payload(&change.clone()));
     assert_eq!(decode(&payload(&change)).unwrap(), to_proto(&change));
     assert!(decode(&[0xff, 0xff]).is_err());
+}
+
+#[test]
+fn a_phase_change_encodes_and_every_phase_maps_both_ways() {
+    let change = Change::PhaseChanged {
+        phase: Phase::Running,
+        message: String::new(),
+        observed_generation: 2,
+        message_id: Uuid::from_u128(7),
+        sent_at: Some(UNIX_EPOCH + Duration::from_hours(500_000)),
+    };
+    let Some(Kind::PhaseChanged(decoded)) = decode(&payload(&change)).unwrap().kind else {
+        panic!("not a phase change")
+    };
+    assert_eq!(decoded.observed_generation, 2);
+    assert_eq!(decoded.message_id, Uuid::from_u128(7).to_string());
+    assert_eq!(
+        decoded.sent_at.into_option().map(|t| t.seconds),
+        Some(1_800_000_000)
+    );
+    for name in [
+        "queued",
+        "starting",
+        "running",
+        "hibernating",
+        "hibernated",
+        "waking",
+        "terminating",
+        "gone",
+        "failed",
+    ] {
+        let known = Phase::parse(name).unwrap();
+        assert_eq!(phase(proto_phase(known)), Some(known));
+    }
+    assert_eq!(phase(ProtoPhase::PHASE_UNSPECIFIED), None);
 }

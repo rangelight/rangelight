@@ -31,7 +31,9 @@ const (
 var (
 	dnsName     = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
 	pinnedImage = regexp.MustCompile(`^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$`)
-	logLevels   = map[string]slog.Level{"debug": slog.LevelDebug, "info": slog.LevelInfo, "warn": slog.LevelWarn, "error": slog.LevelError}
+	// A NATS subject token (the same rule as rl_domain::subject::token): it can't widen or split a subject.
+	subjectToken = regexp.MustCompile(`^[^.*>\s\x00-\x1f\x7f]+$`)
+	logLevels    = map[string]slog.Level{"debug": slog.LevelDebug, "info": slog.LevelInfo, "warn": slog.LevelWarn, "error": slog.LevelError}
 )
 
 // Config is the runner's validated config.
@@ -56,6 +58,11 @@ type Config struct {
 	LaneWorkspaceSize    string `toml:"lane_workspace_size"`
 	LaneTmpSize          string `toml:"lane_tmp_size"`
 	LaneEphemeralStorage string `toml:"lane_ephemeral_storage"`
+	// NATSURL is the control plane's NATS server (ADR 0021).
+	NATSURL string `toml:"nats_url"`
+	// Org and RunnerID are the subject tokens of the runner protocol: rl.<org>.runner.<runner_id>.*.
+	Org      string `toml:"org"`
+	RunnerID string `toml:"runner_id"`
 	// LogLevel is debug, info, warn or error.
 	LogLevel string `toml:"log_level"`
 }
@@ -123,6 +130,7 @@ func (c *Config) fields() map[string]*string {
 		"lane_workspace_size": &c.LaneWorkspaceSize, "lane_tmp_size": &c.LaneTmpSize,
 		"lane_ephemeral_storage": &c.LaneEphemeralStorage,
 		"dns_namespace":          &c.DNSNamespace, "dns_pod_label": &c.DNSPodLabel,
+		"nats_url": &c.NATSURL, "org": &c.Org, "runner_id": &c.RunnerID,
 	}
 }
 
@@ -178,6 +186,11 @@ func (c *Config) validate() error {
 		q, err := resource.ParseQuantity(v)
 		check(err == nil && q.Sign() > 0, key, "a positive size like 10Gi")
 	}
+	n, err := url.Parse(c.NATSURL)
+	check(err == nil && (n.Scheme == "nats" || n.Scheme == "tls") && n.Host != "" && n.User == nil,
+		"nats_url", "a nats:// or tls:// URL without credentials")
+	check(subjectToken.MatchString(c.Org), "org", "a subject token: no '.', '*', '>' or whitespace")
+	check(subjectToken.MatchString(c.RunnerID), "runner_id", "a subject token: no '.', '*', '>' or whitespace")
 	_, ok := logLevels[c.LogLevel]
 	check(ok, "log_level", "debug, info, warn or error")
 	if err := errors.Join(bad...); err != nil {

@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 use rl_app::{Clock, IdGen, TicketError, TicketSource};
-use rl_domain::{INTAKE_LABEL, Ticket, Tracker};
+use rl_domain::{INTAKE_LABEL, Ticket, Tracker, Workspace};
 use sqlx::Postgres;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::testing::{TestArgs, TestSupport};
@@ -87,7 +87,7 @@ impl IdGen for SeqIds {
     }
 }
 
-/// A seeded Linear ticket for tests: id `issue-<n>`, key `RAN-<n>`.
+/// A seeded Linear ticket for tests: id `issue-<n>`, key `RAN-<n>`, two acceptance criteria.
 #[must_use]
 pub fn ticket(n: u32, labels: &[&str]) -> Seed {
     let ticket = Ticket::new(
@@ -95,6 +95,7 @@ pub fn ticket(n: u32, labels: &[&str]) -> Seed {
         format!("issue-{n}"),
         format!("RAN-{n}"),
         format!("Ticket {n}"),
+        format!("Ticket {n}.\n\nAcceptance\n- AC1 one\n- AC2 two"),
     )
     .unwrap();
     Seed {
@@ -138,6 +139,12 @@ where
         listed, expected,
         "a source lists every labelled ticket once, and nothing else"
     );
+}
+
+/// The workspace tests start sessions in: repo `shop` at `main`, for member `ariel`.
+#[must_use]
+pub fn workspace() -> Workspace {
+    Workspace::new("shop".into(), "main".into(), "ariel".into()).unwrap()
 }
 
 /// A client of the test NATS server, with JetStream.

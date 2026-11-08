@@ -47,6 +47,13 @@ spec:
               value: {{ .Values.clusterDns.podLabel | quote }}
             - name: "RANGELIGHT_RUNNER_WORKERS"
               value: {{ .Values.runner.workers | quote }}
+            # The runner protocol (ADR 0021); lanes keep running while NATS is unreachable.
+            - name: "RANGELIGHT_RUNNER_NATS_URL"
+              {{- if .Values.nats.enabled }}
+              value: {{ printf "nats://%s.%s.svc:4222" .Values.nats.fullnameOverride .Release.Namespace | quote }}
+              {{- else }}
+              value: {{ .Values.nats.external.url | quote }}
+              {{- end }}
           ports:
             - name: "http"
               containerPort: 8080

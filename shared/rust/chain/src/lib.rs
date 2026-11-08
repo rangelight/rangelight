@@ -20,8 +20,9 @@
 use buffa::Message;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use rl_domain::{Change, EventId, State};
-use rl_proto::rangelight::runner::v1alpha1::DesiredState;
+use buffa_types::google::protobuf::Timestamp;
+use rl_domain::{Change, EventId, Phase, State};
+use rl_proto::rangelight::runner::v1alpha1::{DesiredState, Phase as ProtoPhase};
 use rl_proto::rangelight::session::v1alpha1 as proto;
 use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::change::Kind;
 use sha2::{Digest, Sha256};
@@ -104,6 +105,39 @@ pub fn desired_state(state: State) -> DesiredState {
     }
 }
 
+/// The runner protocol's name for a phase.
+#[must_use]
+pub fn proto_phase(phase: Phase) -> ProtoPhase {
+    match phase {
+        Phase::Queued => ProtoPhase::PHASE_QUEUED,
+        Phase::Starting => ProtoPhase::PHASE_STARTING,
+        Phase::Running => ProtoPhase::PHASE_RUNNING,
+        Phase::Hibernating => ProtoPhase::PHASE_HIBERNATING,
+        Phase::Hibernated => ProtoPhase::PHASE_HIBERNATED,
+        Phase::Waking => ProtoPhase::PHASE_WAKING,
+        Phase::Terminating => ProtoPhase::PHASE_TERMINATING,
+        Phase::Gone => ProtoPhase::PHASE_GONE,
+        Phase::Failed => ProtoPhase::PHASE_FAILED,
+    }
+}
+
+/// The phase a runner reported, or `None` for `PHASE_UNSPECIFIED`.
+#[must_use]
+pub fn phase(reported: ProtoPhase) -> Option<Phase> {
+    match reported {
+        ProtoPhase::PHASE_UNSPECIFIED => None,
+        ProtoPhase::PHASE_QUEUED => Some(Phase::Queued),
+        ProtoPhase::PHASE_STARTING => Some(Phase::Starting),
+        ProtoPhase::PHASE_RUNNING => Some(Phase::Running),
+        ProtoPhase::PHASE_HIBERNATING => Some(Phase::Hibernating),
+        ProtoPhase::PHASE_HIBERNATED => Some(Phase::Hibernated),
+        ProtoPhase::PHASE_WAKING => Some(Phase::Waking),
+        ProtoPhase::PHASE_TERMINATING => Some(Phase::Terminating),
+        ProtoPhase::PHASE_GONE => Some(Phase::Gone),
+        ProtoPhase::PHASE_FAILED => Some(Phase::Failed),
+    }
+}
+
 /// The change as its protobuf message.
 #[must_use]
 pub fn to_proto(change: &Change) -> proto::Change {
@@ -124,6 +158,20 @@ pub fn to_proto(change: &Change) -> proto::Change {
         }),
         Change::StateChanged { state } => Kind::from(proto::StateChanged {
             state: desired_state(*state).into(),
+            ..Default::default()
+        }),
+        Change::PhaseChanged {
+            phase,
+            message,
+            observed_generation,
+            message_id,
+            sent_at,
+        } => Kind::from(proto::PhaseChanged {
+            phase: proto_phase(*phase).into(),
+            message: message.clone(),
+            observed_generation: *observed_generation,
+            message_id: message_id.to_string(),
+            sent_at: sent_at.map(Timestamp::from).into(),
             ..Default::default()
         }),
     };

@@ -3,9 +3,16 @@
 The control plane's front door (ADR 0031, ADR 0033):
 
 - **Linear intake.** Every 30 seconds it lists the configured team's open issues labelled
-  `rangelight` and creates one session per issue. Session, first event and outbox row are written
-  in one transaction; the `UNIQUE (tracker, ticket_id)` constraint makes a re-poll a no-op. An
-  issue that can't be used, or a command that fails, is logged and skipped; the round goes on.
+  `rangelight` and creates one session per issue, in the configured workspace (`repo`, `base_ref`,
+  `member`). Session, first event and outbox row are written in one transaction; the
+  `UNIQUE (tracker, ticket_id)` constraint makes a re-poll a no-op. An issue that breaks the ticket
+  rule (`api/jsonschema/ticket.v1alpha1.schema.json`: its criteria are the description's `AC<n>`
+  lines), or a command that fails, is logged and skipped; the round goes on.
+- **Runner status.** A durable JetStream consumer (`api`, stream `rl-<org>-status`, which it
+  creates) of every runner's `rl.<org>.runner.<runner>.status`. Each `SessionStatus` appends one
+  `session.phase_changed` event and sets the session's phase in one transaction, and is acked only
+  after it commits; `UNIQUE (events.message_id)` makes a redelivery a no-op. A message that can
+  never be recorded is terminated, with its reason logged.
 - **Session API**, Connect-RPC (`api/proto/rangelight/session/v1alpha1/session.proto`), on
   `listen` (8080): `ListSessions`, and the server stream `WatchSession`, fed by the relay's NATS
   fan-out (`rl.<org>.session.<id>.events`), never by polling Postgres. A seq gap (a slow
@@ -41,8 +48,8 @@ The control plane's front door (ADR 0031, ADR 0033):
 - It applies the migrations in `db/migrations/` at startup.
 
 Config: `configs/api.default.toml`, then `/etc/rangelight/api.toml`, then `RANGELIGHT_API_*`.
-`linear_team`, `public_url` (`https://<host>[:<port>]`) and `oidc_issuer` (https) have no default;
-`linear_url` must be https. Secrets are references: `database_url`, `linear_api_key` and `oidc_client_secret` name
+`linear_team`, `public_url` (`https://<host>[:<port>]`), `oidc_issuer` (https), `repo` and `member` have no
+default; `linear_url` must be https. Secrets are references: `database_url`, `linear_api_key` and `oidc_client_secret` name
 mounted Secret files (`secret://<name>#<key>` → `/var/run/rangelight/secrets/<name>/<key>`). The
 Linear key is read at each poll and never logged.
 
@@ -55,5 +62,5 @@ docker build -f build/package/docker/api/Dockerfile .         # the image
 ```
 
 Code: `src/lib.rs` (intake loop, server), `src/sessions.rs` (handlers), `src/auth.rs` (sign-in; `src/auth/recheck.rs`, long-lived responses),
-`src/config.rs`, `src/main.rs` (wiring). Tests: `tests/api.rs`, end to end through a Linear stub,
-the relay and a real Connect client; `tests/auth.rs`, sign-in through the test Dex.
+`src/status.rs` (runner status), `src/config.rs`, `src/main.rs` (wiring). Tests: `tests/api.rs`, end to end through a
+Linear stub, the relay and a real Connect client; `tests/auth.rs`, sign-in through the test Dex.

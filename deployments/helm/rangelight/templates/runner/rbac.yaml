@@ -73,10 +73,11 @@ metadata:
   labels:
     {{- include "rangelight.labels" (dict "ctx" $ "name" "runner" "component" "runner") | nindent 4 }}
 rules:
-  # Read Sessions; update one only to add or remove the runner's finalizer.
+  # Read Sessions; apply (create, patch) one from the control plane's SessionDesired, delete it at
+  # teardown (the runner protocol); update one to add or remove the runner's finalizer.
   - apiGroups: ["rangelight.dev"]
     resources: ["sessions"]
-    verbs: ["get", "list", "watch", "update"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
   # Report the phase.
   - apiGroups: ["rangelight.dev"]
     resources: ["sessions/status"]

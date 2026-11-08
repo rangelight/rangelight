@@ -15,11 +15,11 @@ OUT=""
 STATUS=0
 FAILED=0
 
-# render [helm template flags...]: the chart in rangelight-system with the sign-in values it requires (publicUrl,
-# dex.github.org; later flags win), into OUT and STATUS.
+# render [helm template flags...]: the chart in rangelight-system with the values it requires: sign-in
+# (publicUrl, dex.github.org) and the api's sessions (test/api-values.yaml); later flags win. Into OUT and STATUS.
 render() {
   STATUS=0
-  OUT="$(helm template rangelight "${CHART}" --namespace rangelight-system \
+  OUT="$(helm template rangelight "${CHART}" --namespace rangelight-system -f "${CHART}/test/api-values.yaml" \
     --set publicUrl=https://rangelight.example.com --set dex.github.org=rangelight "$@" 2>&1)" || STATUS=$?
 }
 

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- One event, linked by rl-chain; UNIQUE (session_id, seq) refuses a concurrent append, and\n-- UNIQUE (message_id) a second event for one runner message.\nINSERT INTO events (id, session_id, seq, type, payload, prev_hash, hash, at, message_id)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "59306aca3c79c6080f852634fde9abbcba9ec373b8afab603f7987075fa4cf68"
+}

@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -40,6 +42,9 @@ type Reconciler struct {
 	client.Client
 	// Reader reads past the cache, where a cache miss would be taken for "not there".
 	Reader client.Reader
+	// Report, if set, is handed every Session whose status the reconciler settled, and the Session
+	// that was deleted, with phase Gone (AddProtocol's status publisher). It must not block.
+	Report func(*Session)
 	Options
 	mirrorHost string
 	profiles   *profiles
@@ -62,6 +67,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 	if s.Status.Phase == PhaseFailed {
+		r.report(&s)
 		return ctrl.Result{}, nil
 	}
 	before := s.DeepCopy()
@@ -76,13 +82,37 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	} else if phase != "" {
 		s.Status.Phase = phase
 	}
-	// A patch, not an update: only the runner writes the status, so a stale read can't lose anything.
+	result, uerr := r.settle(ctx, &s, before)
+	return result, errors.Join(err, uerr)
+}
+
+// settle writes s's status if it changed from before, with a new phase id for a new phase or
+// message (so the api learns why a lane is stuck), and reports it. Optimistically locked: a stale read must not mint a second id for one phase change.
+func (r *Reconciler) settle(ctx context.Context, s, before *Session) (ctrl.Result, error) {
+	if s.Status.Phase != before.Status.Phase || s.Status.Message != before.Status.Message || s.Status.PhaseID == "" {
+		id, err := uuid.NewV7()
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("session %s: phase id: %w", s.Spec.ID, err)
+		}
+		s.Status.PhaseID = id.String()
+	}
 	if s.Status != before.Status {
-		if uerr := r.Status().Patch(ctx, &s, client.MergeFrom(before)); uerr != nil {
-			return ctrl.Result{}, errors.Join(err, fmt.Errorf("session %s: status: %w", s.Spec.ID, uerr))
+		err := r.Status().Patch(ctx, s, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{}))
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("session %s: status: %w", s.Spec.ID, err)
 		}
 	}
-	return ctrl.Result{}, err
+	r.report(s)
+	return ctrl.Result{}, nil
+}
+
+func (r *Reconciler) report(s *Session) {
+	if r.Report != nil {
+		r.Report(s)
+	}
 }
 
 // converge brings the lane up in order and returns the phase it reached ("" before the namespace).
@@ -114,10 +144,10 @@ func (r *Reconciler) converge(ctx context.Context, s *Session) (Phase, error) {
 		return PhaseStarting, r.createOnce(ctx, agentPod(s, r.Options), &corev1.Pod{})
 	case err != nil:
 		return PhaseStarting, fmt.Errorf("lane %s: agent pod: %w", Namespace(s), err)
-	case ready(&pod):
-		return PhaseHot, nil
 	}
-	return PhaseStarting, nil
+	phase, waiting, err := podPhase(&pod)
+	s.Status.Message = oneLine(waiting)
+	return phase, err
 }
 
 // laneConfig is the lane's ConfigMap: the ticket, and the profile read once from the base branch.
@@ -222,13 +252,20 @@ func (r *Reconciler) remove(ctx context.Context, s *Session) error {
 	if err := r.Update(ctx, s); err != nil {
 		return fmt.Errorf("session %s: remove finalizer: %w", s.Spec.ID, err)
 	}
+	// The Session is gone with its status, so this report lives only in memory.
+	if id, err := uuid.NewV7(); err == nil {
+		s.Status = Status{Phase: PhaseGone, PhaseID: id.String()}
+		r.report(s)
+	}
 	return nil
 }
 
+// oneLine is s on one line, at most messageMax characters (the CRD's maxLength counts characters),
+// never cut inside one.
 func oneLine(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > messageMax {
-		s = s[:messageMax]
+	if r := []rune(s); len(r) > messageMax {
+		s = string(r[:messageMax])
 	}
 	return s
 }

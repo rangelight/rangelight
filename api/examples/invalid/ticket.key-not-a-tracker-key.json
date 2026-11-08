@@ -1,0 +1,6 @@
+{
+  "key": "ran-35",
+  "title": "A key in lowercase can't be a tracker key",
+  "description": "",
+  "criteria": ["AC1 Never reaches the runner."]
+}

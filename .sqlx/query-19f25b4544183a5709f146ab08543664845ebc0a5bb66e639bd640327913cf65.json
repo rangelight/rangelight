@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- The newest sessions first.\nSELECT id, tracker, ticket_id, ticket_key, title, namespace, state, generation\nFROM sessions\nORDER BY created_at DESC, id DESC\nLIMIT $1\n",
+  "query": "-- The newest sessions first.\nSELECT id, tracker, ticket_id, ticket_key, title, namespace, state, phase, generation\nFROM sessions\nORDER BY created_at DESC, id DESC\nLIMIT $1\n",
   "describe": {
     "columns": [
       {
@@ -82,6 +82,17 @@
       },
       {
         "ordinal": 7,
+        "name": "phase",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "phase"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
         "name": "generation",
         "type_info": "Int8",
         "origin": {
@@ -105,8 +116,9 @@
       false,
       false,
       false,
+      true,
       false
     ]
   },
-  "hash": "0694fe2841f55fb9084aa36796c6466824c324f4bd2113ea7170bacdc7be9288"
+  "hash": "19f25b4544183a5709f146ab08543664845ebc0a5bb66e639bd640327913cf65"
 }

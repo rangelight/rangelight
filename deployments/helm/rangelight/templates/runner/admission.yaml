@@ -34,7 +34,7 @@ spec:
         {'/namespaces': ['CREATE', 'DELETE'], '/pods': ['CREATE'], '/persistentvolumeclaims': ['CREATE'],
         '/configmaps': ['CREATE', 'UPDATE'], 'networking.k8s.io/networkpolicies': ['CREATE', 'UPDATE'],
         'cilium.io/ciliumnetworkpolicies': ['CREATE', 'UPDATE'], 'authentication.k8s.io/tokenreviews': ['CREATE'],
-        'rangelight.dev/sessions': ['UPDATE'], 'rangelight.dev/sessions/status': ['UPDATE']}
+        'rangelight.dev/sessions': ['CREATE', 'UPDATE', 'DELETE'], 'rangelight.dev/sessions/status': ['UPDATE']}
     - name: "target"
       expression: "request.operation == 'DELETE' ? oldObject : object"
     - name: "isLane"

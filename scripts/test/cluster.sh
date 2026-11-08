@@ -4,6 +4,7 @@
 # into /tmp/rl-cluster-test.*.
 # Usage: scripts/test/cluster.sh [test_name...]   (no argument runs every test)
 set -euo pipefail
+export LC_ALL=C
 
 ROOT="$(git rev-parse --show-toplevel)"
 DIR=""

@@ -86,6 +86,7 @@ volumes bind.
 ## Develop
 
 ```sh
+scripts/tools.sh            # install the pinned check tools (scripts/tools.env) into ~/.cache/rangelight
 scripts/check.sh all        # the whole gate; CI runs exactly these parts
 scripts/check.sh <part>     # size rules secrets scrub spec yaml rust go ts deploy hooks
 scripts/check.sh fmt        # format in place
@@ -94,7 +95,9 @@ scripts/check.sh gen        # regenerate shared/ts/gen from api/jsonschema
 
 One Rust workspace, one Go module and one pnpm workspace live at the root. Every deployable is in
 `services/<name>/`, every library in `shared/<lang>/<name>/`, and every cross-language contract in
-`api/`. The engineering standard is
+`api/`. Besides the tools, you need Go, rustup and Node with pnpm (pinned in `go.mod`, `rust-toolchain.toml`,
+`.nvmrc` and `package.json`), plus git, curl and Python 3; Docker for the git mirror's nginx tests. The
+engineering standard is
 [ADR 0049](docs/architecture/adr/0049-engineering-standard.md).
 
 ## Contributing

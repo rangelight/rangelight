@@ -2,8 +2,9 @@
 # Self-tests of the git mirror (RAN-17), run by `script/check.sh hooks`. Every request takes the
 # real path: smart HTTP -> backend.sh (CGI) -> git http-backend -> the hooks. The suite runs twice:
 #   cgi:   refs_test_server.py stands in for nginx + fcgiwrap + the runner's /auth/git;
-#   nginx: real nginx (nginx.conf, rendered for the test) + fcgiwrap, with a stub /auth/git.
-# Without nginx and fcgiwrap the second run is skipped, unless RANGELIGHT_NGINX_REQUIRED=true (CI).
+#   nginx: the shipped nginx + fcgiwrap + git (the image of build/package/docker/git-mirror/Dockerfile, so
+#          the versions that image pins), with nginx.conf rendered for the test and a stub /auth/git.
+# Without Docker the second run is skipped, unless RANGELIGHT_NGINX_REQUIRED=true (CI).
 # The stub identity is the X-Stub-User header: a, b, r (runner), deny (401), or passed on as it is.
 # The cases are in refs_test_cases.sh.
 set -euo pipefail
@@ -12,6 +13,11 @@ export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP="$(mktemp -d /tmp/rl-git-mirror-test.XXXXXX)"
+IMAGE="rl-git-mirror-test"
+CONTAINER="rl-git-mirror-test-${TMP##*.}"
+# The git mirror's image, as this user, on the host's network, with the test's files at the same paths:
+# the rendered nginx.conf works unchanged.
+IN_MIRROR=(--network host --user "$(id -u):$(id -g)" -v "${TMP}:${TMP}" -v "${HERE}:${HERE}:ro" "${IMAGE}")
 PIDS=()
 FAILS=0
 MODE=setup
@@ -22,6 +28,7 @@ cleanup() {
   # A negative pid is a whole process group: fcgiwrap's workers would outlive (and be respawned by) it.
   for pid in "${PIDS[@]}"; do kill -- "${pid}" 2>/dev/null || true; done
   for pid in "${PIDS[@]}"; do wait "${pid#-}" 2>/dev/null || true; done
+  [[ "${MODE}" != nginx ]] || docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
   rm -rf "${TMP}"
 }
 trap cleanup EXIT
@@ -120,6 +127,12 @@ start_cgi() {
   BASE="http://127.0.0.1:$(<"${W}/port")"
 }
 
+# build_mirror: the image of the Dockerfile that images.yaml ships; its log on failure.
+build_mirror() {
+  docker build -q -t "${IMAGE}" -f "${HERE}/../../build/package/docker/git-mirror/Dockerfile" "${HERE}/../.." \
+    >"${TMP}/build.log" 2>&1 || { cat "${TMP}/build.log" >&2; return 1; }
+}
+
 free_port() { python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
 
 start_nginx() {
@@ -135,14 +148,12 @@ start_nginx() {
     "${HERE}/nginx.conf" >"${ng}/nginx.conf"
   check "nginx.conf was fully rendered for the test" \
     "! grep -qE '/srv/git|/opt/|cluster\.local|[ :]/tmp/(nginx|fcgiwrap|resolver)' '${ng}/nginx.conf' && grep -q RANGELIGHT_EVENTS_URL '${ng}/nginx.conf'"
-  ok "nginx -t accepts nginx.conf" nginx -e stderr -p "${ng}" -c "${ng}/nginx.conf" -t
-  # Its own process group (setsid), so cleanup can stop the workers with it.
-  setsid fcgiwrap -c 16 -s "unix:${ng}/fcgiwrap/fcgiwrap.sock" 2>>"${W}/fcgiwrap.log" &
-  PIDS+=("-$!")
+  ok "nginx -t accepts nginx.conf" docker run --rm "${IN_MIRROR[@]}" nginx -e stderr -p "${ng}" -c "${ng}/nginx.conf" -t
   # nginx answers /healthz on its own: without fcgiwrap's socket, the first git request gets a 502.
-  wait_for "[[ -S '${ng}/fcgiwrap/fcgiwrap.sock' ]]"
-  nginx -e stderr -p "${ng}" -c "${ng}/nginx.conf" -g 'daemon off;' >>"${W}/nginx.log" 2>&1 &
-  PIDS+=($!)
+  docker run -d --name "${CONTAINER}" "${IN_MIRROR[@]}" sh -c '
+    fcgiwrap -c 16 -s "unix:$1/ng/fcgiwrap/fcgiwrap.sock" 2>>"$1/fcgiwrap.log" &
+    while [ ! -S "$1/ng/fcgiwrap/fcgiwrap.sock" ]; do sleep 0.05; done
+    exec nginx -e stderr -p "$1/ng" -c "$1/ng/nginx.conf" -g "daemon off;" >>"$1/nginx.log" 2>&1' sh "${W}" >/dev/null
   BASE="http://127.0.0.1:${port}"
   wait_for "curl -sf '${BASE}/healthz' >/dev/null"
 }
@@ -190,13 +201,15 @@ suite() {
 
 main() {
   suite cgi
-  if command -v nginx >/dev/null && command -v fcgiwrap >/dev/null; then
+  if docker info >/dev/null 2>&1; then
+    MODE=nginx
+    build_mirror
     suite nginx
   elif [[ "${RANGELIGHT_NGINX_REQUIRED:-}" == true ]]; then
-    printf 'FAIL nginx and fcgiwrap are required here (RANGELIGHT_NGINX_REQUIRED=true)\n' >&2
+    printf 'FAIL Docker is required here, for the git mirror image (RANGELIGHT_NGINX_REQUIRED=true)\n' >&2
     FAILS=$((FAILS + 1))
   else
-    printf 'skipped: git-mirror through real nginx (nginx or fcgiwrap not installed)\n'
+    printf 'skipped: git-mirror through real nginx (no Docker for the git mirror image)\n'
   fi
   [[ "${FAILS}" -eq 0 ]] || { printf 'git-mirror: %d test(s) failed\n' "${FAILS}" >&2; exit 1; }
   printf 'git-mirror: all tests passed\n'

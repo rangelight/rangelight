@@ -1,68 +1,15 @@
 #!/usr/bin/env bash
-# Real Postgres, NATS and Dex for the Rust tests, without Docker or system packages (ADR 0049 §8).
-# Downloads pinned, checksum-verified release binaries into a cache (Dex publishes none: its
-# pinned source is built once with Go, whose go.sum verifies every module), starts them in a temp
-# dir (Postgres on a Unix socket, NATS and Dex on random ports), runs the command, and tears them
-# down.
+# Real Postgres, NATS and Dex for the Rust tests, without Docker or system packages (ADR 0049 §8): the
+# binaries pinned in scripts/tools.env (run scripts/tools.sh first). Starts them in a temp dir (Postgres on
+# a Unix socket, NATS and Dex on random ports), runs the command, and tears them down.
 # Usage: scripts/test/services.sh run <command...>
 set -euo pipefail
 shopt -s inherit_errexit
+export LC_ALL=C
 
-NATS_VERSION="2.15.2"
-POSTGRES_VERSION="18.6.1"
-DEX_VERSION="2.46.1"
+PATH="$(bash "$(dirname "${BASH_SOURCE[0]}")/../tools.sh" path):${PATH}"
 # Where the tests' sign-ins come back to; never reached, the tests read the code off the redirect.
 DEX_REDIRECT="https://rangelight.test/auth/callback"
-CACHE="${XDG_CACHE_HOME:-${HOME}/.cache}/rangelight/test-services"
-
-# platform: the release names of this machine, or fail.
-platform() {
-  case "$(uname -s)-$(uname -m)" in
-    Linux-x86_64) printf 'amd64 x86_64-unknown-linux-gnu\n' ;;
-    Linux-aarch64) printf 'arm64 aarch64-unknown-linux-gnu\n' ;;
-    *) printf 'services: no pinned binaries for %s\n' "$(uname -sm)" >&2; return 1 ;;
-  esac
-}
-
-# sha256_of <archive>: the pinned checksum.
-sha256_of() {
-  case "$1" in
-    "nats-server-v${NATS_VERSION}-linux-amd64.tar.gz") printf '67cb8e10bc6f0c4b47f75a728529a20953dbae2a4f9a4a52ae8517d65ae303ff' ;;
-    "nats-server-v${NATS_VERSION}-linux-arm64.tar.gz") printf 'bc2c788dcbf2849af749564e06a0d48c19bced851f2d68a2e21c54d078949b28' ;;
-    "postgresql-${POSTGRES_VERSION}-x86_64-unknown-linux-gnu.tar.gz") printf 'e84b02dd8d0ce5879fb697330a789231c8b8f8d958dae3ad4d90fecc710b1315' ;;
-    "postgresql-${POSTGRES_VERSION}-aarch64-unknown-linux-gnu.tar.gz") printf '1ab47fa2f06ff70454309ad02e5d89c46488300d43977231481fd6b160b9d556' ;;
-    "dex-${DEX_VERSION}.tar.gz") printf '05e2e149b53f9876269362fefa9061b4b1abd3d5437f23247d79e44a77ac487d' ;;
-    *) return 1 ;;
-  esac
-}
-
-# fetch <url> [archive]: download into the cache once (named archive, by default the URL's last
-# segment), verify, unpack; print the unpacked directory.
-fetch() {
-  local url="$1" archive="${2:-${1##*/}}" dir
-  dir="${CACHE}/${archive%.tar.gz}"
-  if [[ ! -d "${dir}" ]]; then
-    mkdir -p "${CACHE}"
-    curl -sSfL --retry 3 -o "${dir}.tar.gz.part" "${url}"
-    printf '%s  %s\n' "$(sha256_of "${archive}")" "${dir}.tar.gz.part" | sha256sum -c --quiet - >&2
-    mkdir -p "${dir}.part"
-    tar -xzf "${dir}.tar.gz.part" -C "${dir}.part" --strip-components 1
-    mv "${dir}.part" "${dir}"
-    rm -f "${dir}.tar.gz.part"
-  fi
-  printf '%s' "${dir}"
-}
-
-# dex_binary: Dex built from its pinned, verified source, once; print its path.
-dex_binary() {
-  local src
-  src="$(fetch "https://github.com/dexidp/dex/archive/refs/tags/v${DEX_VERSION}.tar.gz" "dex-${DEX_VERSION}.tar.gz")"
-  if [[ ! -x "${src}/bin/dex" ]]; then
-    (cd "${src}" && CGO_ENABLED=0 go build -mod=readonly -trimpath -o bin/dex.part ./cmd/dex) >&2
-    mv "${src}/bin/dex.part" "${src}/bin/dex"
-  fi
-  printf '%s' "${src}/bin/dex"
-}
 
 # free_port: a TCP port nothing on 127.0.0.1 listens on.
 free_port() {
@@ -121,8 +68,7 @@ YAML
 
 # start_dex <tmp>: start Dex under tmp; print the environment the tests read.
 start_dex() {
-  local tmp="$1" dex port="" issuer="" attempt
-  dex="$(dex_binary)"
+  local tmp="$1" port="" issuer="" attempt
   # A throwaway client secret for this run only; the tests read it from the file.
   (umask 077 && od -An -N24 -tx1 /dev/urandom | tr -d ' \n' >"${tmp}/dex-client-secret")
   # A free port can be taken before Dex binds it: try another, up to three times.
@@ -130,7 +76,7 @@ start_dex() {
     port="$(free_port)"
     issuer="http://127.0.0.1:${port}/dex"
     dex_config "${issuer}" "${port}" >"${tmp}/dex.yaml"
-    RL_DEX_CLIENT_SECRET="$(cat "${tmp}/dex-client-secret")" "${dex}" serve "${tmp}/dex.yaml" \
+    RL_DEX_CLIENT_SECRET="$(cat "${tmp}/dex-client-secret")" dex serve "${tmp}/dex.yaml" \
       </dev/null >"${tmp}/dex.log" 2>&1 &
     printf '%s' "$!" >"${tmp}/dex.pid"
     for _ in $(seq 300); do
@@ -150,20 +96,16 @@ start_dex() {
 
 # start <tmp>: start the servers under tmp; print the environment the tests read.
 start() {
-  local tmp="$1" arch triple nats pg port_file
-  read -r arch triple < <(platform)
-  nats="$(fetch "https://github.com/nats-io/nats-server/releases/download/v${NATS_VERSION}/nats-server-v${NATS_VERSION}-linux-${arch}.tar.gz")"
-  pg="$(fetch "https://github.com/theseus-rs/postgresql-binaries/releases/download/${POSTGRES_VERSION}/postgresql-${POSTGRES_VERSION}-${triple}.tar.gz")"
-
-  printf '%s' "${pg}/bin/pg_ctl" >"${tmp}/pg_ctl"
-  "${pg}/bin/initdb" -D "${tmp}/pg" -U postgres --auth trust -E UTF8 >"${tmp}/initdb.log" 2>&1 ||
+  local tmp="$1" port_file
+  type -P initdb pg_ctl nats-server dex >/dev/null || { printf 'services: no Postgres, NATS or Dex; run scripts/tools.sh\n' >&2; return 1; }
+  initdb -D "${tmp}/pg" -U postgres --auth trust -E UTF8 >"${tmp}/initdb.log" 2>&1 ||
     { cat "${tmp}/initdb.log" >&2; return 1; }
   # No TCP listener: a socket in tmp can't collide with anything else on the machine.
-  "${pg}/bin/pg_ctl" -D "${tmp}/pg" -l "${tmp}/pg.log" -w \
+  pg_ctl -D "${tmp}/pg" -l "${tmp}/pg.log" -w \
     -o "-c listen_addresses='' -k ${tmp} -c fsync=off" start >/dev/null ||
     { cat "${tmp}/pg.log" >&2; return 1; }
 
-  "${nats}/nats-server" -a 127.0.0.1 -p -1 -js -sd "${tmp}/js" --ports_file_dir "${tmp}" \
+  nats-server -a 127.0.0.1 -p -1 -js -sd "${tmp}/js" --ports_file_dir "${tmp}" \
     -l "${tmp}/nats.log" </dev/null >/dev/null 2>&1 &
   printf '%s' "$!" >"${tmp}/nats.pid"
   port_file="${tmp}/nats-server_$(cat "${tmp}/nats.pid").ports"
@@ -185,7 +127,7 @@ stop() {
   if [[ -f "${tmp}/nats.pid" ]]; then kill "$(cat "${tmp}/nats.pid")" 2>/dev/null || true; fi
   if [[ -f "${tmp}/dex.pid" ]]; then kill "$(cat "${tmp}/dex.pid")" 2>/dev/null || true; fi
   if [[ -f "${tmp}/pg/postmaster.pid" ]]; then
-    "$(cat "${tmp}/pg_ctl")" -D "${tmp}/pg" -m immediate stop >/dev/null || true
+    pg_ctl -D "${tmp}/pg" -m immediate stop >/dev/null || true
   fi
   rm -rf "${tmp}"
 }

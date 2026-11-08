@@ -3,6 +3,7 @@
 # No network and no credentials: the Linear key below is a placeholder the fake never checks.
 # Usage: scripts/test/metrics.sh
 set -euo pipefail
+export LC_ALL=C
 
 ROOT="$(git rev-parse --show-toplevel)"
 DIR=""

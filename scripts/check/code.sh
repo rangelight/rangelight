@@ -5,11 +5,9 @@
 
 yaml() {
   local files=() bad=0 f
-  need yamllint
+  need yamllint || failed "yaml (tools)"
   # Never empty: .yamllint.yaml itself is YAML.
   mapfile -t files < <(repo_files | grep -E '\.ya?ml$')
-  [[ "$(yamllint --version)" == "yamllint ${YAMLLINT_VERSION}" ]] ||
-    { printf 'yaml: need yamllint %s, have %s\n' "${YAMLLINT_VERSION}" "$(yamllint --version)" >&2; failed "yaml (tool version)"; }
   for f in "${files[@]}"; do
     [[ "${f}" == *.yml ]] || continue
     printf '%s: rename to .yaml\n' "${f}"
@@ -24,7 +22,8 @@ yaml() {
 
 rust() {
   has_files '\.rs$' || { skip rust; return 0; }
-  need cargo cargo-nextest cargo-deny cargo-machete cargo-sqlx buf # buf: rl-proto's build script
+  # buf: rl-proto's build script. nats-server, postgres and dex: scripts/test/services.sh.
+  need cargo cargo-nextest cargo-deny cargo-machete cargo-sqlx buf nats-server postgres dex || failed "rust (tools)"
   local -x SQLX_OFFLINE=true # SQL compiles against the committed .sqlx/ (ADR 0049 §2.4)
   cargo fmt --all --check
   cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -37,18 +36,18 @@ rust() {
 
 go() {
   has_files '\.go$' || { skip go; return 0; }
-  need go helm
+  need go helm golangci-lint govulncheck || failed "go (tools)" # helm: the runner's envtest suite
   local -x GOTOOLCHAIN
   GOTOOLCHAIN="$(go_toolchain)"
-  command go run "${GOLANGCI_LINT}" run ./...
+  golangci-lint run ./...
   command go test -race ./...
-  command go run "${GOVULNCHECK}" ./...
+  govulncheck ./...
   ok go
 }
 
 ts() {
   has_files '^services/(agent|web)/.*\.tsx?$' || { skip ts; return 0; }
-  need pnpm
+  need node pnpm || failed "ts (tools)"
   pnpm install --frozen-lockfile
   pnpm exec prettier --check .
   pnpm exec eslint --max-warnings 0 .
@@ -59,7 +58,8 @@ ts() {
 }
 
 deploy() {
-  need shellcheck
+  # helm, kubeconform, yamllint: the chart tests.
+  need shellcheck helm kubeconform yamllint || failed "deploy (tools)"
   local scripts=() t
   mapfile -t scripts < <(repo_files | grep -E '\.sh$|^services/git-mirror/hooks/[^/]+$')
   shellcheck -x -- "${scripts[@]}"
@@ -84,7 +84,7 @@ hooks() {
 fmt() {
   local did=0
   if has_files '\.rs$'; then cargo fmt --all; did=1; fi
-  if has_files '\.go$'; then GOTOOLCHAIN="$(go_toolchain)" command go run "${GOLANGCI_LINT}" fmt; did=1; fi
+  if has_files '\.go$'; then GOTOOLCHAIN="$(go_toolchain)" golangci-lint fmt; did=1; fi
   if has_files '^services/(agent|web)/.*\.tsx?$'; then pnpm exec prettier --write .; did=1; fi
   [[ "${did}" -eq 1 ]] || { skip fmt; return 0; }
   ok fmt

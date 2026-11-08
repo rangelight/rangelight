@@ -7,6 +7,7 @@ exceptions.
 ## Commands
 
 ```sh
+scripts/tools.sh          # install the pinned check tools (scripts/tools.env); the gate checks their versions
 scripts/check.sh all      # the whole gate, exactly what CI runs; must exit 0 before a PR
 scripts/check.sh <part>   # size rules secrets scrub spec yaml rust go ts deploy hooks
 scripts/check.sh fmt      # format in place

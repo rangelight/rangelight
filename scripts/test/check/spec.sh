@@ -4,11 +4,11 @@
 # --- spec (RAN-15) -------------------------------------------------------------
 
 # spec_fixture: the repo's real contracts, generated code and embedded schema copies, and the
-# installed TypeScript tools that generate shared/ts/gen.
+# installed TypeScript tools that generate shared/ts/gen, with the Node and pnpm pins.
 spec_fixture() {
   mkdir -p "${REPO}/services/runner/internal/session" "${REPO}/shared/go" "${REPO}/shared/ts"
   cp -R "${ROOT}/api" "${REPO}/api"
-  cp "${ROOT}/go.mod" "${ROOT}/go.sum" "${ROOT}/package.json" "${REPO}/"
+  cp "${ROOT}/go.mod" "${ROOT}/go.sum" "${ROOT}/package.json" "${ROOT}/.nvmrc" "${REPO}/"
   ln -s "${ROOT}/node_modules" "${REPO}/node_modules"
   cp -R "${ROOT}/shared/go/gen" "${REPO}/shared/go/"
   cp -R "${ROOT}/shared/ts/gen" "${REPO}/shared/ts/"

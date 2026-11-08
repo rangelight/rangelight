@@ -42,6 +42,9 @@ jobs:
               - ".github/workflows/ci.yaml"
               - "scripts/check.sh"
               - "scripts/check/**"
+              - "scripts/tools.env"
+              - "scripts/tools.sh"
+              - ".github/actions/tools/**"
             spec:
               - *shared
               - "api/**"
@@ -112,6 +115,7 @@ jobs:
             hooks:
               - *shared
               - "services/git-mirror/**"
+              - "build/package/docker/git-mirror/**"
 
   size:
     runs-on: "ubuntu-24.04"
@@ -134,22 +138,12 @@ jobs:
   secrets:
     runs-on: "ubuntu-24.04"
     timeout-minutes: 10
-    env:
-      GITLEAKS_VERSION: "8.30.1"
-      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
     steps:
       - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: "Install gitleaks (checksum-verified)"
-        run: |
-          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -sSfL -o "${RUNNER_TEMP}/${archive}" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
-          echo "${GITLEAKS_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum -c -
-          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" gitleaks
-          echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
+      - uses: "./.github/actions/tools"
       - run: "scripts/check.sh secrets"
 
   scrub:
@@ -176,13 +170,8 @@ jobs:
           # Full history, so `buf breaking` can read origin/main (ADR 0027).
           fetch-depth: 0
           persist-credentials: false
-      # Versions match BUF_VERSION and CHECK_JSONSCHEMA_VERSION in scripts/check.sh, which checks them.
       # The runner's preinstalled Go fetches the toolchain and protoc-gen-go pinned in go.mod.
-      - uses: "bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6"  # v1.7.0
-        with:
-          version: "1.75.0"
-          setup_only: true
-      - run: "pipx install check-jsonschema==0.38.2"
+      - uses: "./.github/actions/tools"
       # json-schema-to-typescript, pinned in package.json, generates shared/ts/gen.
       - uses: "pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115"  # v6.1.1
       - uses: "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1"  # v7.1.0
@@ -201,8 +190,7 @@ jobs:
       - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
         with:
           persist-credentials: false
-      # The version matches YAMLLINT_VERSION in scripts/check.sh, which checks it.
-      - run: "pipx install yamllint==1.38.0"
+      - uses: "./.github/actions/tools"
       - run: "scripts/check.sh yaml"
 
   rust:
@@ -216,20 +204,8 @@ jobs:
           persist-credentials: false
       - if: "hashFiles('**/*.rs') != ''"
         uses: "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"  # v2.9.3
-      - if: "hashFiles('**/*.rs') != ''"
-        uses: "taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2"  # v2.90.2
-        with:
-          tool: "cargo-nextest,cargo-deny,cargo-machete"
-      # sqlx-cli has no prebuilt binary there; the version matches sqlx in Cargo.toml.
-      - if: "hashFiles('**/*.rs') != ''"
-        run: "cargo install --locked sqlx-cli@0.9.0 --no-default-features --features postgres"
-      # rl-proto's build script compiles api/proto with buf; the version matches BUF_VERSION.
-      - if: "hashFiles('**/*.rs') != ''"
-        uses: "bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6"  # v1.7.0
-        with:
-          version: "1.75.0"
-          setup_only: true
-      # Postgres and NATS come from scripts/test/services.sh: pinned, checksum-verified binaries.
+      # The cargo tools, buf for rl-proto's build script, and the tests' Postgres and NATS.
+      - uses: "./.github/actions/tools"
       - run: "scripts/check.sh rust"
 
   go:
@@ -241,10 +217,8 @@ jobs:
       - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
         with:
           persist-credentials: false
-      # The runner's envtest suite renders the chart's runner RBAC and admission policy.
-      - uses: "azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310"  # v5.0.1
-        with:
-          version: "v3.22.0"
+      # golangci-lint, govulncheck, and helm: the runner's envtest suite renders the chart's RBAC and admission policy.
+      - uses: "./.github/actions/tools"
       # The runner's preinstalled Go fetches the toolchain pinned in go.mod.
       - run: "scripts/check.sh go"
 
@@ -276,16 +250,7 @@ jobs:
         with:
           persist-credentials: false
       # The self-tests in scripts/test/ run the spec and yaml parts too, so they need their tools.
-      - uses: "bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6"  # v1.7.0
-        with:
-          version: "1.75.0"
-          setup_only: true
-      - run: "pipx install check-jsonschema==0.38.2"
-      - run: "pipx install yamllint==1.38.0"
-      - uses: "azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310"  # v5.0.1
-        with:
-          version: "v3.22.0"
-      - run: "go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 && echo \"$(go env GOPATH)/bin\" >> \"${GITHUB_PATH}\""
+      - uses: "./.github/actions/tools"
       # The gen and spec self-tests run json-schema-to-typescript (package.json).
       - uses: "pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115"  # v6.1.1
       - uses: "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1"  # v7.1.0
@@ -304,8 +269,7 @@ jobs:
       - uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
         with:
           persist-credentials: false
-      # Distro nginx and fcgiwrap, so the git mirror's tests also run through a real nginx.
-      - run: "sudo apt-get update && sudo apt-get install -y --no-install-recommends nginx fcgiwrap"
+      # The runner's Docker builds the git mirror image, so its tests also run through the shipped nginx.
       - run: "scripts/check.sh hooks"
         env:
           RANGELIGHT_NGINX_REQUIRED: "true"

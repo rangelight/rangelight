@@ -79,7 +79,7 @@ rules() {
 # --- secrets (ADR 0050 §7) -----------------------------------------------------
 
 secrets() {
-  need gitleaks tar
+  need gitleaks || failed "secrets (tools)"
   local tmp
   tmp="$(mktemp -d /tmp/rl-check-secrets.XXXXXX)"
   # shellcheck disable=SC2064 # expand now: tmp is local

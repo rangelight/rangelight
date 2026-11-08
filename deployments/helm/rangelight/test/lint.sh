@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Lints the chart: pinned tools, vendored dependencies matching Chart.lock, helm lint, kubeconform on what both
-# modes render, and our own templates' output in the one YAML style. Run by `scripts/check.sh deploy`.
+# Lints the chart: vendored dependencies matching Chart.lock, helm lint, kubeconform on what both
+# modes render, and our own templates' output in the one YAML style. Run by `scripts/check.sh deploy`, which
+# checks that helm, kubeconform and yamllint are the versions pinned in scripts/tools.env.
 set -euo pipefail
 shopt -s inherit_errexit
+export LC_ALL=C
 
 ROOT="$(git rev-parse --show-toplevel)"
 CHART="${ROOT}/deployments/helm/rangelight"
-HELM_VERSION="v3.22.0"
-KUBECONFORM_VERSION="v0.8.0"
 # The CRD schemas kubeconform checks custom resources against: this commit holds CloudNativePG 1.30.1's,
 # the operator version the chart pins.
 CRD_SCHEMAS="https://raw.githubusercontent.com/datreeio/CRDs-catalog/61bcda00d70c1f40e6f4a5e51b5c159aac932860/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
@@ -27,14 +27,6 @@ render() {
 main() {
   local tool tmp templates=()
   for tool in helm kubeconform yamllint; do command -v "${tool}" >/dev/null || die "missing tool: ${tool}"; done
-  [[ "$(helm version --template '{{.Version}}')" == "${HELM_VERSION}" ]] ||
-    die "need helm ${HELM_VERSION}, have $(helm version --template '{{.Version}}')"
-  local kc_version
-  kc_version="$(kubeconform -v)"
-  # `go install` builds report "development"; their module version is embedded in the binary.
-  [[ "${kc_version}" != "development" ]] ||
-    kc_version="$(go version -m "$(command -v kubeconform)" | awk '$1 == "mod" { print $3 }')"
-  [[ "${kc_version}" == "${KUBECONFORM_VERSION}" ]] || die "need kubeconform ${KUBECONFORM_VERSION}, have ${kc_version}"
   # shellcheck source=deployments/dev/versions.env
   source "${ROOT}/deployments/dev/versions.env"
 

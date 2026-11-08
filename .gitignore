@@ -1,6 +1,8 @@
 # Environment
 .env
 *.env
+# Pins, not secrets: tracked, so every check sees them.
+!scripts/tools.env
 
 # Visual Studio Code
 .vscode

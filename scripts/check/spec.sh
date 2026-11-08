@@ -106,7 +106,6 @@ ts_types() {
 # The committed types are what the generator makes from the schemas.
 spec_ts() {
   local tmp
-  need pnpm
   tmp="$(mktemp -d /tmp/rl-check-spec-ts.XXXXXX)"
   # shellcheck disable=SC2064 # expand now: tmp is local
   trap "rm -rf '${tmp}'" EXIT
@@ -115,18 +114,10 @@ spec_ts() {
     { printf 'spec: %s is stale; run scripts/check.sh gen\n' "${SPEC_TS_GEN}" >&2; failed "spec (generated types)"; }
 }
 
-spec_versions() {
-  need buf check-jsonschema go
-  [[ "$(buf --version)" == "${BUF_VERSION}" ]] ||
-    { printf 'spec: need buf %s, have %s\n' "${BUF_VERSION}" "$(buf --version)" >&2; failed "spec (tool versions)"; }
-  [[ "$(check-jsonschema --version)" == *" ${CHECK_JSONSCHEMA_VERSION}" ]] ||
-    { printf 'spec: need check-jsonschema %s\n' "${CHECK_JSONSCHEMA_VERSION}" >&2; failed "spec (tool versions)"; }
-}
-
 spec() {
   spec_files
   spec_copies
-  spec_versions
+  need buf check-jsonschema go node pnpm || failed "spec (tools)" # node, pnpm: the TypeScript types
   spec_schemas
   spec_ts
   spec_proto
@@ -135,7 +126,7 @@ spec() {
 
 # Rewrites shared/ts/gen from the schemas; not part of `all` (spec checks it is current).
 gen() {
-  need pnpm
+  need node pnpm || failed "gen (tools)"
   rm -rf "${SPEC_TS_GEN}"
   ts_types "${SPEC_TS_GEN}"
   ok gen

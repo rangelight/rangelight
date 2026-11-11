@@ -36,4 +36,21 @@ spec:
       ports:
         - protocol: "TCP"
           port: 4222
+    {{- if .Values.runner.enabled }}
+    # The lane agents, for the lane terminal (rl.<org>.pty.<session>.*): only the agent pod of a lane
+    # namespace, on the client port only. Each signs in as its lane, which may use only its own
+    # terminal's two subjects (ADR 0045 amendment).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              rangelight.dev/lane: "true"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "agent"
+              app.kubernetes.io/component: "lane"
+              app.kubernetes.io/managed-by: "rangelight-runner"
+      ports:
+        - protocol: "TCP"
+          port: 4222
+    {{- end }}
 {{- end }}

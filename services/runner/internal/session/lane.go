@@ -1,6 +1,8 @@
 package session
 
 import (
+	"net/url"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -51,12 +53,23 @@ const (
 	natsTokenSeconds = 3600
 )
 
-// The git mirror (RAN-17), the lane's only in-cluster egress besides the cluster DNS (ADR 0016).
+// The lane's only in-cluster egress besides the cluster DNS (ADR 0016): the git mirror (RAN-17), and
+// the bundled NATS server for the lane terminal (RAN-41).
 const (
-	mirrorNamespace = "rangelight-system"
+	systemNamespace = "rangelight-system"
 	mirrorApp       = "git-mirror"
 	mirrorPort      = 8080
+	natsApp         = "nats"
+	natsClientPort  = 4222 // NATS's client port, when nats_url names none
 )
+
+// natsAddr is the host and client port of a NATS URL.
+func natsAddr(u *url.URL) (string, int) {
+	if p, err := strconv.Atoi(u.Port()); err == nil {
+		return u.Hostname(), p
+	}
+	return u.Hostname(), natsClientPort
+}
 
 // DNS selects the cluster DNS pods: their namespace and one label. Distributions label CoreDNS
 // differently (k8s-app=kube-dns, k8s-app=coredns), so it is the runner's config, not a constant.
@@ -95,32 +108,39 @@ func namespace(s *Session) *corev1.Namespace {
 	return ns
 }
 
-// egressPolicy denies all ingress, and all egress but the git mirror. Nothing allows the API server
-// (threat model §7 #16). DNS isn't here: an L4 allow to kube-dns would let Cilium answer any name,
-// so DNS and Anthropic come only from ciliumPolicy.
-func egressPolicy(s *Session) *networkingv1.NetworkPolicy {
-	tcp, port := corev1.ProtocolTCP, intstr.FromInt(mirrorPort)
+// egressPolicy denies all ingress, and all egress but the git mirror and NATS's client port. Nothing
+// allows the API server (threat model §7 #16). DNS isn't here: an L4 allow to kube-dns would let
+// Cilium answer any name, so DNS and Anthropic come only from ciliumPolicy. At NATS the lane signs
+// in as its own terminal and may use nothing else (ADR 0045 amendment).
+func egressPolicy(s *Session, natsPort int) *networkingv1.NetworkPolicy {
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: objectMeta(laneName, Namespace(s), s.Spec.ID),
 		Spec: networkingv1.NetworkPolicySpec{
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
-			Egress: []networkingv1.NetworkPolicyEgressRule{{
-				To: []networkingv1.NetworkPolicyPeer{{
-					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": mirrorNamespace}},
-					PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/name": mirrorApp}},
-				}},
-				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}},
-			}},
+			Egress:      []networkingv1.NetworkPolicyEgressRule{toSystemApp(mirrorApp, mirrorPort), toSystemApp(natsApp, natsPort)},
 		},
 	}
 }
 
-// ciliumPolicy is the lane's DNS and its Anthropic egress (ADR 0046 amendment). Cilium's DNS proxy
-// answers only Anthropic's hosts and the mirror's service name, so query names can't carry data out,
-// and toFQDNs learns Anthropic's addresses from those answers.
-func ciliumPolicy(s *Session, mirrorHost string, dns DNS) *unstructured.Unstructured {
+// toSystemApp allows one app's pods in rangelight-system, on one TCP port.
+func toSystemApp(app string, port int) networkingv1.NetworkPolicyEgressRule {
+	tcp, p := corev1.ProtocolTCP, intstr.FromInt(port)
+	return networkingv1.NetworkPolicyEgressRule{
+		To: []networkingv1.NetworkPolicyPeer{{
+			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": systemNamespace}},
+			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/name": app}},
+		}},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &p}},
+	}
+}
+
+// ciliumPolicy is the lane's DNS, its Anthropic egress (ADR 0046 amendment) and its egress to an
+// external NATS. Cilium's DNS proxy answers only Anthropic's hosts and the mirror's and NATS's names,
+// so query names can't carry data out, and toFQDNs learns the addresses from those answers. The
+// bundled NATS is a Service in the cluster, which egressPolicy allows by its pods.
+func ciliumPolicy(s *Session, mirrorHost, natsHost string, natsPort int, dns DNS) *unstructured.Unstructured {
 	fqdns := make([]any, 0, len(AnthropicHosts))
-	names := []any{map[string]any{"matchName": mirrorHost}}
+	names := []any{map[string]any{"matchName": mirrorHost}, map[string]any{"matchName": natsHost}}
 	for _, h := range AnthropicHosts {
 		fqdns = append(fqdns, map[string]any{"matchName": h})
 		names = append(names, map[string]any{"matchName": h})
@@ -141,6 +161,10 @@ func ciliumPolicy(s *Session, mirrorHost string, dns DNS) *unstructured.Unstruct
 				map[string]any{
 					"toFQDNs": fqdns,
 					"toPorts": []any{map[string]any{"ports": []any{map[string]any{"port": "443", "protocol": "TCP"}}}},
+				},
+				map[string]any{
+					"toFQDNs": []any{map[string]any{"matchName": natsHost}},
+					"toPorts": []any{map[string]any{"ports": []any{map[string]any{"port": strconv.Itoa(natsPort), "protocol": "TCP"}}}},
 				},
 			},
 		},

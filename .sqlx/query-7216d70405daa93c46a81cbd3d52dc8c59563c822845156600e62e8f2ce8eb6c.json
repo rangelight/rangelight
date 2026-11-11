@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- The session whose lane runs in a namespace: who a lane's token is (the NATS auth callout).\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, state, phase,\n  pull_request_url, generation, created_at\nFROM sessions\nWHERE namespace = $1\n",
+  "query": "-- One session.\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, member, state, phase,\n  pull_request_url, generation, created_at\nFROM sessions\nWHERE id = $1\n",
   "describe": {
     "columns": [
       {
@@ -93,6 +93,17 @@
       },
       {
         "ordinal": 8,
+        "name": "member",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "member"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
         "name": "state",
         "type_info": "Text",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "phase",
         "type_info": "Text",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "pull_request_url",
         "type_info": "Text",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "generation",
         "type_info": "Int8",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -149,10 +160,11 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
+      false,
       false,
       false,
       false,
@@ -168,5 +180,5 @@
       false
     ]
   },
-  "hash": "5215d16502ff524c044cab3b372e9b5fb9ed5ec4572c1ce30394628f24a1def3"
+  "hash": "7216d70405daa93c46a81cbd3d52dc8c59563c822845156600e62e8f2ce8eb6c"
 }

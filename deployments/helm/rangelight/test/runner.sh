@@ -25,6 +25,23 @@ test_nats_ingress_admits_the_runner() {
   expect_no_match 'ipBlock|port: 8222'
 }
 
+# RAN-41: NATS admits each lane's agent pod for the lane terminal, on the client port only, and only
+# with the runner (no runner, no lanes).
+test_nats_ingress_admits_lane_agents_on_the_client_port_only() {
+  local lane
+  render "${RUNNER[@]}" --show-only templates/nats/networkpolicy.yaml
+  expect_ok
+  lane="$(awk '/rangelight.dev\/lane: "true"/,0' <<<"${OUT}")"
+  [[ -n "${lane}" ]] || fail "no ingress rule for lane namespaces"
+  for want in '              app.kubernetes.io/name: "agent"' '              app.kubernetes.io/component: "lane"' \
+    '              app.kubernetes.io/managed-by: "rangelight-runner"' '          port: 4222'; do
+    grep -qxF -e "${want}" <<<"${lane}" || fail "the lane rule lacks '${want}'"
+  done
+  [[ "$(grep -c 'port:' <<<"${lane}")" -eq 1 ]] || fail "the lane rule opens more than the client port"
+  render --show-only templates/nats/networkpolicy.yaml
+  expect_no_match 'rangelight.dev/lane'
+}
+
 test_runner_is_off_by_default() {
   render --api-versions "${CNPG_API}"
   expect_ok

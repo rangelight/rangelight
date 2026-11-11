@@ -43,6 +43,9 @@ type Options struct {
 	PublishImage string
 	// Workers is how many Sessions reconcile at once, so one slow mirror fetch stalls only one.
 	Workers int
+	// NATSURL is the NATS server the lane's agent connects to for its terminal; Org is the subject
+	// token of its subjects (rl.<org>.pty.<session>.*).
+	NATSURL, Org string
 }
 
 // Reconciler converges each Session to its lane, and removes the lane when the Session is deleted.
@@ -55,6 +58,8 @@ type Reconciler struct {
 	Report func(*Session)
 	Options
 	mirrorHost string
+	natsHost   string
+	natsPort   int
 	profiles   *profiles
 	pub        *publishing
 }
@@ -224,12 +229,12 @@ func (r *Reconciler) ensureNamespace(ctx context.Context, s *Session) error {
 
 // ensurePolicies writes both egress policies, and puts them back when they change (both are watched).
 func (r *Reconciler) ensurePolicies(ctx context.Context, s *Session) error {
-	np := egressPolicy(s)
+	np := egressPolicy(s, r.natsPort)
 	spec := np.Spec
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, np, func() error { np.Spec = spec; return nil }); err != nil {
 		return fmt.Errorf("lane %s: network policy: %w", Namespace(s), err)
 	}
-	cnp := ciliumPolicy(s, r.mirrorHost, r.DNS)
+	cnp := ciliumPolicy(s, r.mirrorHost, r.natsHost, r.natsPort, r.DNS)
 	cspec := cnp.Object["spec"]
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, cnp, func() error { cnp.Object["spec"] = cspec; return nil })
 	if meta.IsNoMatchError(err) {

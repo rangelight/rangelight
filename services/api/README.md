@@ -26,6 +26,17 @@ The control plane's front door (ADR 0031, ADR 0033):
   NATS fan-out (`rl.<org>.session.<id>.events`), never by polling Postgres. Each subscribes before
   it reads Postgres. A seq gap (a lost event, or a viewer more than 1024 events behind: the
   viewers' NATS client's subscription capacity) ends the stream with `ABORTED`.
+- **Lane terminal** (ADR 0040 §1), a WebSocket at `GET /v1alpha1/sessions/<id>/terminal`, subprotocol
+  `terminal.v1alpha1.rangelight.dev` (else 400), for a session that exists (else 404) and is the
+  signed-in member's own (else 403: the agent acts for its member, ADR 0004), at most 4 per login
+  (else 429). Each text frame
+  is held to `api/jsonschema/terminal.v1alpha1.schema.json` and goes unchanged to the agent on core
+  NATS `rl.<org>.pty.<id>.in`; one that isn't an `input` or `resize` (binary and oversized ones too)
+  closes the socket with 1008. Valid `output` frames from `rl.<org>.pty.<id>.out` go to the browser;
+  anything else the lane sends is dropped. Frames are never logged, at any level (ADR 0046 §3 step 4):
+  a log line names the session and why the socket closed, nothing more. What a terminal holds in
+  the api is bounded: its output queues at most 64 NATS messages (more are dropped), and a browser
+  that doesn't take a frame within 10 seconds is closed with 1011.
 - **Sign-in** (ADR 0028, ADR 0033), OIDC against bundled Dex or any provider (`shared/rust/auth`):
   `GET /auth/login` starts the authorization-code flow with PKCE (S256), `state` (also in the
   cookie `__Host-rl_login`, so a callback only works in the browser that started it) and `nonce`;
@@ -40,9 +51,10 @@ The control plane's front door (ADR 0031, ADR 0033):
 - **Every RPC and WebSocket upgrade** needs a live login, else 401 `unauthenticated` with nothing
   more. Anything but a plain GET (every RPC, sign-out, every upgrade) must carry
   `Origin: <public_url>`, else 403 `permission_denied`. `AuthService.WhoAmI` names the member.
-  A long-lived response (`WatchSession`, `WatchSessions`, later the terminal WebSocket) re-checks its login every
-  `login_recheck_seconds` (60) and ends with `UNAUTHENTICATED` once it is signed out, expired or
-  idle (`Auth::while_signed_in`; an open stream doesn't count as use).
+  A long-lived response (`WatchSession`, `WatchSessions`, the terminal WebSocket) re-checks its login
+  every `login_recheck_seconds` (60) and ends once it is signed out, expired or idle: a stream with
+  `UNAUTHENTICATED`, the terminal with close code 1008 (`Auth::ended`; an open stream doesn't count
+  as use).
 - **Members** (AC5 of RAN-37): the member is the ID token's `oidc_member_claim`, by default
   `preferred_username` (the GitHub login, through Dex), lowercased, which is also the sessions'
   `member` label value. A value that isn't `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$` is refused, never
@@ -60,7 +72,7 @@ The control plane's front door (ADR 0031, ADR 0033):
   runner reported Starting or Running, one connection each, its sign-ins one at a time: `lane.rs`), and answers with a user JWT signed by the issuer nkey (`jwt.rs`) holding exactly that identity's
   subjects and limits (`permissions.rs`), for at most an hour. Anything else gets a refusal with a reason; the
   token never reaches a log. Its own connection signs in with the `auth_user` nkey seed (or `.creds` file).
-- **HTTP/1.1 only** (Connect and the coming terminal WebSocket need nothing else). A client gets 10
+- **HTTP/1.1 only** (Connect and the terminal WebSocket need nothing else). A client gets 10
   seconds to send a request's headers, from connecting and between requests on a kept-alive
   connection; a connection that sends nothing is closed.
 - It applies the migrations in `db/migrations/` at startup. `GET /healthz` answers 200, without a login, once
@@ -82,8 +94,9 @@ scripts/test/services.sh run cargo nextest run -p api         # just these tests
 docker build -f build/package/docker/api/Dockerfile .         # the image
 ```
 
-Code: `src/lib.rs` (intake and link rounds, server), `src/sessions.rs` (handlers), `src/auth.rs` (sign-in;
-`src/auth/recheck.rs`, long-lived responses), `src/status.rs` (runner status), `src/nats_auth/` (the NATS auth
-callout), `src/config.rs`, `src/main.rs` (wiring). Tests: `tests/api.rs`, end to end through a Linear stub, the relay
-and a real Connect client; `tests/auth.rs`, sign-in through the test Dex; `tests/nats_auth/`, every identity's
-permissions on a nats-server running the chart's `files/nats/auth.conf`.
+Code: `src/lib.rs` (intake and link rounds, server), `src/sessions.rs` (handlers; `src/sessions/terminal.rs`, the
+terminal), `src/auth.rs` (sign-in; `src/auth/recheck.rs`, long-lived responses), `src/status.rs` (runner status),
+`src/nats_auth/` (the NATS auth callout), `src/config.rs`, `src/main.rs` (wiring). Tests: `tests/api.rs`, end to end
+through a Linear stub, the relay and a real Connect client; `tests/auth.rs`, sign-in through the test Dex;
+`tests/nats_auth/`, every identity's permissions on a nats-server running the chart's `files/nats/auth.conf`;
+`tests/terminal/`, a real WebSocket client and NATS.

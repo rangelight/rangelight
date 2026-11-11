@@ -39,7 +39,7 @@ COPY --from=tini /tini /usr/local/bin/tini
 WORKDIR /app
 COPY --from=deps /app/node_modules node_modules
 COPY --from=deps /app/services/agent/node_modules services/agent/node_modules
-COPY api/jsonschema/agent-event.v1alpha1.schema.json api/jsonschema/
+COPY api/jsonschema/agent-event.v1alpha1.schema.json api/jsonschema/terminal.v1alpha1.schema.json api/jsonschema/
 COPY configs/agent.default.toml configs/
 COPY services/agent/package.json services/agent/
 COPY services/agent/src services/agent/src

@@ -129,7 +129,7 @@ func TestDefaultDenyEgress(t *testing.T) {
 		t.Errorf("not default-deny: types %v, ingress %v", np.Spec.PolicyTypes, np.Spec.Ingress)
 	}
 	// DNS is only in the Cilium policy (TestAnthropicEgress): an L4 allow here would let any name resolve.
-	want := []string{"rangelight-system/app.kubernetes.io/name=git-mirror TCP/8080"}
+	want := []string{"rangelight-system/app.kubernetes.io/name=git-mirror TCP/8080", "rangelight-system/app.kubernetes.io/name=nats TCP/4222"}
 	if got := egressRules(np); !reflect.DeepEqual(got, want) {
 		t.Errorf("egress = %q, want %q", got, want)
 	}
@@ -205,7 +205,8 @@ func TestAgentPodHardened(t *testing.T) {
 		{"names looked up as given (ndots 1)", pod.Spec.DNSConfig != nil && len(pod.Spec.DNSConfig.Options) == 1 &&
 			pod.Spec.DNSConfig.Options[0].Name == "ndots" && *pod.Spec.DNSConfig.Options[0].Value == "1"},
 		{"agent settings", env(c, "RANGELIGHT_AGENT_SESSION_ID") == s.Spec.ID && env(c, "RANGELIGHT_AGENT_REPO") == "ac3" &&
-			env(c, "RANGELIGHT_AGENT_BASE_REF") == "main" && env(c, "RANGELIGHT_AGENT_MIRROR_URL") == mirror.URL},
+			env(c, "RANGELIGHT_AGENT_BASE_REF") == "main" && env(c, "RANGELIGHT_AGENT_MIRROR_URL") == mirror.URL &&
+			env(c, "RANGELIGHT_AGENT_NATS_URL") == options.NATSURL && env(c, "RANGELIGHT_AGENT_ORG") == "acme"},
 	}
 	for _, check := range checks {
 		if !check.ok {
@@ -563,10 +564,10 @@ func TestAnthropicEgress(t *testing.T) {
 		} `json:"egress"`
 	}
 	raw, _ := json.Marshal(cnp.Object["spec"])
-	if err := json.Unmarshal(raw, &spec); err != nil || len(spec.Egress) != 2 || len(spec.EndpointSelector) != 0 {
+	if err := json.Unmarshal(raw, &spec); err != nil || len(spec.Egress) != 3 || len(spec.EndpointSelector) != 0 {
 		t.Fatalf("spec %s: %v", raw, err)
 	}
-	dns, web := spec.Egress[0], spec.Egress[1]
+	dns, web, nats := spec.Egress[0], spec.Egress[1], spec.Egress[2]
 	if dns.ToEndpoints[0].MatchLabels["k8s:k8s-app"] != "coredns" || dns.ToEndpoints[0].MatchLabels["k8s:io.kubernetes.pod.namespace"] != "kube-system" ||
 		dns.ToPorts[0].Ports[0].Port != "53" {
 		t.Errorf("DNS does not go through Cilium's DNS proxy: %s", raw)
@@ -576,7 +577,7 @@ func TestAnthropicEgress(t *testing.T) {
 	for _, rule := range dns.ToPorts[0].Rules.DNS {
 		names = append(names, rule.MatchName+rule.MatchPattern)
 	}
-	if want := []string{strings.Split(strings.TrimPrefix(mirror.URL, "http://"), ":")[0], "api.anthropic.com", "claude.ai", "platform.claude.com"}; !reflect.DeepEqual(names, want) {
+	if want := []string{strings.Split(strings.TrimPrefix(mirror.URL, "http://"), ":")[0], natsHost, "api.anthropic.com", "claude.ai", "platform.claude.com"}; !reflect.DeepEqual(names, want) {
 		t.Errorf("DNS answers %q, want only %q", names, want)
 	}
 	var hosts []string
@@ -587,7 +588,15 @@ func TestAnthropicEgress(t *testing.T) {
 		len(web.ToPorts) != 1 || web.ToPorts[0].Ports[0] != (struct{ Port, Protocol string }{"443", "TCP"}) {
 		t.Errorf("Anthropic egress: %s", raw)
 	}
+	// An external NATS, on its client port only (RAN-41); the bundled one is TestDefaultDenyEgress's.
+	if len(nats.ToFQDNs) != 1 || nats.ToFQDNs[0].MatchName != natsHost || len(nats.ToPorts) != 1 ||
+		nats.ToPorts[0].Ports[0] != (struct{ Port, Protocol string }{"4222", "TCP"}) {
+		t.Errorf("NATS egress: %s", raw)
+	}
 }
+
+// natsHost is the host of the suite's nats_url.
+const natsHost = "rangelight-nats.rangelight-system.svc"
 
 func TestRetriesUntilTheMirrorHasTheRepo(t *testing.T) {
 	s := newSession(t, "late")
@@ -666,8 +675,8 @@ func TestTamperedPoliciesArePutBack(t *testing.T) {
 	if err := errors.Join(k8s.Update(ctx, np), k8s.Update(ctx, cnp)); err != nil {
 		t.Fatal(err)
 	}
-	want := egressPolicy(s).Spec
-	wantCilium := ciliumPolicy(s, strings.Split(strings.TrimPrefix(mirror.URL, "http://"), ":")[0], options.DNS).Object["spec"]
+	want := egressPolicy(s, 4222).Spec
+	wantCilium := ciliumPolicy(s, strings.Split(strings.TrimPrefix(mirror.URL, "http://"), ":")[0], natsHost, 4222, options.DNS).Object["spec"]
 	// Well inside the 10-hour resync: only a watch puts them back this fast.
 	eventually(t, "both policies restored", func() error {
 		if err := errors.Join(k8s.Get(ctx, client.ObjectKeyFromObject(np), np), k8s.Get(ctx, client.ObjectKeyFromObject(cnp), cnp)); err != nil {

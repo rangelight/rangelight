@@ -75,6 +75,10 @@ jobs:
               - "configs/**"
               - "api/proto/**"
               - "api/buf.yaml"
+              # The terminal's frame rule and subjects are tested against these.
+              - "api/jsonschema/terminal.v1alpha1.schema.json"
+              - "api/examples/**"
+              - "api/README.md"
               - "scripts/test/services.sh"
             go:
               - *shared
@@ -103,6 +107,9 @@ jobs:
               - ".prettierignore"
               - "configs/agent.default.toml"
               - "api/jsonschema/agent-event.v1alpha1.schema.json"
+              - "api/jsonschema/terminal.v1alpha1.schema.json"
+              - "api/README.md"
+              - "scripts/test/services.sh"
               - "build/package/docker/agent/**"
               - ".nvmrc"
             deploy:
@@ -238,6 +245,8 @@ jobs:
         with:
           node-version-file: ".nvmrc"
           cache: "pnpm"
+      # The tests' Postgres, NATS and Dex (scripts/test/services.sh): the agent's terminal tests need NATS.
+      - uses: "./.github/actions/tools"
       - run: "scripts/check.sh ts"
 
   deploy:

@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use api::{Auth, SessionApi, serve};
+use api::{Auth, Nats, SessionApi, serve, terminals_client};
 use connectrpc::client::{ClientConfig, HttpClient};
 use rl_auth::{Provider, Url};
 use rl_proto::rangelight::auth::v1alpha1::AuthServiceClient;
@@ -64,9 +64,16 @@ pub(crate) async fn served_with(
         &Url::parse(PUBLIC_URL).unwrap(),
         recheck,
     );
+    let nats = Nats {
+        reports: rl_testkit::nats().await,
+        viewers: rl_testkit::nats().await,
+        terminals: terminals_client(&rl_testkit::nats_url(), async_nats::ConnectOptions::new())
+            .await
+            .unwrap(),
+    };
     let api = SessionApi::new(
         store.clone(),
-        rl_testkit::nats().await,
+        &nats,
         org.into(),
         auth.clone(),
         cancel.clone(),

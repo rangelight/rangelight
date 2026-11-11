@@ -37,7 +37,9 @@ base_ref = "main"
 # That repo's upstream, https://github.com/<owner>/<repo>: a lane's pull request is kept (and
 # attached to its ticket) only when it is one of this repo's. Empty: no pull request is kept.
 upstream = ""
-# Whose Claude home the team's lanes mount (ADR 0046 amendment). No default.
+# The member the team's sessions work for: their login (the `oidc_member_claim`, the GitHub login
+# through Dex), lowercased. Their lanes mount that member's Claude home (ADR 0046 amendment), and
+# only that login may open a session's terminal. No default.
 # `extra_ca_file`, unset by default: a PEM bundle of CA certificates the api's HTTPS (the issuer,
 # Linear) trusts beside the platform's roots, for an issuer behind your own CA. A file that holds no
 # certificate, or one that doesn't parse, stops the api at start.

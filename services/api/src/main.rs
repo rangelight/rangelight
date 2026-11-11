@@ -51,19 +51,13 @@ async fn main() -> anyhow::Result<()> {
     ));
     let reports = tokio::spawn(status::consume(
         status::Recorder::new(store.clone(), upstream),
-        nats.reports,
+        nats.reports.clone(),
         config.org.clone(),
         config.stream_replicas,
         cancel.clone(),
     ));
     tracing::info!(listen = %config.listen, "api started");
-    let api = SessionApi::new(
-        store,
-        nats.viewers,
-        config.org,
-        auth.clone(),
-        cancel.clone(),
-    );
+    let api = SessionApi::new(store, &nats, config.org, auth.clone(), cancel.clone());
     serve(listener, api, auth, cancel).await;
     intake.await?;
     links.await?;

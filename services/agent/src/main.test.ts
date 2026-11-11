@@ -36,6 +36,8 @@ test(
         RANGELIGHT_AGENT_SESSION_ID: SESSION,
         RANGELIGHT_AGENT_MIRROR_URL: `http://127.0.0.1:${String(port)}`,
         RANGELIGHT_AGENT_REPO: "demo",
+        // Nothing listens there: the agent runs on while the terminal keeps trying to connect.
+        RANGELIGHT_AGENT_NATS_URL: `nats://127.0.0.1:${String(port)}`,
         RANGELIGHT_AGENT_WORKDIR: join(dir, "repo"),
         RANGELIGHT_AGENT_TOKEN_FILE: join(dir, "token"),
         RANGELIGHT_AGENT_TICKET_FILE: join(dir, "ticket.json"),

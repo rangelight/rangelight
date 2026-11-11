@@ -33,15 +33,7 @@ func agentPod(s *Session, o Options) *corev1.Pod {
 			Containers: []corev1.Container{{
 				Name:  agentName,
 				Image: o.AgentImage,
-				Env: []corev1.EnvVar{
-					{Name: "RANGELIGHT_AGENT_SESSION_ID", Value: s.Spec.ID},
-					{Name: "RANGELIGHT_AGENT_MIRROR_URL", Value: o.MirrorURL},
-					{Name: "RANGELIGHT_AGENT_REPO", Value: s.Spec.Repo},
-					{Name: "RANGELIGHT_AGENT_BASE_REF", Value: s.Spec.BaseRef},
-					{Name: "CLAUDE_CONFIG_DIR", Value: claudeHomeDir},
-					// The root filesystem is read-only: git, node and the dev command write their caches here.
-					{Name: "HOME", Value: "/tmp"},
-				},
+				Env:   agentEnv(s, o),
 				SecurityContext: &corev1.SecurityContext{
 					RunAsNonRoot: &yes, AllowPrivilegeEscalation: &no, ReadOnlyRootFilesystem: &yes,
 					Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
@@ -85,6 +77,21 @@ func projectedToken(audience string, seconds int64) corev1.VolumeSource {
 			Audience: audience, ExpirationSeconds: &seconds, Path: "token",
 		}}},
 	}}
+}
+
+// agentEnv is the agent's config (configs/agent.default.toml, RANGELIGHT_AGENT_*).
+func agentEnv(s *Session, o Options) []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{Name: "RANGELIGHT_AGENT_SESSION_ID", Value: s.Spec.ID},
+		{Name: "RANGELIGHT_AGENT_MIRROR_URL", Value: o.MirrorURL},
+		{Name: "RANGELIGHT_AGENT_REPO", Value: s.Spec.Repo},
+		{Name: "RANGELIGHT_AGENT_BASE_REF", Value: s.Spec.BaseRef},
+		{Name: "RANGELIGHT_AGENT_NATS_URL", Value: o.NATSURL},
+		{Name: "RANGELIGHT_AGENT_ORG", Value: o.Org},
+		{Name: "CLAUDE_CONFIG_DIR", Value: claudeHomeDir},
+		// The root filesystem is read-only: git, node and the dev command write their caches here.
+		{Name: "HOME", Value: "/tmp"},
+	}
 }
 
 // crashLoops is how many restarts of a crash-looping agent container fail its session. The pod

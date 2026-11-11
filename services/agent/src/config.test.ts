@@ -9,6 +9,7 @@ const env = {
   RANGELIGHT_AGENT_MIRROR_URL: "http://git-mirror.rangelight-system:8080/",
   RANGELIGHT_AGENT_REPO: "opentelemetry-demo",
   RANGELIGHT_AGENT_UNDER_CHANGE: "frontend,cart",
+  RANGELIGHT_AGENT_NATS_URL: "nats://rangelight-nats.rangelight-system.svc:4222",
   CLAUDE_CONFIG_DIR: "/home/node/.claude",
 };
 const none = "/nonexistent/agent.toml";
@@ -26,6 +27,9 @@ test("config: defaults from configs/agent.default.toml, then the environment", (
     profileFile: "/etc/rangelight/profile.json",
     ticketFile: "/etc/rangelight/ticket.json",
     underChange: ["frontend", "cart"],
+    natsUrl: "nats://rangelight-nats.rangelight-system.svc:4222",
+    natsTokenFile: "/var/run/secrets/rangelight/nats/token",
+    org: "default",
     claudeConfigDir: "/home/node/.claude",
   });
 });
@@ -53,6 +57,20 @@ test("config: an invalid or unknown value fails with every bad key named", () =>
   expect(() => loadConfig({ ...env, RANGELIGHT_AGENT_MIRROR_URL: "file:///etc" }, none)).toThrow(
     /mirror_url/,
   );
+  // A token in clear text off the cluster, a second server, a path: refused.
+  for (const url of [
+    "",
+    "http://nats:4222",
+    "nats://user:pass@nats:4222",
+    "nats://nats.example.com:4222",
+    "nats://a.svc:4222,b.svc:4222",
+    "nats://nats.rangelight-system.svc:4222/x",
+  ]) {
+    expect(() => loadConfig({ ...env, RANGELIGHT_AGENT_NATS_URL: url }, none)).toThrow(/nats_url/);
+  }
+  for (const org of ["", "a.b", "*", ">", "a b"]) {
+    expect(() => loadConfig({ ...env, RANGELIGHT_AGENT_ORG: org }, none)).toThrow(/org/);
+  }
 });
 
 test("config: children get only PATH, HOME and LANG, never an API key", () => {

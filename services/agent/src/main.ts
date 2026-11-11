@@ -7,6 +7,7 @@ import { createEmitter } from "./events/events.ts";
 import { systemClock, uuidv7Ids } from "./events/ids.ts";
 import { CliRuntime } from "./runtime/cli.ts";
 import { laneHandler } from "./runtime/lane.ts";
+import { startTerminal } from "./terminal/terminal.ts";
 import { devCommands, startDevCommands } from "./workspace/dev.ts";
 import { createGit } from "./workspace/git.ts";
 import { prepareWorkspace } from "./workspace/workspace.ts";
@@ -46,17 +47,26 @@ async function main(): Promise<void> {
     sessionId: config.sessionId,
     claudeConfigDir: config.claudeConfigDir,
     env,
+    onOutput: (chunk) => {
+      terminal.output(chunk);
+    },
     onEvent: laneHandler({
       emit,
       checkpoint: () => checkpoints.save(),
       exit: (code) => process.exit(code),
     }),
   });
+  // Output starts only once claude runs, after this line.
+  const terminal = startTerminal({
+    ...config,
+    pty: runtime,
+    log: (line) => process.stderr.write(`agent: ${line}\n`),
+  });
   onSigterm = () => {
     runtime.interrupt();
     void runtime.stop();
   };
-  // Messages reach runtime.inject() from the lane terminal and the NATS inbox (RAN-35, RAN-36).
+  // Messages reach runtime.inject() from the NATS inbox (RAN-35, RAN-36).
   if (workspace.resumed) await runtime.resume(config.sessionId, resumeBrief(ticket));
   else await runtime.start(brief(ticket));
 }

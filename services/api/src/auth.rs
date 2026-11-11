@@ -51,8 +51,8 @@ struct Inner {
 }
 
 /// The login a request came with: the SHA-256 of its token, for re-checks.
-#[derive(Debug, Clone, Copy)]
-struct LoginHash([u8; 32]);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct LoginHash([u8; 32]);
 
 impl Auth {
     /// Sign-in for browsers at `public_url`, against `provider`; long-lived streams re-check

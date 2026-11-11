@@ -2,7 +2,7 @@ module github.com/rangelight/rangelight
 
 go 1.27.0
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 tool (
 	google.golang.org/protobuf/cmd/protoc-gen-go

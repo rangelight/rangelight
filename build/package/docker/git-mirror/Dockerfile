@@ -7,8 +7,8 @@ RUN apk add --no-cache \
       bash=5.3.9-r1 \
       curl=8.23.0-r0 \
       fcgiwrap=1.1.0-r9 \
-      git=2.54.0-r0 \
-      git-daemon=2.54.0-r0 \
+      git=2.54.1-r0 \
+      git-daemon=2.54.1-r0 \
       nginx=1.30.6-r0 \
     && addgroup -S -g 10001 mirror \
     && adduser -S -D -H -u 10001 -G mirror mirror

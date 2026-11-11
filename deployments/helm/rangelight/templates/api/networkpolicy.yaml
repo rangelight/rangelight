@@ -1,0 +1,43 @@
+{{- if .Values.api.enabled }}
+---
+# Only the ingress controller (ingress.from) reaches the api, on 8080. It calls out to the cluster's DNS, Postgres,
+# NATS, bundled Dex's issuer through the ingress controller, and HTTPS outside the cluster (Linear, your own
+# OIDC provider).
+apiVersion: "networking.k8s.io/v1"
+kind: "NetworkPolicy"
+metadata:
+  name: "rangelight-api"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "api" "component" "control-plane") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rangelight.selector" (dict "ctx" $ "name" "api") | nindent 6 }}
+  policyTypes:
+    - "Ingress"
+    - "Egress"
+  {{- with include "rangelight.ingressPeer" . }}
+  ingress:
+    - from:
+        {{- . | nindent 8 }}
+      ports:
+        - protocol: "TCP"
+          port: 8080
+  {{- end }}
+  egress:
+    {{- include "rangelight.dnsEgress" . | nindent 4 }}
+    {{- include "rangelight.storeEgress" . | nindent 4 }}
+    {{- if and .Values.dex.enabled .Values.ingress.from.httpsPort }}
+    {{- with include "rangelight.ingressPeer" . }}
+    # Bundled Dex's issuer is <publicUrl>/dex: the api reaches it through the ingress controller's pods, on their
+    # HTTPS container port.
+    - to:
+        {{- . | nindent 8 }}
+      ports:
+        - protocol: "TCP"
+          port: {{ $.Values.ingress.from.httpsPort }}
+    {{- end }}
+    {{- end }}
+    {{- include "rangelight.httpsEgress" . | nindent 4 }}
+{{- end }}

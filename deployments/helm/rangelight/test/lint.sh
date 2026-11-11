@@ -38,11 +38,13 @@ main() {
   tmp="$(mktemp -d /tmp/rl-chart-lint.XXXXXX)"
   # shellcheck disable=SC2064 # expand now: tmp is local
   trap "rm -rf '${tmp}'" EXIT
-  # The git mirror and the runner are off by default (their images are pinned per install): render them on too.
-  render --api-versions "${CNPG_API}" -f "${CHART}/test/git-mirror-values.yaml" -f "${CHART}/test/runner-values.yaml" >"${tmp}/bundled.yaml"
+  # The services are off by default (their images are pinned per install): render them on too.
+  local on=(-f "${CHART}/test/git-mirror-values.yaml" -f "${CHART}/test/runner-values.yaml" -f "${CHART}/test/serve-values.yaml"
+    -f "${CHART}/test/ingress-values.yaml")
+  render --api-versions "${CNPG_API}" "${on[@]}" >"${tmp}/bundled.yaml"
   render --set postgres.enabled=false --set postgres.external.secretRef.name=db \
     --set nats.enabled=false --set nats.external.url=nats://nats.example:4222 \
-    --set dex.enabled=false --set oidc.issuer=https://idp.example.com >"${tmp}/external.yaml"
+    --set dex.enabled=false --set oidc.issuer=https://idp.example.com -f "${CHART}/test/serve-values.yaml" >"${tmp}/external.yaml"
   # The schema sets have no schema for a CRD object itself; the vendored CRDs are upstream's, pinned in Chart.lock.
   kubeconform -strict -summary -skip CustomResourceDefinition -kubernetes-version "${KUBERNETES_MIN}.0" -cache "${tmp}" \
     -schema-location default -schema-location "${CRD_SCHEMAS}" "${tmp}/bundled.yaml" "${tmp}/external.yaml"
@@ -50,7 +52,7 @@ main() {
   # Templates are YAML only once rendered (.yamllint.yaml ignores them): lint what ours render.
   # validate.yaml renders nothing; it only refuses.
   mapfile -t templates < <(cd "${CHART}" && find templates -name '*.yaml' ! -name validate.yaml | sort | sed 's/^/--show-only=/')
-  render --api-versions "${CNPG_API}" -f "${CHART}/test/git-mirror-values.yaml" -f "${CHART}/test/runner-values.yaml" "${templates[@]}" | yamllint --strict --config-file "${ROOT}/.yamllint.yaml" - ||
+  render --api-versions "${CNPG_API}" "${on[@]}" "${templates[@]}" | yamllint --strict --config-file "${ROOT}/.yamllint.yaml" - ||
     die "our templates render YAML that breaks the YAML style"
   printf 'chart lint: ok\n'
 }

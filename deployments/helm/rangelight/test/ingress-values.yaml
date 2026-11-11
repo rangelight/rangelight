@@ -1,0 +1,11 @@
+---
+# The Ingress switched on, with an ingress-nginx controller as ingress.from, for test/lint.sh and the tests that
+# render it (with serve-values.yaml).
+ingress:
+  enabled: true
+  from:
+    namespaceLabels:
+      kubernetes.io/metadata.name: "ingress-nginx"
+    podLabels:
+      app.kubernetes.io/name: "ingress-nginx"
+    httpsPort: 443

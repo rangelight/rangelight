@@ -1,0 +1,16 @@
+---
+# The api, the relay and the Workbench switched on, for test/lint.sh and test/{api,relay,web,ingress}.sh.
+# The digests are not real images.
+api:
+  enabled: true
+  image: "ghcr.io/rangelight/api:test@sha256:4444444444444444444444444444444444444444444444444444444444444444"
+linear:
+  team: "RAN"
+  apiKeySecretRef:
+    name: "rangelight-linear"
+web:
+  enabled: true
+  image: "ghcr.io/rangelight/web:test@sha256:6666666666666666666666666666666666666666666666666666666666666666"
+relay:
+  enabled: true
+  image: "ghcr.io/rangelight/relay:test@sha256:5555555555555555555555555555555555555555555555555555555555555555"

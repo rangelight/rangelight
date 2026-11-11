@@ -47,7 +47,8 @@ The control plane's front door (ADR 0031, ADR 0033):
 - **HTTP/1.1 only** (Connect and the coming terminal WebSocket need nothing else). A client gets 10
   seconds to send a request's headers, from connecting and between requests on a kept-alive
   connection; a connection that sends nothing is closed.
-- It applies the migrations in `db/migrations/` at startup.
+- It applies the migrations in `db/migrations/` at startup. `GET /healthz` answers 200, without a login, once
+  it serves: after the migrations, Postgres and NATS.
 
 Config: `configs/api.default.toml`, then `/etc/rangelight/api.toml`, then `RANGELIGHT_API_*`.
 `linear_team`, `public_url` (`https://<host>[:<port>]`), `oidc_issuer` (https), `repo` and `member` have no

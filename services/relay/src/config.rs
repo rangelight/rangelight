@@ -1,5 +1,7 @@
 //! The relay's config (ADR 0049 §6), loaded by `rl-config` from `configs/relay.default.toml`.
 
+use std::net::SocketAddr;
+
 use rl_config::{ConfigError, SecretRef};
 use rl_domain::subject;
 use serde::Deserialize;
@@ -9,6 +11,8 @@ use serde::Deserialize;
 pub struct Config {
     /// `tracing` filter directives.
     pub log: String,
+    /// The `/healthz` listener.
+    pub listen: SocketAddr,
     /// The Postgres URL, in a secret.
     pub database_url: SecretRef,
     /// The NATS server.

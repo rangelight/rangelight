@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-nats.workspace = true
+# axum::serve for /healthz.
+axum = { workspace = true, features = ["tokio", "http1"] }
 buffa.workspace = true
 buffa-types.workspace = true
 rl-chain.workspace = true

@@ -13,6 +13,40 @@ clusterDns:
   # One label that selects them, as key=value.
   podLabel: "k8s-app=kube-dns"
 
+# The cluster's pod and service CIDRs. The api's and Dex's HTTPS (Linear, GitHub, your OIDC provider) may go anywhere
+# but these. The defaults are k3s's and RKE2's (and so k3d's); kubeadm with Calico or Flannel: 192.168.0.0/16 or
+# 10.244.0.0/16, and 10.96.0.0/12.
+clusterCidrs:
+  - "10.42.0.0/16"
+  - "10.43.0.0/16"
+
+# One Ingress (networking.k8s.io/v1) for the host of publicUrl: the api's Connect services, /auth and /v1alpha1/sessions
+# (the terminal WebSocket) to the api, /dex to bundled Dex, and everything else to the Workbench. The chart installs no controller.
+ingress:
+  # true: render the Ingress. It needs api.enabled, web.enabled and ingress.from.
+  enabled: false
+  # The IngressClass; empty: the cluster's default class.
+  className: ""
+  # Annotations for your controller (timeouts, body size and the like), as given. The chart sets none: the terminal
+  # WebSocket and WatchSession are long-lived, so raise your controller's read timeout here if it has one.
+  annotations: {}
+  tls:
+    # The TLS Secret for the host, in rangelight-system; you create it. Empty: TLS ends before the Ingress (publicUrl
+    # is https either way).
+    secretName: ""
+  # Who routes browsers to the api, the Workbench and Dex: your ingress controller's pods, by their namespace's labels
+  # (required when ingress.enabled) and their own labels (empty: every pod in those namespaces). The api's, the
+  # Workbench's and Dex's NetworkPolicies admit these, and nothing else from outside the chart.
+  # Example, ingress-nginx: namespaceLabels {kubernetes.io/metadata.name: "ingress-nginx"},
+  # podLabels {app.kubernetes.io/name: "ingress-nginx"}.
+  from:
+    namespaceLabels: {}
+    podLabels: {}
+    # The HTTPS container port of those pods, after any hostPort or Service translation: the api reaches bundled
+    # Dex's issuer (<publicUrl>/dex) there, and only there. ingress-nginx: 443; Traefik (websecure): 8443.
+    # Required when ingress.enabled; 0: unset.
+    httpsPort: 0
+
 # Sign-in: OIDC only (ADR 0028, 0033). Bundled: Dex (dex.enabled). Your own provider: dex.enabled=false and
 # oidc.issuer, with a client registered there for the redirect URI <publicUrl>/auth/callback.
 oidc:
@@ -50,8 +84,9 @@ postgres:
       memory: "1Gi"
   # Used only when postgres.enabled is false.
   external:
-    # The Secret in rangelight-system, and its key, holding the api's connection URI
+    # The Secret in rangelight-system, and its key, holding the api's and the relay's connection URI
     # (postgresql://<user>:<password>@<host>:5432/<database>). Its name is required when postgres.enabled is false.
+    # The port is 5432: the api's and the relay's NetworkPolicies allow that port, to any address.
     secretRef:
       name: ""
       key: "uri"
@@ -63,7 +98,8 @@ nats:
   enabled: true
   # Used only when nats.enabled is false.
   external:
-    # The NATS URL the api connects to (nats:// or tls://). Required when nats.enabled is false.
+    # The NATS URL the api, the relay and the runner connect to (nats:// or tls://; port 4222 if none). Required when
+    # nats.enabled is false.
     url: ""
   # The upstream chart's settings (https://github.com/nats-io/k8s/tree/main/helm/charts/nats).
   # The server's name, and so its Service: the api connects to nats://rangelight-nats.rangelight-system.svc:4222.
@@ -126,17 +162,6 @@ dex:
   github:
     # Only members of this GitHub organisation can sign in (Dex checks at each sign-in). Required when enabled.
     org: ""
-  # Who may reach Dex (port 5556) besides the api: whatever routes <publicUrl>/dex to it, usually your ingress
-  # controller, by its namespace's labels and its pods' labels. Both empty: the api only, and browsers can't sign in.
-  ingressFrom:
-    namespaceLabels: {}
-    podLabels: {}
-  # The cluster's pod and service CIDRs. Dex's HTTPS (to GitHub) may go anywhere but these; DNS only to clusterDns.
-  # The defaults are k3s's (and so k3d's); kubeadm with Calico or Flannel: 192.168.0.0/16 or 10.244.0.0/16, and
-  # 10.96.0.0/12.
-  clusterCidrs:
-    - "10.42.0.0/16"
-    - "10.43.0.0/16"
   # The upstream chart's settings (https://github.com/dexidp/helm-charts/tree/master/charts/dex).
   # Its Service: rangelight-dex.rangelight-system.svc:5556. Route <publicUrl>/dex to it.
   fullnameOverride: "rangelight-dex"
@@ -261,14 +286,70 @@ runner:
     limits:
       memory: "512Mi"
 
-# The api's sessions (configs/api.default.toml). Where the team's sessions work and for whom, until repo
-# onboarding maps teams to repos (ADR 0047) and members to sessions.
+# Linear, where the api takes tickets from (ADR 0047).
+linear:
+  # The team whose issues labelled "rangelight" become sessions, by its key (for example RAN). Required when
+  # api.enabled.
+  team: ""
+  # The Secret in rangelight-system, and its key, holding a Linear API key that reads that team's issues; you create
+  # it. Its name is required when api.enabled.
+  apiKeySecretRef:
+    name: ""
+    key: "api-key"
+
+# The api (services/api): Linear intake, the session API and sign-in, on port 8080. Its settings are the ConfigMap
+# rangelight-api (configs/api.default.toml); its Postgres URI, OIDC client secret and Linear key are mounted from their
+# Secrets as files. Where the team's sessions work and for whom, until repo onboarding maps teams to repos (ADR 0047)
+# and members to sessions.
 api:
+  # true: run the api (one replica). It needs api.image, linear.team and linear.apiKeySecretRef.name.
+  enabled: false
+  # The api image, by tag and digest: ghcr.io/rangelight/api:<sha>@sha256:<digest>, built by
+  # .github/workflows/images.yaml. Required when enabled.
+  image: ""
   # The git mirror's name for the repo the sessions work on (a gitMirror.repos name, without .git). Required.
   repo: ""
   # The repo's approved base branch: lanes start there, and the profile is read there (ADR 0041).
   baseRef: "main"
   # Whose Claude home the lanes mount (ADR 0046 amendment): a DNS label. Required.
   member: ""
-  # JetStream replicas of the runners' status stream: 1 for a single NATS server, 3 for a cluster.
+  # JetStream replicas of the control plane's streams (the runners' status, which the api reads, and the sessions'
+  # desired state, which the relay writes): 1 for a single NATS server, 3 for a cluster.
   streamReplicas: 1
+  # Resources of the api pod.
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      memory: "512Mi"
+
+# The Workbench (services/web): its static build behind unprivileged nginx, on port 8080. It needs no config and no
+# secret, and calls nothing: browsers load it, then call the api on the same origin.
+web:
+  # true: run the Workbench (one replica). It needs web.image.
+  enabled: false
+  # The web image, by tag and digest: ghcr.io/rangelight/web:<sha>@sha256:<digest>, built by
+  # .github/workflows/images.yaml. Required when enabled.
+  image: ""
+  # Resources of the web pod.
+  resources:
+    requests:
+      cpu: "10m"
+      memory: "32Mi"
+    limits:
+      memory: "128Mi"
+
+# The relay (services/relay): publishes the outbox to NATS (ADR 0031). Its Postgres URI is mounted from its Secret.
+relay:
+  # true: run the relay. One replica, by design: it is the outbox's single writer to NATS.
+  enabled: false
+  # The relay image, by tag and digest: ghcr.io/rangelight/relay:<sha>@sha256:<digest>. Required when enabled.
+  image: ""
+  # Resources of the relay pod.
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      memory: "256Mi"

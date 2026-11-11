@@ -1,0 +1,75 @@
+{{- if .Values.relay.enabled }}
+---
+# The relay (services/relay): one replica, the outbox's single writer to NATS. Its config is the defaults plus these
+# RANGELIGHT_RELAY_* variables (configs/relay.default.toml); its Postgres URI is a file under
+# /var/run/rangelight/secrets.
+apiVersion: "apps/v1"
+kind: "Deployment"
+metadata:
+  name: "rangelight-relay"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "relay" "component" "control-plane") | nindent 4 }}
+spec:
+  replicas: 1
+  # The old relay stops before the new one starts.
+  strategy:
+    type: "Recreate"
+  selector:
+    matchLabels:
+      {{- include "rangelight.selector" (dict "ctx" $ "name" "relay") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "rangelight.labels" (dict "ctx" $ "name" "relay" "component" "control-plane") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: "RuntimeDefault"
+      containers:
+        - name: "relay"
+          image: {{ .Values.relay.image | quote }}
+          env:
+            - name: "RANGELIGHT_RELAY_DATABASE_URL"
+              value: {{ printf "secret://%s" (include "rangelight.databaseRef" .) | quote }}
+            - name: "RANGELIGHT_RELAY_NATS_URL"
+              value: {{ include "rangelight.natsUrl" . | quote }}
+            - name: "RANGELIGHT_RELAY_STREAM_REPLICAS"
+              value: {{ .Values.api.streamReplicas | quote }}
+          ports:
+            - name: "http"
+              containerPort: 8080
+          # /healthz answers once the relay has started (Postgres, NATS and the desired-state stream set up) and
+          # while it lives. Up to 2 minutes to start before liveness counts.
+          startupProbe:
+            httpGet:
+              path: "/healthz"
+              port: "http"
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: "/healthz"
+              port: "http"
+          livenessProbe:
+            httpGet:
+              path: "/healthz"
+              port: "http"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          {{- include "rangelight.resources" .Values.relay.resources | nindent 10 }}
+          volumeMounts:
+            - name: "secrets"
+              mountPath: "/var/run/rangelight/secrets"
+              readOnly: true
+      volumes:
+        {{- include "rangelight.secretsVolume" (list (include "rangelight.databaseRef" .)) | nindent 8 }}
+{{- end }}

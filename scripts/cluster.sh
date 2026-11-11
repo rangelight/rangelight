@@ -121,10 +121,10 @@ EOF
 up() {
   require_context
   load_versions
-  local name; for name in GIT_MIRROR_IMAGE RUNNER_IMAGE AGENT_IMAGE; do [[ "${!name}" =~ @sha256:[0-9a-f]{64}$ ]] || die "pin ${name} after the first images.yaml run (deployments/dev/versions.env: ${!name})"; done
+  local name; for name in GIT_MIRROR_IMAGE RUNNER_IMAGE AGENT_IMAGE API_IMAGE RELAY_IMAGE WEB_IMAGE; do [[ "${!name}" =~ @sha256:[0-9a-f]{64}$ ]] || die "pin ${name} after the first images.yaml run (deployments/dev/versions.env: ${!name})"; done
   command -v helm >/dev/null || die "helm is not installed"
   [[ -f "${RANGELIGHT_VALUES:-}" ]] || die "RANGELIGHT_VALUES is not a file: your values, at least publicUrl and dex.github.org"
-  local dev=(--values "${ROOT}/deployments/dev/values.yaml" --values "${RANGELIGHT_VALUES}" --set-string "gitMirror.image=${GIT_MIRROR_IMAGE}" --set-string "runner.image=${RUNNER_IMAGE}" --set-string "runner.agentImage=${AGENT_IMAGE}")
+  local dev=(--values "${ROOT}/deployments/dev/values.yaml" --values "${RANGELIGHT_VALUES}" --set-string "gitMirror.image=${GIT_MIRROR_IMAGE}" --set-string "runner.image=${RUNNER_IMAGE}" --set-string "runner.agentImage=${AGENT_IMAGE}" --set-string "api.image=${API_IMAGE}" --set-string "relay.image=${RELAY_IMAGE}" --set-string "web.image=${WEB_IMAGE}")
   if [[ "${RANGELIGHT_DRY_RUN:-}" == true ]]; then
     namespace_manifest
     helm template "${RELEASE}" "${CHART}" --namespace "${SYSTEM_NS}" --api-versions postgresql.cnpg.io/v1/Cluster "${dev[@]}"

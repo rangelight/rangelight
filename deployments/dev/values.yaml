@@ -1,6 +1,8 @@
 ---
 # The dev environment's values for deployments/helm/rangelight, used by `scripts/cluster.sh up`.
-# The images come from versions.env: gitMirror.image, runner.image and runner.agentImage.
+# The images come from versions.env: gitMirror.image, runner.image, runner.agentImage, api.image, relay.image and
+# web.image.
+# The Ingress (ingress.enabled, className and from) goes in your RANGELIGHT_VALUES, for your cluster's controller.
 gitMirror:
   enabled: true
   repos:
@@ -13,5 +15,15 @@ clusterDns:
   podLabel: "k8s-app=coredns"
 # The dev team's sessions work on the mirrored demo, in the owner's Claude home (ADR 0046 amendment).
 api:
+  enabled: true
   repo: "opentelemetry-demo"
   member: "owner"
+relay:
+  enabled: true
+web:
+  enabled: true
+# Tickets come from the RAN team; you create the Secret rangelight-linear (key api-key) with a Linear API key.
+linear:
+  team: "RAN"
+  apiKeySecretRef:
+    name: "rangelight-linear"

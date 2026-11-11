@@ -1,0 +1,72 @@
+{{- if .Values.api.enabled }}
+---
+# The api (services/api): one replica. Its settings are the ConfigMap rangelight-api; its secrets are files under
+# /var/run/rangelight/secrets, never environment values.
+{{- $oidc := printf "%s#%s" .Values.oidc.clientSecretRef.name .Values.oidc.clientSecretRef.key }}
+{{- $linear := printf "%s#%s" .Values.linear.apiKeySecretRef.name .Values.linear.apiKeySecretRef.key }}
+{{- $refs := list (include "rangelight.databaseRef" .) $oidc $linear }}
+apiVersion: "apps/v1"
+kind: "Deployment"
+metadata:
+  name: "rangelight-api"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "api" "component" "control-plane") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "rangelight.selector" (dict "ctx" $ "name" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "rangelight.labels" (dict "ctx" $ "name" "api" "component" "control-plane") | nindent 8 }}
+      annotations:
+        # A changed ConfigMap rolls the pod: the api reads its config at start.
+        checksum/config: {{ include (print $.Template.BasePath "/api/configmap.yaml") . | sha256sum | quote }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: "RuntimeDefault"
+      containers:
+        - name: "api"
+          image: {{ .Values.api.image | quote }}
+          envFrom:
+            - configMapRef:
+                name: "rangelight-api"
+          ports:
+            - name: "http"
+              containerPort: 8080
+          # Up to 2 minutes to start (Postgres, NATS, migrations) before liveness counts.
+          startupProbe:
+            httpGet:
+              path: "/healthz"
+              port: "http"
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: "/healthz"
+              port: "http"
+          livenessProbe:
+            httpGet:
+              path: "/healthz"
+              port: "http"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          {{- include "rangelight.resources" .Values.api.resources | nindent 10 }}
+          volumeMounts:
+            - name: "secrets"
+              mountPath: "/var/run/rangelight/secrets"
+              readOnly: true
+      volumes:
+        {{- include "rangelight.secretsVolume" $refs | nindent 8 }}
+{{- end }}

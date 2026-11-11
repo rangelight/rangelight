@@ -101,6 +101,8 @@ pub async fn intake_loop(
 
 /// Serves sign-in and, behind it, the session and auth APIs (Connect, and gRPC-Web) over HTTP/1.1
 /// on `listener` until `cancel`, then lets open connections finish for up to 10 seconds.
+/// `GET /healthz` answers 200 without a login: the api is ready once it serves, after its
+/// migrations, Postgres and NATS.
 ///
 /// HTTP/1.1 only: the Workbench speaks Connect over it and the terminal WebSocket needs it;
 /// nothing speaks HTTP/2 to the api. A client gets 10 seconds to send a request's headers, from
@@ -110,7 +112,9 @@ pub async fn serve(listener: TcpListener, api: SessionApi, auth: Auth, cancel: C
         .add_service(Arc::new(api))
         .add_service(Arc::new(auth::WhoAmI))
         .into_axum_router();
-    let app = auth::router(auth, rpc);
+    let app = axum::Router::new()
+        .route("/healthz", axum::routing::get(|| async { "ok" }))
+        .merge(auth::router(auth, rpc));
     let mut http = http1::Builder::new();
     http.timer(TokioTimer::new())
         .header_read_timeout(CLIENT_TIMEOUT)

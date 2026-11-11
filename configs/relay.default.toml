@@ -3,6 +3,8 @@
 
 # `tracing` filter directives.
 log = "info"
+# The listener for /healthz: 200 once the relay has started (Postgres, NATS and the stream set up).
+listen = "0.0.0.0:8080"
 # The Postgres URL, as a secret reference: the mounted Secret file holds the whole URL.
 database_url = "secret://postgres#url"
 nats_url = "nats://nats:4222"

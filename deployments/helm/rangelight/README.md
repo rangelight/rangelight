@@ -11,6 +11,12 @@ Every dependency is bundled and swappable for your own (ADR 0009). `values.yaml`
 | Git mirror | Off by default: `gitMirror.enabled=true` with `gitMirror.image` (by digest) and `gitMirror.repos` runs the mirror (`services/git-mirror/`) on a PVC | — |
 | Sign-in (OIDC) | Dex (chart `dex`): GitHub, limited to the members of `dex.github.org` | `dex.enabled=false`, `oidc.issuer`, `oidc.clientSecretRef`, `oidc.memberClaim` |
 
+**The product** is off by default, since its images are pinned per install: `api.enabled` (with `api.image`,
+`linear.team` and `linear.apiKeySecretRef`), `relay.enabled` (with `relay.image`) and `web.enabled` (with
+`web.image`) run the api, the relay and the Workbench, one replica each (the relay is the outbox's single
+writer). `ingress.enabled` renders one Ingress for the host of `publicUrl`; it needs `ingress.from` and installs
+no controller (see Ingress).
+
 **The runner** (ADR 0018, `services/runner/`) is off by default too: `runner.enabled=true` with `runner.image`
 and `runner.agentImage` (by digest) runs it in its own namespace, `runner.namespace` (default `rangelight-runner`).
 The cluster owner creates that namespace first (Pod Security `restricted`); the chart never does, so no
@@ -28,6 +34,8 @@ The `Session` CRD (`files/crds/session.yaml`) installs and upgrades with the run
 - `rangelight-oidc`, key `client-secret`: at least 32 bytes of randomness, for example
   `openssl rand -base64 48`. Dex registers the api as the client `rangelight-api` with it, and the api reads
   it and derives the sign-in cookie's key from it; the api refuses to start with a shorter one.
+- With the api: the Secret named by `linear.apiKeySecretRef` (key `api-key` by default) holding a Linear API key
+  that reads `linear.team`'s issues.
 
 ```sh
 RANGELIGHT_KUBE_CONTEXT=<context> RANGELIGHT_VALUES=<your values.yaml> scripts/cluster.sh up   # two passes, see below
@@ -48,7 +56,9 @@ To drop the database, delete it by hand: `kubectl -n rangelight-system delete cl
 
 ## What the api gets
 
-The ConfigMap `rangelight-api` holds the api's settings (`configs/api.default.toml`, ADR 0049 §6):
+The ConfigMap `rangelight-api` holds the api's settings (`configs/api.default.toml`, ADR 0049 §6). The Secrets
+they name are mounted into the api's pod as files, only the keys named, under `/var/run/rangelight/secrets/<name>/<key>`;
+the relay gets the database's the same way. No secret is ever an environment value.
 
 - `RANGELIGHT_API_DATABASE_URL`: `secret://rangelight-pg-app#uri` (bundled), the Secret CloudNativePG
   generates, or `secret://<postgres.external.secretRef.name>#<key>`. There's no password in values or git.
@@ -56,6 +66,7 @@ The ConfigMap `rangelight-api` holds the api's settings (`configs/api.default.to
 - `RANGELIGHT_API_PUBLIC_URL`, `RANGELIGHT_API_OIDC_ISSUER` (`<publicUrl>/dex`, or `oidc.issuer`),
   `RANGELIGHT_API_OIDC_CLIENT_ID`, `RANGELIGHT_API_OIDC_MEMBER_CLAIM`, and `RANGELIGHT_API_OIDC_CLIENT_SECRET` as a reference to
   `oidc.clientSecretRef`.
+- `RANGELIGHT_API_LINEAR_TEAM` and `RANGELIGHT_API_LINEAR_API_KEY` (a reference to `linear.apiKeySecretRef`).
 - `RANGELIGHT_API_REPO`, `_BASE_REF`, `_MEMBER`, `_STREAM_REPLICAS` from `api.repo` (required), `api.baseRef`,
   `api.member` (required) and `api.streamReplicas`: where the sessions work, and for whom.
 
@@ -63,10 +74,8 @@ The ConfigMap `rangelight-api` holds the api's settings (`configs/api.default.to
 
 The api signs browsers in with OIDC (authorization code, PKCE): at bundled Dex, the issuer
 `<publicUrl>/dex`, or at your own provider (`dex.enabled=false`, `oidc.issuer`, and a client registered for
-`<publicUrl>/auth/callback` whose secret is in `oidc.clientSecretRef`). Route `<publicUrl>/dex` to the Service
-`rangelight-dex` (port 5556), and let your ingress controller through Dex's NetworkPolicy with
-`dex.ingressFrom` (its namespace's and pods' labels; by default only the api may reach Dex), for example
-`--set 'dex.ingressFrom.namespaceLabels.kubernetes\.io/metadata\.name=ingress-nginx'`. Dex is one server with in-memory storage: it only brokers sign-ins, and logins
+`<publicUrl>/auth/callback` whose secret is in `oidc.clientSecretRef`). The Ingress routes `<publicUrl>/dex` to
+the Service `rangelight-dex` (port 5556). Dex is one server with in-memory storage: it only brokers sign-ins, and logins
 live in Postgres, so a restart costs only the sign-ins in flight. Dex reads its config (`templates/dex/config.yaml`)
 at start: after changing `publicUrl`, `dex.github.org` or `oidc.clientId`, run
 `kubectl -n rangelight-system rollout restart deployment rangelight-dex`.
@@ -92,15 +101,34 @@ at start: after changing `publicUrl`, `dex.github.org` or `oidc.clientId`, run
   so a flaw in them would run with the Workbench's origin (the login cookie stays HttpOnly). Serving Dex on
   its own host is a later option.
 
+## Ingress
+
+`ingress.enabled` renders one `networking.k8s.io/v1` Ingress `rangelight` for the host of `publicUrl`, with
+`ingress.className` and `ingress.tls.secretName` if set, and `ingress.annotations` as given (the chart sets no
+controller-specific annotation; the terminal WebSocket and `WatchSession` are long-lived, so raise your
+controller's read timeout there). Paths, all `Prefix`: each Connect service (`/rangelight.auth.v1alpha1.AuthService`,
+`/rangelight.session.v1alpha1.SessionService`), `/auth` and `/v1alpha1/sessions` (the terminal WebSocket) to
+`rangelight-api:8080`; `/dex` to Dex; everything else to the Workbench, `rangelight-web:8080`. `ingress.from`
+names your controller's pods, by their namespace's labels (required) and their own labels, for example
+`--set 'ingress.from.namespaceLabels.kubernetes\.io/metadata\.name=ingress-nginx'`, and
+`ingress.from.httpsPort` (required) is their HTTPS container port: 443 for ingress-nginx, 8443 for Traefik's
+websecure.
+
 ## Network
 
 NetworkPolicies let only pods labelled `app.kubernetes.io/part-of: "rangelight"` in `rangelight-system` reach
 Postgres (5432), plus the CloudNativePG operator to its instances (5432, 8000). NATS (4222) admits only its
 clients: the api and the relay, and the runner from its own namespace. The git mirror
 (8080) accepts only namespaces labelled `rangelight.dev/lane: "true"` (the runner labels each lane's) and the
-namespace `rangelight-runner`. Dex takes connections on 5556 only, from the api and from `dex.ingressFrom`
-(your ingress controller); it calls out only to the cluster DNS (`clusterDns`, shared with the lanes) and to
-HTTPS outside `dex.clusterCidrs` (the cluster's pod and service CIDRs, k3s's by default).
+namespace `rangelight-runner`. Dex takes connections on 5556 only, from `ingress.from` (your ingress
+controller); it calls out only to the cluster DNS (`clusterDns`, shared with the lanes) and to
+HTTPS outside `clusterCidrs` (the cluster's pod and service CIDRs, k3s's and RKE2's by default). The api takes
+connections on 8080 only from `ingress.from`; it calls out to the cluster DNS, Postgres, NATS, `ingress.from`
+on `ingress.from.httpsPort` (bundled Dex's issuer, `<publicUrl>/dex`) and HTTPS outside `clusterCidrs` (Linear,
+your own OIDC provider, on 443 and on the port of `oidc.issuer` if it names one). The relay takes no connections and calls out to the cluster DNS, Postgres and NATS only. The
+Workbench takes connections on 8080 only from `ingress.from` and calls out to nothing, DNS included. With your
+own Postgres or NATS, the api and the relay may reach port 5432, or the port of `nats.external.url`, at any
+address.
 
 ## Changing it
 
@@ -108,4 +136,4 @@ HTTPS outside `dex.clusterCidrs` (the cluster's pod and service CIDRs, k3s's by 
   `helm dependency update deployments/helm/rangelight`.
 - Images are pinned by tag and digest. Never bump the Postgres major version in place.
 - `scripts/check.sh deploy` runs `helm lint`, kubeconform on both modes, the YAML style on our templates'
-  output, and the render tests `test/{template,git-mirror,runner,dex}.sh`.
+  output, and the render tests `test/{template,git-mirror,runner,dex,api,relay,web,ingress}.sh`.

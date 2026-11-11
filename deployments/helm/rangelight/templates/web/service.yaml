@@ -1,0 +1,17 @@
+{{- if .Values.web.enabled }}
+---
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "rangelight-web"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "web" "component" "workbench") | nindent 4 }}
+spec:
+  selector:
+    {{- include "rangelight.selector" (dict "ctx" $ "name" "web") | nindent 4 }}
+  ports:
+    - name: "http"
+      port: 8080
+      targetPort: "http"
+{{- end }}

@@ -1,10 +1,11 @@
-//! The relay binary: loads config, starts telemetry, wires the store and NATS, runs until
-//! SIGTERM or Ctrl-C.
+//! The relay binary: loads config, starts telemetry, wires the store and NATS, then serves
+//! /healthz and runs until SIGTERM or Ctrl-C.
 
 use anyhow::Context;
 use relay::Relay;
 use relay::config::Config;
 use rl_store::Store;
+use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 
@@ -26,6 +27,7 @@ async fn main() -> anyhow::Result<()> {
         config.stream_replicas,
     )
     .await?;
+    let listener = TcpListener::bind(config.listen).await?;
 
     let cancel = CancellationToken::new();
     let mut terminate = signal(SignalKind::terminate())?;
@@ -37,7 +39,9 @@ async fn main() -> anyhow::Result<()> {
         }
         stop.cancel();
     });
-    tracing::info!("relay started");
+    let health = tokio::spawn(relay::serve_health(listener, cancel.clone()));
+    tracing::info!(listen = %config.listen, "relay started");
     relay.run(cancel).await;
+    health.await??;
     Ok(())
 }

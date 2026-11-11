@@ -15,9 +15,8 @@ test_dex_bundled_pinned_restricted_with_secrets_from_secrets() {
   expect_line "  replicas: 1"
   expect_line "      serviceAccountName: rangelight-dex"
   expect_line "        app.kubernetes.io/part-of: rangelight"
-  expect_restricted
+  expect_restricted token
   expect_line "        runAsUser: 1001"
-  expect_line "            readOnlyRootFilesystem: true"
   [[ "$(grep -cE -e '^ +secretKeyRef:$' <<<"${OUT}")" -eq 3 ]] || fail "not every credential comes from a Secret"
   expect_line "                  name: rangelight-dex-github"
   expect_line "                  name: rangelight-oidc"
@@ -47,25 +46,16 @@ test_dex_lets_in_only_the_org_and_registers_the_api() {
   [[ "$(grep -c '^      - type: ' <<<"${OUT}")" -eq 1 ]] || fail "a connector besides GitHub"
 }
 
-# Security review L2: by default only the api reaches Dex; egress is kube-dns and HTTPS outside the cluster.
+# Security review L2: without ingress.from nothing reaches Dex (the api reaches it through the controller too);
+# egress is kube-dns and HTTPS outside the cluster.
 test_dex_network_policy() {
   render --show-only templates/dex/networkpolicy.yaml
   expect_ok
   expect_line '      app.kubernetes.io/name: "dex"'
-  [[ "$(grep -c -e '- podSelector:' <<<"${OUT}")" -eq 1 ]] || fail "ingress from more than the api"
-  expect_line '              app.kubernetes.io/name: "api"'
-  expect_line '              app.kubernetes.io/instance: "rangelight"'
-  expect_line '          port: 5556'
-  expect_no_match 'port: (5557|5558|5554)'
-  # Only DNS is matched by namespace: the ingress rule has no namespaceSelector.
-  [[ "$(grep -c 'namespaceSelector:' <<<"${OUT}")" -eq 1 ]] || fail "a namespaceSelector besides kube-dns's"
-  expect_line '              kubernetes.io/metadata.name: "kube-system"'
-  expect_line '              k8s-app: "kube-dns"'
-  expect_line '          port: 53'
-  expect_line '            cidr: "0.0.0.0/0"'
-  expect_line '              - "10.42.0.0/16"'
-  expect_line '              - "10.43.0.0/16"'
-  expect_line '          port: 443'
+  expect_line '    - "Ingress"'
+  [[ "$(network_peers)" == "egress 53 ns:kubernetes.io/metadata.name=kube-system pod:k8s-app=kube-dns
+egress 443 ip:0.0.0.0/0-10.42.0.0/16-10.43.0.0/16" ]] || fail "Dex's peers:
+$(network_peers)"
 }
 
 # Security review round 2, item 3: DNS egress follows the one chart-wide clusterDns setting.
@@ -79,18 +69,22 @@ test_dex_dns_egress_follows_cluster_dns() {
 
 test_dex_network_policy_lets_in_the_configured_ingress() {
   render --show-only templates/dex/networkpolicy.yaml \
-    --set 'dex.ingressFrom.namespaceLabels.kubernetes\.io/metadata\.name=ingress-nginx' \
-    --set 'dex.ingressFrom.podLabels.app\.kubernetes\.io/name=ingress-nginx' \
-    --set 'dex.clusterCidrs={10.244.0.0/16,10.96.0.0/12}'
+    --set 'ingress.from.namespaceLabels.kubernetes\.io/metadata\.name=ingress-nginx' \
+    --set 'ingress.from.podLabels.app\.kubernetes\.io/name=ingress-nginx' \
+    --set 'clusterCidrs={10.244.0.0/16,10.96.0.0/12}'
   expect_ok
   expect_line '              app.kubernetes.io/name: "ingress-nginx"'
   expect_line '              kubernetes.io/metadata.name: "ingress-nginx"'
   expect_line '              - "10.244.0.0/16"'
   expect_line '              - "10.96.0.0/12"'
   expect_no_match '10\.42\.0\.0'
+  [[ "$(network_peers)" == "ingress 5556 ns:kubernetes.io/metadata.name=ingress-nginx pod:app.kubernetes.io/name=ingress-nginx
+egress 53 ns:kubernetes.io/metadata.name=kube-system pod:k8s-app=kube-dns
+egress 443 ip:0.0.0.0/0-10.244.0.0/16-10.96.0.0/12" ]] || fail "Dex's peers:
+$(network_peers)"
   # Namespace labels alone: every pod in those namespaces.
   render --show-only templates/dex/networkpolicy.yaml \
-    --set 'dex.ingressFrom.namespaceLabels.kubernetes\.io/metadata\.name=ingress-nginx'
+    --set 'ingress.from.namespaceLabels.kubernetes\.io/metadata\.name=ingress-nginx'
   expect_ok
   expect_line '        - podSelector: {}'
 }
@@ -98,14 +92,14 @@ test_dex_network_policy_lets_in_the_configured_ingress() {
 test_refuses_dropping_or_widening_the_dex_network_policy() {
   render --set dex.networkPolicy.enabled=true
   expect_refused "/dex/networkPolicy/enabled"
-  render --set 'dex.clusterCidrs=null'
-  expect_refused "/dex/clusterCidrs"
-  render --set 'dex.clusterCidrs[0]=everything'
-  expect_refused "/dex/clusterCidrs/0"
-  render --set 'dex.ingressFrom.podLabels.a=bad value'
-  expect_refused "/dex/ingressFrom/podLabels/a"
+  render --set 'clusterCidrs=null'
+  expect_refused "missing property 'clusterCidrs'"
+  render --set 'clusterCidrs[0]=everything'
+  expect_refused "/clusterCidrs/0"
+  render --set 'ingress.from.podLabels.a=bad value'
+  expect_refused "/ingress/from/podLabels/a"
   # Helm's validator reports a bad label key without its path.
-  render --set 'dex.ingressFrom.namespaceLabels.bad\ key=x'
+  render --set 'ingress.from.namespaceLabels.bad\ key=x'
   expect_refused "invalid propertyName 'bad key'"
 }
 

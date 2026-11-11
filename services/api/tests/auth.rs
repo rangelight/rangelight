@@ -565,3 +565,11 @@ async fn the_member_claim_setting_is_honoured() {
     let page = by_nickname.browser().sign_in(KILGORE).await;
     assert_eq!(page.status, StatusCode::UNAUTHORIZED);
 }
+
+/// RAN-44: the kubelet's probe needs no login and no origin.
+#[tokio::test]
+async fn healthz_answers_without_a_login() {
+    let (_db, served) = app("api::healthz").await;
+    let page = served.browser().get("/healthz").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+}

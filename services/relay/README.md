@@ -20,7 +20,8 @@ config: one message per subject and no age limit, so it holds each session's lat
 (a cold one is the tombstone), with `stream_replicas` replicas.
 
 Config: `configs/relay.default.toml`, then `/etc/rangelight/relay.toml`, then
-`RANGELIGHT_RELAY_*`. `database_url` is a secret reference.
+`RANGELIGHT_RELAY_*`. `database_url` is a secret reference. `GET /healthz` on `listen` (8080) answers 200 once
+Postgres, NATS and the stream are set up: the relay has started and is alive.
 
 ```sh
 scripts/test/services.sh run cargo nextest run -p relay

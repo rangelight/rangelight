@@ -1,0 +1,58 @@
+{{- if .Values.web.enabled }}
+---
+# The Workbench (services/web): its static build behind unprivileged nginx, one replica. It holds no config and no
+# secret: the browser calls the api on the same origin.
+apiVersion: "apps/v1"
+kind: "Deployment"
+metadata:
+  name: "rangelight-web"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "web" "component" "workbench") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "rangelight.selector" (dict "ctx" $ "name" "web") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "rangelight.labels" (dict "ctx" $ "name" "web" "component" "workbench") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: "RuntimeDefault"
+      containers:
+        - name: "web"
+          image: {{ .Values.web.image | quote }}
+          ports:
+            - name: "http"
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: "/"
+              port: "http"
+          livenessProbe:
+            httpGet:
+              path: "/"
+              port: "http"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          {{- include "rangelight.resources" .Values.web.resources | nindent 10 }}
+          # nginx's pid file and request buffers.
+          volumeMounts:
+            - name: "tmp"
+              mountPath: "/tmp"
+      volumes:
+        - name: "tmp"
+          emptyDir:
+            sizeLimit: "64Mi"
+{{- end }}

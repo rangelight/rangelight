@@ -16,7 +16,7 @@ test_bundled_installs_operator_and_crds() {
   expect_line "kind: CustomResourceDefinition"
   expect_line "  name: clusters.postgresql.cnpg.io"
   expect_line "        image: \"ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07\""
-  expect_restricted
+  expect_restricted token
 }
 
 test_bundled_cluster_bootstraps_api_owned_by_rl_api() {
@@ -57,7 +57,7 @@ test_bundled_nats_single_server_with_jetstream_on_a_pvc() {
   expect_line "          storage: 10Gi"
   expect_no_match 'storageClassName'
   expect_no_match 'image: .*:latest'
-  expect_restricted
+  expect_restricted token
   render --show-only charts/nats/templates/config-map.yaml
   expect_ok
   grep -qE -e '"jetstream": \{' <<<"${OUT}" || fail "JetStream is not enabled"
@@ -170,6 +170,11 @@ test_refuses_external_nats_without_url() {
 
 test_refuses_a_nats_url_that_is_not_nats() {
   render --set nats.enabled=false --set nats.external.url=http://nats.example.com:4222
+  expect_refused "/nats/external/url"
+  # One server, no path: the api's and the relay's egress allow the one port the URL names (RAN-44).
+  render --set nats.enabled=false --set 'nats.external.url=nats://a:4222\,nats://b:4223'
+  expect_refused "/nats/external/url"
+  render --set nats.enabled=false --set nats.external.url=nats://a:4222/
   expect_refused "/nats/external/url"
 }
 

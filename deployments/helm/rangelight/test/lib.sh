@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# The chart tests' helpers, sourced by template.sh, git-mirror.sh, runner.sh and dex.sh.
+# The chart tests' helpers, sourced by template.sh, git-mirror.sh, runner.sh, dex.sh, api.sh, relay.sh, web.sh and
+# ingress.sh.
 # main runs the sourcing file's test_* functions (or the named ones) and fails if any failed.
 # One sort order everywhere: the expected lists are in C order.
 export LC_ALL=C
@@ -38,12 +39,48 @@ kinds() {
   awk '/^---/ { k = "" } /^kind:/ { k = $2 } /^  name:/ && k != "" { print k "/" $2; k = "" }' <<<"${OUT}" | tr -d '"' | sort
 }
 
-# expect_restricted: the rendered pod passes Pod Security `restricted` and has resources set.
+# network_peers: the rendered NetworkPolicy's rules, one line each: direction, port(s), then each peer as
+# ns:<labels> pod:<labels> (pod:{} for every pod), ip:<cidr>-<except>..., or "any" for a rule without peers.
+network_peers() {
+  awk '
+    function flush(   line, i) {
+      if (dir == "") return
+      line = dir " " ports
+      if (n == 0) line = line " any"
+      for (i = 1; i <= n; i++) line = line " " (ns[i] != "" ? "ns:" ns[i] " " : "") (pod[i] != "" ? "pod:" pod[i] : "") (ip[i] != "" ? "ip:" ip[i] : "")
+      sub(/ +$/, "", line)
+      print line
+      dir = ""
+    }
+    function label(   kv) { kv = $1 $2; sub(/:/, "=", kv); gsub(/"/, "", kv); return kv }
+    /^  (ingress|egress):$/ { flush(); side = $1; sub(/:/, "", side); next }
+    /^    - (from|to|ports):$/ { flush(); dir = side; ports = ""; n = 0; next }
+    /^        - (podSelector|namespaceSelector|ipBlock):/ { n++; ns[n] = pod[n] = ip[n] = "" }
+    /^        - |^          (podSelector|namespaceSelector):/ {
+      sel = $0; sub(/^ *-? */, "", sel); sub(/:.*/, "", sel)
+      if ($0 ~ /\{\}$/) pod[n] = "{}"
+      next
+    }
+    /^              [^ -][^ ]*: "/ { if (sel == "podSelector") pod[n] = pod[n] (pod[n] == "" ? "" : ",") label(); else ns[n] = ns[n] (ns[n] == "" ? "" : ",") label(); next }
+    /^            cidr: / { c = $2; gsub(/"/, "", c); ip[n] = c; next }
+    /^              - "/ { c = $2; gsub(/"/, "", c); ip[n] = ip[n] "-" c; next }
+    /^          port: / { if (ports != $2 && ports !~ ("(^|,)" $2 "$")) ports = ports (ports == "" ? "" : ",") $2; next }
+    /^---/ { flush() }
+    END { flush() }
+  ' <<<"${OUT}"
+}
+
+# expect_restricted [token]: the rendered pod passes Pod Security `restricted`, has a read-only root, resources
+# set and, unless `token` (upstream charts' pods keep theirs), no ServiceAccount token. Our templates quote
+# strings; upstream charts' may not.
 expect_restricted() {
   local want
-  for want in "runAsNonRoot: true" "allowPrivilegeEscalation: false" "- ALL" "type: RuntimeDefault" "limits:" "requests:"; do
+  for want in "runAsNonRoot: true" "allowPrivilegeEscalation: false" "readOnlyRootFilesystem: true" '- "?ALL"?' \
+    'type: "?RuntimeDefault"?' "limits:" "requests:"; do
     grep -qE -e "^ +${want}$" <<<"${OUT}" || fail "pod without '${want}'"
   done
+  [[ "${1:-}" == token ]] || grep -qE -e '^ +automountServiceAccountToken: false$' <<<"${OUT}" ||
+    fail "pod with a ServiceAccount token"
 }
 
 main() {

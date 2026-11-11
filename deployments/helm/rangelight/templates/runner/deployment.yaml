@@ -49,11 +49,7 @@ spec:
               value: {{ .Values.runner.workers | quote }}
             # The runner protocol (ADR 0021); lanes keep running while NATS is unreachable.
             - name: "RANGELIGHT_RUNNER_NATS_URL"
-              {{- if .Values.nats.enabled }}
-              value: {{ printf "nats://%s.%s.svc:4222" .Values.nats.fullnameOverride .Release.Namespace | quote }}
-              {{- else }}
-              value: {{ .Values.nats.external.url | quote }}
-              {{- end }}
+              value: {{ include "rangelight.natsUrl" . | quote }}
           ports:
             - name: "http"
               containerPort: 8080
@@ -71,17 +67,7 @@ spec:
             capabilities:
               drop:
                 - "ALL"
-          {{- with .Values.runner.resources }}
-          resources:
-            requests:
-              cpu: {{ .requests.cpu | quote }}
-              memory: {{ .requests.memory | quote }}
-            limits:
-              {{- with .limits.cpu }}
-              cpu: {{ . | quote }}
-              {{- end }}
-              memory: {{ .limits.memory | quote }}
-          {{- end }}
+          {{- include "rangelight.resources" .Values.runner.resources | nindent 10 }}
           volumeMounts:
             # Each profile read is a depth-1 clone here, removed after the read.
             - name: "tmp"

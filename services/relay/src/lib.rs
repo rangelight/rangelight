@@ -247,9 +247,46 @@ pub fn next_pause(previous: Duration, round: &Result<usize, RelayError>) -> Dura
     }
 }
 
+/// Answers `GET /healthz` with 200 on `listener` until `cancel`. `main` serves it only once
+/// [`Relay::new`] has its Postgres, NATS and stream: a 200 means the relay started and lives.
+///
+/// # Errors
+/// An I/O error from the listener.
+pub async fn serve_health(
+    listener: tokio::net::TcpListener,
+    cancel: CancellationToken,
+) -> std::io::Result<()> {
+    let app = axum::Router::new().route("/healthz", axum::routing::get(|| async { "ok" }));
+    axum::serve(listener, app)
+        .with_graceful_shutdown(cancel.cancelled_owned())
+        .await
+}
+
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     use super::*;
+
+    #[tokio::test]
+    async fn healthz_answers_200_until_cancelled() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let cancel = CancellationToken::new();
+        let served = tokio::spawn(serve_health(listener, cancel.clone()));
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        stream
+            .write_all(b"GET /healthz HTTP/1.1\r\nHost: relay\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut reply = String::new();
+        stream.read_to_string(&mut reply).await.unwrap();
+        assert!(reply.starts_with("HTTP/1.1 200 OK"), "{reply}");
+        cancel.cancel();
+        served.await.unwrap().unwrap();
+    }
 
     #[test]
     fn failed_rounds_back_off_to_a_cap_and_success_resets() {

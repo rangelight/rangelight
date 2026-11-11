@@ -2,5 +2,8 @@
 The CloudNativePG operator is installing. Once it is ready, run the same `helm upgrade --install` again:
 that creates the Postgres cluster rangelight-pg (scripts/cluster.sh up does both).
 {{- else }}
-Rangelight's dependencies are installed in {{ .Release.Namespace }}. The api's settings: ConfigMap rangelight-api.
+Rangelight is installed in {{ .Release.Namespace }}. The api's settings: ConfigMap rangelight-api.
+{{- if .Values.ingress.enabled }}
+Browsers reach it at {{ .Values.publicUrl }}.
+{{- end }}
 {{- end }}

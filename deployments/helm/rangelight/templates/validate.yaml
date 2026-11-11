@@ -6,3 +6,7 @@
 {{- if and .Values.runner.enabled (eq .Values.runner.namespace .Release.Namespace) }}
 {{- fail (printf "runner.namespace must not be %q: the runner runs in its own namespace" .Release.Namespace) }}
 {{- end }}
+{{- /* The Ingress routes to the api and the Workbench: it needs both. */ -}}
+{{- if and .Values.ingress.enabled (not (and .Values.api.enabled .Values.web.enabled)) }}
+{{- fail "ingress.enabled needs api.enabled and web.enabled: the Ingress routes to both" }}
+{{- end }}

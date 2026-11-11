@@ -112,6 +112,7 @@ wait_for() {
   for _ in $(seq 1 100); do eval "$1" && return 0; sleep 0.05; done
   printf 'the test front end did not start (%s)\n' "$1" >&2
   cat "${W}"/*.log >&2 || true
+  [[ "${MODE}" != nginx ]] || docker logs "${CONTAINER}" >&2 || true
   exit 1
 }
 
@@ -135,27 +136,40 @@ build_mirror() {
 
 free_port() { python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
 
+# stale_socket <path>: a socket file with no server, as a crash leaves one (RAN-49).
+stale_socket() { python3 -I -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$1"; }
+
+# live_socket <path>: something accepts connections on it.
+live_socket() { python3 -I -c 'import socket, sys; socket.socket(socket.AF_UNIX).connect(sys.argv[1])' "$1" 2>/dev/null; }
+
+# The shipped commands, in the pod's layout: nginx is the image's CMD, with its own /tmp holding the
+# fcgiwrap emptyDir; fcgiwrap is the chart's command (a YAML flow list of quoted strings is JSON).
+# Both start over stale sockets, so a restart after a crash binds cleanly.
 start_nginx() {
-  local ng="${W}/ng" port auth
+  local ng="${W}/ng" port auth fcgiwrap
   start_stub auth "${W}/port" "${W}"
   auth="$(<"${W}/port")" port="$(free_port)"
   mkdir -p "${ng}/fcgiwrap"
   : >"${ng}/resolver.conf"
-  sed -e "s|/tmp/|${ng}/|g" -e "s|/opt/git-mirror/|${HERE}/|g" -e "s|/srv/git|${SRV}|g" \
+  sed -e "s|/opt/git-mirror/|${HERE}/|g" -e "s|/srv/git|${SRV}|g" \
     -e "s|listen 8080;|listen 127.0.0.1:${port}; set_real_ip_from 127.0.0.1; real_ip_header X-Test-Client-IP;|" \
     -e "s|http://runner.rangelight-runner.svc.cluster.local:8080/|http://127.0.0.1:${auth}/|" \
     -e "s|# No checkpoint receiver yet.*|fastcgi_param RANGELIGHT_EVENTS_URL http://127.0.0.1:${auth}/events;|" \
     "${HERE}/nginx.conf" >"${ng}/nginx.conf"
   check "nginx.conf was fully rendered for the test" \
-    "! grep -qE '/srv/git|/opt/|cluster\.local|[ :]/tmp/(nginx|fcgiwrap|resolver)' '${ng}/nginx.conf' && grep -q RANGELIGHT_EVENTS_URL '${ng}/nginx.conf'"
-  ok "nginx -t accepts nginx.conf" docker run --rm "${IN_MIRROR[@]}" nginx -e stderr -p "${ng}" -c "${ng}/nginx.conf" -t
-  # nginx answers /healthz on its own: without fcgiwrap's socket, the first git request gets a 502.
-  docker run -d --name "${CONTAINER}" "${IN_MIRROR[@]}" sh -c '
-    fcgiwrap -c 16 -s "unix:$1/ng/fcgiwrap/fcgiwrap.sock" 2>>"$1/fcgiwrap.log" &
-    while [ ! -S "$1/ng/fcgiwrap/fcgiwrap.sock" ]; do sleep 0.05; done
-    exec nginx -e stderr -p "$1/ng" -c "$1/ng/nginx.conf" -g "daemon off;" >>"$1/nginx.log" 2>&1' sh "${W}" >/dev/null
+    "! grep -qE '/srv/git|/opt/|cluster\.local' '${ng}/nginx.conf' && grep -q RANGELIGHT_EVENTS_URL '${ng}/nginx.conf'"
+  ok "nginx -t accepts nginx.conf" docker run --rm -v "${ng}:/tmp" "${IN_MIRROR[@]}" nginx -e stderr -c /tmp/nginx.conf -t
+  stale_socket "${ng}/nginx-inner.sock"
+  stale_socket "${ng}/fcgiwrap/fcgiwrap.sock"
+  mapfile -d '' -t fcgiwrap < <(sed -n 's/^ *command: \(\[.*fcgiwrap.*\]\)$/\1/p' \
+    "${HERE}/../../deployments/helm/rangelight/templates/git-mirror/deployment.yaml" |
+    python3 -I -c 'import json, sys; sys.stdout.write("".join(a + "\0" for a in json.load(sys.stdin)))')
+  docker run -d --name "${CONTAINER}" -v "${ng}:/tmp" -v "${ng}/nginx.conf:/etc/git-mirror/nginx.conf:ro" \
+    "${IN_MIRROR[@]}" >/dev/null
+  docker exec -d "${CONTAINER}" "${fcgiwrap[@]}" || { docker logs "${CONTAINER}" >&2; exit 1; }
   BASE="http://127.0.0.1:${port}"
-  wait_for "curl -sf '${BASE}/healthz' >/dev/null"
+  # A request before fcgiwrap listens would get a 502.
+  wait_for "curl -sf '${BASE}/healthz' >/dev/null && live_socket '${ng}/fcgiwrap/fcgiwrap.sock'"
 }
 
 # --- fixtures -----------------------------------------------------------------------

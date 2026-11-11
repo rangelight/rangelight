@@ -95,9 +95,11 @@ spec:
               mountPath: "/tmp/fcgiwrap"
         # Each git request holds a worker for its whole transfer (a clone can take minutes), so 16
         # workers; nginx caps one identity at 4 concurrent requests, so one session can't hold them all.
+        # A socket outlives a crash on its emptyDir and only its own container binds it, so fcgiwrap here
+        # and nginx (the image's CMD) each remove theirs before they start.
         - name: "fcgiwrap"
           image: {{ .Values.gitMirror.image | quote }}
-          command: ["fcgiwrap", "-c", "16", "-s", "unix:/tmp/fcgiwrap/fcgiwrap.sock"]
+          command: ["sh", "-c", "rm -f /tmp/fcgiwrap/fcgiwrap.sock && exec fcgiwrap -c 16 -s unix:/tmp/fcgiwrap/fcgiwrap.sock"]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

@@ -21,4 +21,4 @@ USER 10001:10001
 EXPOSE 8080
 # nginx needs the resolver as an address: take the pod's first nameserver. `-e stderr`: the root
 # filesystem is read-only, so nginx's built-in error log path can't be opened before the config is read.
-CMD ["sh", "-c", "awk '/^nameserver/ { ip = $2; if (ip ~ /:/) ip = \"[\" ip \"]\"; print \"resolver \" ip \" valid=30s;\"; exit }' /etc/resolv.conf >/tmp/resolver.conf && exec nginx -e stderr -c /etc/git-mirror/nginx.conf -g 'daemon off;'"]
+CMD ["sh", "-c", "awk '/^nameserver/ { ip = $2; if (ip ~ /:/) ip = \"[\" ip \"]\"; print \"resolver \" ip \" valid=30s;\"; exit }' /etc/resolv.conf >/tmp/resolver.conf && rm -f /tmp/nginx-inner.sock && exec nginx -e stderr -c /etc/git-mirror/nginx.conf -g 'daemon off;'"]

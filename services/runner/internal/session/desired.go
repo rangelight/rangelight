@@ -174,7 +174,7 @@ func (d *desired) applyHot(ctx context.Context, want *runnerv1.SessionDesired, g
 	spec, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&Spec{
 		ID: want.GetSessionId(), Repo: worktrees[0].GetMirrorRepo(), BaseRef: worktrees[0].GetBaseRef(),
 		Member: want.GetMember(), Generation: generation,
-		Ticket: Ticket{Key: ticket.GetKey(), Title: ticket.GetTitle(), Description: ticket.GetDescription(), Criteria: ticket.GetCriteria()},
+		Ticket: Ticket{Key: ticket.GetKey(), Title: ticket.GetTitle(), Description: ticket.GetDescription(), Criteria: ticket.GetCriteria(), URL: ticket.GetUrl()},
 	})
 	if err != nil {
 		return fmt.Errorf("session %s: %w", want.GetSessionId(), err)

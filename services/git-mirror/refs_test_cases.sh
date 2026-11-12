@@ -41,7 +41,10 @@ t8_t9_hook_fails_closed_on_its_own() {
   sed -i 's/^MAX_KIB=.*/MAX_KIB=1/' "${copy}/hooks/pre-receive"
   # shellcheck disable=SC2317,SC2329 # called through `refused` (SC2317 in shellcheck < 0.11, SC2329 after)
   hook() { (cd "${srv}/sessions/a.git" && env -u REMOTE_USER GIT_DIR=. GIT_PROJECT_ROOT="${srv}" "$@"); }
-  line="${ZERO} 1111111111111111111111111111111111111111 refs/rangelight/sessions/a/cp/1"
+  # A real commit (of the empty tree): the hook reads what a push brings.
+  local empty big
+  empty="$(git -C "${srv}/sessions/a.git" commit-tree "$(git -C "${srv}/sessions/a.git" hash-object -w -t tree /dev/null)" -m empty)"
+  line="${ZERO} ${empty} refs/rangelight/sessions/a/cp/1"
   ok "hook: session-a may create its own checkpoint" hook REMOTE_USER=session-a "${HERE}/hooks/pre-receive" <<<"${line}"
   refused "hook: no REMOTE_USER" "${NO_ID}" hook "${HERE}/hooks/pre-receive" <<<"${line}"
   refused "hook: empty REMOTE_USER" "${NO_ID}" hook REMOTE_USER= "${HERE}/hooks/pre-receive" <<<"${line}"
@@ -61,6 +64,13 @@ t8_t9_hook_fails_closed_on_its_own() {
   ok "hook: up to the ref cap" hook REMOTE_USER=session-a "${copy}/hooks/pre-receive" <<<"${line}"
   refused "hook: over the ref cap" "rangelight: the session repo would exceed 1 refs" \
     hook REMOTE_USER=session-a "${copy}/hooks/pre-receive" <<<"${line}"$'\n'"${line/cp\/1/cp\/2}"
+  # RAN-55: a file over the blob cap (here 10 bytes) is refused; GitHub would refuse it on publish.
+  sed -i -e 's/^MAX_REFS=.*/MAX_REFS=10000/' -e 's/^MAX_BLOB=.*/MAX_BLOB=10/' "${copy}/hooks/pre-receive"
+  ok "hook: files up to the blob cap" hook REMOTE_USER=session-a "${copy}/hooks/pre-receive" <<<"${line}"
+  big="$(cd "${srv}/sessions/a.git" && printf 'more than ten bytes' | git hash-object -w --stdin)"
+  big="$(cd "${srv}/sessions/a.git" && printf '100644 blob %s\tbig\n' "${big}" | git mktree | xargs -I{} git commit-tree {} -m big)"
+  refused "hook: a file over the blob cap" "rangelight: a file over 0 MiB" \
+    hook REMOTE_USER=session-a "${copy}/hooks/pre-receive" <<<"${ZERO} ${big} refs/heads/rangelight/a/work"
   chmod -x "${copy}/hooks/pre-receive"
   ok "backend.sh runs on its own" env REMOTE_USER=session-a GIT_PROJECT_ROOT="${srv}" PATH_INFO=/demo.git/info/refs \
     QUERY_STRING=service=git-upload-pack "${copy}/backend.sh"
@@ -86,6 +96,15 @@ t8_t9_ac1_session_pushes_into_its_own_repo() {
     "[[ -z \$(git -C '${SRV}/demo.git' for-each-ref refs/rangelight refs/heads/rangelight) ]] && ! git -C '${SRV}/demo.git' cat-file -e ${SECRET} 2>/dev/null"
   check "post-receive reports the checkpoint" \
     "grep -qF '\"session\":\"a\",\"checkpoint\":1,\"commit\":\"${SECRET}\"' '${W}/events'"
+  check "a push without the session's Authorization header tells the runner nothing" "[[ ! -e '${W}/pushed' ]]"
+  # RAN-55: a work-branch push reaches the runner with the pushing session's own token (Basic password "a").
+  local work token
+  work="$(git -C "${W}/a" commit-tree 'HEAD^{tree}' -p HEAD -m work)" token="Basic $(printf 'x:a' | base64)"
+  ok "RAN-55: session-a pushes its work branch and another branch, with its token" \
+    as - -c "http.extraHeader=Authorization: ${token}" -C "${W}/a" push -q "${SELF}" \
+    "${work}:refs/heads/rangelight/a/work" "${work}:refs/heads/rangelight/a/other" "${work}:refs/rangelight/sessions/a/cp/3"
+  check "RAN-55: post-receive POSTs the work branch only, with the session's own Authorization header" \
+    "[[ \$(<'${W}/pushed') == '${token} {\"session\":\"a\",\"ref\":\"refs/heads/rangelight/a/work\",\"commit\":\"${work}\"}' ]]"
   ok "session-b pushes its own checkpoint" as b -C "${W}/b" push -q "${SELF}" HEAD:refs/rangelight/sessions/b/cp/1
   git init -q --bare "${SRV}/other.git"
   refused "a session repo stays bound to the repo it started from" "rangelight: this session belongs to another repo" \
@@ -268,4 +287,51 @@ test_limits_hold_back_one_identity_and_one_address() {
   after="$(wc -l <"${W}/auth-calls")" denied="$(grep -cx 401 "${TMP}/out" || true)"
   check "limits: an unauthenticated flood from one address gets 429" "grep -qx 429 '${TMP}/out'"
   check "limits: only the requests let through reached /auth/git (${denied} of 120)" "(( ${after} - ${before} == ${denied} && ${denied} < 120 ))"
+}
+
+# RAN-55: publish.sh, the runner's publish Job, copies one session's work branch and nothing else from
+# /sessions/<id>.git (as the runner) to its upstream. Through nginx it runs in the mirror's image, as the Job does.
+test_publish_copies_only_the_work_branch() {
+  local id=019a5e1c-0000-7000-8000-000000000055 none=019a5e1c-0000-7000-8000-000000000056
+  local up="${W}/publish-up.git" stuck="${W}/publish-stuck.git" repo="${SRV}/sessions/${id}.git" work
+  printf 'r\n' >"${W}/mirror-token" # the runner, to the stub /auth/git
+  printf 'ghs_test\n' >"${W}/github-token"
+  git init -q --bare "${up}"
+  git init -q --bare "${repo}"
+  work="$(git -C "${W}/a" commit-tree 'HEAD^{tree}' -p HEAD -m publish)"
+  git -C "${W}/a" push -q "${repo}" "${work}:refs/heads/rangelight/${id}/work" "${work}:refs/heads/rangelight/${id}/other" \
+    "${work}:refs/heads/main"
+  ok "publish.sh publishes the work branch" publish "${id}" "file://${up}"
+  check "only the work branch reaches upstream, at the pushed commit" \
+    "[[ \$(git --git-dir '${up}' for-each-ref --format='%(refname) %(objectname)') == 'refs/heads/rangelight/${id}/work ${work}' ]]"
+  check "the termination log says what was published" "[[ \$(<'${W}/termination-log') == 'published ${work}' ]]"
+  # A session repo without a work branch: nothing to publish. No session repo at all (a 404): a failure.
+  git init -q --bare "${SRV}/sessions/${none}.git"
+  git -C "${W}/a" push -q "${SRV}/sessions/${none}.git" "${work}:refs/heads/rangelight/${none}/other"
+  ok "a session without a work branch publishes nothing" publish "${none}" "file://${up}"
+  check "the termination log says so" "[[ \$(<'${W}/termination-log') == 'nothing to publish' ]]"
+  refused "a mirror that has no repo for the session is a failure, not nothing" "fetching the work branch from the mirror failed" \
+    publish 019a5e1c-0000-7000-8000-000000000057 "file://${up}"
+  # An upstream that refuses a workflow change the way GitHub does: exit 3, which the Job never retries.
+  git init -q --bare "${stuck}"
+  # shellcheck disable=SC2016 # GitHub's message, backticks and all
+  printf '#!/bin/sh\necho "refusing to allow a GitHub App to create or update workflow \\`.github/workflows/ci.yaml\\` without \\`workflows\\` permission" >&2\nexit 1\n' \
+    >"${stuck}/hooks/pre-receive"
+  chmod +x "${stuck}/hooks/pre-receive"
+  local code=0
+  publish "${id}" "file://${stuck}" >"${TMP}/out" 2>&1 || code=$?
+  check "a workflow change GitHub refuses exits 3" "[[ ${code} -eq 3 ]]"
+  check "and says why" "grep -qF 'changes .github/workflows' '${W}/termination-log'"
+  refused "publish.sh refuses a session id that isn't one" "usage: publish.sh" publish "../x" "file://${up}"
+}
+
+# publish <id> <upstream>: publish.sh against this mode's mirror, with the test's two token files.
+publish() {
+  local env=(RANGELIGHT_MIRROR_TOKEN_FILE="${W}/mirror-token" RANGELIGHT_GITHUB_TOKEN_FILE="${W}/github-token"
+    RANGELIGHT_TERMINATION_LOG="${W}/termination-log" GIT_ALLOW_PROTOCOL=file:http)
+  if [[ "${MODE}" == nginx ]]; then
+    docker run --rm "${env[@]/#/--env=}" "${IN_MIRROR[@]}" "${HERE}/publish.sh" "$1" "${BASE}" "$2"
+  else
+    env "${env[@]}" "${HERE}/publish.sh" "$1" "${BASE}" "$2"
+  fi
 }

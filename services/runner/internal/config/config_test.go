@@ -25,6 +25,7 @@ func TestLoadLayers(t *testing.T) {
 		DNSNamespace: "kube-system", DNSPodLabel: "k8s-app=coredns",
 		NATSURL: "nats://rangelight-nats.rangelight-system.svc:4222", NATSTokenFile: "/var/run/secrets/rangelight/nats/token",
 		Org: "default", RunnerID: "default",
+		GitHubAPIURL: "https://api.github.com",
 	}
 	if c != want {
 		t.Errorf("got %+v, want %+v", c, want)
@@ -45,7 +46,42 @@ func TestLoadWithoutMountedFile(t *testing.T) {
 	}
 }
 
+func TestGitHubApp(t *testing.T) {
+	c, err := load(filepath.Join(t.TempDir(), "absent.toml"), []string{"RANGELIGHT_RUNNER_AGENT_IMAGE=" + image})
+	if _, _, on := c.GitHubApp(); err != nil || on || len(c.UpstreamURLs()) != 0 {
+		t.Fatalf("publishing is on by default: %v", err)
+	}
+	c, err = load(filepath.Join(t.TempDir(), "absent.toml"), []string{
+		"RANGELIGHT_RUNNER_AGENT_IMAGE=" + image, "RANGELIGHT_RUNNER_GITHUB_API_URL=https://github.test/", "RANGELIGHT_RUNNER_PUBLISH_IMAGE=" + image,
+		"RANGELIGHT_RUNNER_GITHUB_APP_ID=secret://rangelight-github-app#app-id",
+		"RANGELIGHT_RUNNER_GITHUB_APP_PRIVATE_KEY=secret://rangelight-github-app#private-key",
+		"RANGELIGHT_RUNNER_UPSTREAMS=demo=https://github.com/acme/demo.git web=https://github.com/acme/web",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, key, on := c.GitHubApp()
+	if !on || id != "/var/run/rangelight/secrets/rangelight-github-app/app-id" ||
+		key != "/var/run/rangelight/secrets/rangelight-github-app/private-key" || c.GitHubAPIURL != "https://github.test" || c.PublishImage != image {
+		t.Errorf("%q %q %v %q", id, key, on, c.GitHubAPIURL)
+	}
+	if u := c.UpstreamURLs(); len(u) != 2 || u["demo"] != "https://github.com/acme/demo.git" || u["web"] != "https://github.com/acme/web" {
+		t.Errorf("upstreams %v", u)
+	}
+}
+
+// A test's fake GitHub may be plain http, on loopback only.
+func TestGitHubAPIOverHTTPOnLoopback(t *testing.T) {
+	for _, u := range []string{"http://127.0.0.1:8080", "http://[::1]:8080", "http://localhost:8080"} {
+		if _, err := load(filepath.Join(t.TempDir(), "absent.toml"), []string{"RANGELIGHT_RUNNER_AGENT_IMAGE=" + image, "RANGELIGHT_RUNNER_GITHUB_API_URL=" + u}); err != nil {
+			t.Errorf("%s: %v", u, err)
+		}
+	}
+}
+
 func TestLoadRefuses(t *testing.T) {
+	// An env of several variables is one per line.
+	const app = "RANGELIGHT_RUNNER_GITHUB_APP_ID=secret://gh#app-id\nRANGELIGHT_RUNNER_GITHUB_APP_PRIVATE_KEY=secret://gh#private-key"
 	tests := []struct{ name, file, env, want string }{
 		{"no agent image", "", "RANGELIGHT_RUNNER_AGENT_IMAGE=", "agent_image"},
 		{"an image without a digest", "", "RANGELIGHT_RUNNER_AGENT_IMAGE=ghcr.io/rangelight/agent:1", "agent_image"},
@@ -77,6 +113,16 @@ func TestLoadRefuses(t *testing.T) {
 		{"an org that widens a subject", "", "RANGELIGHT_RUNNER_ORG=a.>", "org"},
 		{"an empty runner id", "", "RANGELIGHT_RUNNER_RUNNER_ID=", "runner_id"},
 		{"a runner id with a space", "", "RANGELIGHT_RUNNER_RUNNER_ID=a b", "runner_id"},
+		{"only the App's id", "", "RANGELIGHT_RUNNER_GITHUB_APP_ID=secret://gh#app-id", "github_app_id"},
+		{"an App key that isn't a reference", "", "RANGELIGHT_RUNNER_GITHUB_APP_ID=secret://gh#app-id\nRANGELIGHT_RUNNER_GITHUB_APP_PRIVATE_KEY=/etc/key", "github_app_id"},
+		{"the App without upstreams", "", app, "upstreams"},
+		{"the App without the publish image", "", app + "\nRANGELIGHT_RUNNER_UPSTREAMS=demo=https://github.com/acme/demo.git", "publish_image"},
+		{"a GitHub API URL over http", "", "RANGELIGHT_RUNNER_GITHUB_API_URL=http://api.github.com", "github_api_url"},
+		{"an upstream that isn't https", "", "RANGELIGHT_RUNNER_UPSTREAMS=demo=http://github.com/acme/demo.git", "upstreams"},
+		{"an upstream with credentials", "", "RANGELIGHT_RUNNER_UPSTREAMS=demo=https://x:y@github.com/acme/demo.git", "upstreams"},
+		{"an upstream that isn't owner/repo", "", "RANGELIGHT_RUNNER_UPSTREAMS=demo=https://github.com/acme", "upstreams"},
+		{"an upstream without a name", "", "RANGELIGHT_RUNNER_UPSTREAMS=https://github.com/acme/demo.git", "upstreams"},
+		{"a GitHub API URL with a query", "", "RANGELIGHT_RUNNER_GITHUB_API_URL=https://api.github.com/?x=1", "github_api_url"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -84,7 +130,7 @@ func TestLoadRefuses(t *testing.T) {
 			if err := os.WriteFile(file, []byte(tt.file), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			env := []string{"RANGELIGHT_RUNNER_AGENT_IMAGE=" + image, tt.env}
+			env := append([]string{"RANGELIGHT_RUNNER_AGENT_IMAGE=" + image}, strings.Split(tt.env, "\n")...)
 			if _, err := load(file, env); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("error %v, want one naming %q", err, tt.want)
 			}

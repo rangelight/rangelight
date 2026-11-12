@@ -60,6 +60,16 @@ func TestAdmissionPolicyConfinesTheRunner(t *testing.T) {
 		{"a namespace not named rl-", func() error { return asRunner.Create(ctx, namespace("evil", lane)) }},
 		{"an rl- namespace without the lane label", func() error { return asRunner.Create(ctx, namespace("rl-unlabelled", nil)) }},
 		{"deleting a namespace that isn't a lane", func() error { return asRunner.Delete(ctx, namespace("victim", nil)) }},
+		{"deleting a Job of its namespace that isn't a publish Job", func() error {
+			job := newPublishJob(&Session{ObjectMeta: metav1.ObjectMeta{Namespace: runnerNS}, Spec: Spec{ID: "019a5e1c-0000-7000-8000-00000000aaaa"},
+				Status: Status{Pushes: 1}}, options, "file:///x")
+			job.Name, job.Labels = "nats-keys", map[string]string{"app.kubernetes.io/component": "nats"}
+			job.Spec.Template.Labels = job.Labels
+			if err := k8s.Create(ctx, job); client.IgnoreAlreadyExists(err) != nil {
+				return err
+			}
+			return asRunner.Delete(ctx, job)
+		}},
 	}
 	for _, tt := range denied {
 		t.Run("denied: "+tt.name, func(t *testing.T) { refusedByThePolicy(t, tt.write) })

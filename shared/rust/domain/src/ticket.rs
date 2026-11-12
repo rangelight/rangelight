@@ -74,9 +74,9 @@ impl Ticket {
     /// The ticket with its page in the tracker, which the Workbench links to.
     ///
     /// # Errors
-    /// [`DomainError::InvalidTicket`] when `url` isn't `https://<host>` (see [`https_url`]).
+    /// [`DomainError::InvalidTicket`] when `url` isn't a Linear page (see [`linear_url`]).
     pub fn with_url(self, url: String) -> Result<Ticket, DomainError> {
-        if !https_url(&url) {
+        if !linear_url(&url) {
             return Err(DomainError::InvalidTicket("url"));
         }
         Ok(Ticket { url, ..self })
@@ -126,19 +126,13 @@ impl Ticket {
     }
 }
 
-/// `https://` with a host (letters, digits, `-`, `.`, an optional `:port`; no userinfo) that has a
-/// letter or digit before any `:`, at most 2048 bytes, with no whitespace or control characters.
-fn https_url(url: &str) -> bool {
-    let Some(rest) = url.strip_prefix("https://") else {
-        return false;
-    };
-    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
-    let name = host.split(':').next().unwrap_or_default();
+/// A page on `https://linear.app/`, at most 2048 bytes, with no whitespace or control characters:
+/// the ticket schema's `url` rule, so the runner's Session never refuses it.
+fn linear_url(url: &str) -> bool {
     url.len() <= 2048
-        && name.bytes().any(|b| b.is_ascii_alphanumeric())
-        && host
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b':'))
+        && url
+            .strip_prefix("https://linear.app/")
+            .is_some_and(|path| !path.is_empty())
         && !url.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 

@@ -91,6 +91,11 @@ spec:
                         type: "string"
                         minLength: 1
                         maxLength: 2000
+                    url:
+                      description: "The ticket's page in Linear, which the session's pull request links."
+                      type: "string"
+                      maxLength: 2048
+                      pattern: "^https://linear\\.app/[^\\s]+$"
                 repo:
                   description: "The git mirror's name for the repo, served at /<repo>.git."
                   type: "string"
@@ -140,3 +145,29 @@ spec:
                   description: "The message_id of the SessionStatus that reports this phase (a UUIDv7)."
                   type: "string"
                   pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                workCommit:
+                  description: "The commit the session last pushed to its work branch, as the git mirror reported it."
+                  type: "string"
+                  pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                publishedCommit:
+                  description: "The workCommit whose branch was last published upstream; a publish is due while they differ."
+                  type: "string"
+                  pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                pullRequestUrl:
+                  description: "The open pull request of the session's work branch."
+                  type: "string"
+                  maxLength: 2048
+                pushes:
+                  description: "How many work-branch pushes the git mirror reported; each gets its own publish Job."
+                  type: "integer"
+                  format: "int64"
+                  minimum: 0
+                publishedPush:
+                  description: "The pushes count whose publish ended; a publish is due while it differs from pushes."
+                  type: "integer"
+                  format: "int64"
+                  minimum: 0
+                publishMessage:
+                  description: "Why the last push isn't published: retrying, or given up until the next push."
+                  type: "string"
+                  maxLength: 2000

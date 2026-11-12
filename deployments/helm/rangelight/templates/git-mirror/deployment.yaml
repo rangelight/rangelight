@@ -63,6 +63,10 @@ spec:
         # The image's CMD: nginx, after writing the pod's nameserver to /tmp/resolver.conf.
         - name: "nginx"
           image: {{ .Values.gitMirror.image | quote }}
+          env:
+            # Where nginx asks the runner about every request, and the hooks report pushes.
+            - name: "RANGELIGHT_RUNNER_NAMESPACE"
+              value: {{ .Values.runner.namespace | quote }}
           ports:
             - name: "http"
               containerPort: 8080

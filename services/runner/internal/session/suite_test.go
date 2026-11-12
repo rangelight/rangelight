@@ -66,6 +66,8 @@ var (
 	mirror    *testMirror
 	options   Options
 	broker    *testNATS
+	gh        *testGitHub
+	theRunner *Reconciler // the runner's, for the tests that play a restart
 )
 
 func TestMain(m *testing.M) {
@@ -125,6 +127,7 @@ func run(m *testing.M) (int, error) {
 	if err := startRunner(ctx, cfg); err != nil {
 		return 1, err
 	}
+	defer gh.Close()
 	return m.Run(), nil
 }
 
@@ -199,8 +202,16 @@ func startRunner(ctx context.Context, cfg *rest.Config) error {
 		AgentImage: testImage, MirrorURL: mirror.URL, MirrorTokenFile: token, Workers: 4,
 		DNS:       DNS{Namespace: "kube-system", LabelKey: "k8s-app", LabelValue: "coredns"},
 		Workspace: resource.MustParse("10Gi"), Tmp: resource.MustParse("1Gi"), EphemeralStorage: resource.MustParse("12Gi"),
+		Upstreams:    map[string]string{publishedRepo: "file://" + upstreamDir()},
+		PublishImage: "ghcr.io/rangelight/git-mirror:test@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+	}
+	if out, err := exec.Command("git", "init", "-q", "--bare", upstreamDir()).CombinedOutput(); err != nil { //nolint:gosec // the tests' own git calls
+		return fmt.Errorf("upstream: %w: %s", err, out)
 	}
 	var err error
+	if gh, options.GitHub, err = newTestGitHub(mirror.Root); err != nil {
+		return fmt.Errorf("github: %w", err)
+	}
 	if mgr, err = NewManager(runnerConfig(cfg), runnerNS); err != nil {
 		return err
 	}
@@ -213,6 +224,7 @@ func startRunner(ctx context.Context, cfg *rest.Config) error {
 		return err
 	}
 	r := &Reconciler{Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Report: report, Options: options}
+	theRunner = r
 	if err := r.SetupWithManager(mgr); err != nil {
 		return err
 	}

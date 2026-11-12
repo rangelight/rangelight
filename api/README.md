@@ -137,6 +137,5 @@ frozen (ADR 0027). Receipt predicate versions are never removed, so receipts ver
   included), and the terminal protocol (`terminal.v1alpha1`). Both are behind the same sign-in
   as every RPC. `buf generate` also writes the TypeScript protobuf code (protoc-gen-es) into
   `shared/ts/gen/proto/`.
-- **v1alpha1** (RAN-56, additive): `SessionStatus` gains `pull_request_url` (the lane's PR on
-  GitHub); `PhaseChanged` gains `pull_request_url` (on the report that first names the session's
-  PR) and `Session` gains `pull_request_url`.
+- **v1alpha1** (RAN-55, additive): `Ticket` gains `url` (the ticket's page, which the PR body links). The
+  ticket schema gains the optional `url`, which the lane's `ticket.json` leaves out.

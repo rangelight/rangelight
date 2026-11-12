@@ -362,6 +362,15 @@ runner:
     limits:
       memory: "512Mi"
 
+# The GitHub App that publishes each session's work branch (ADR 0011, ADR 0040 §3): the runner pushes
+# rangelight/<session id>/work to the repo's gitMirror.repos upstream and opens its pull request. The README's
+# "Publishing to GitHub" says how to create it.
+githubApp:
+  # The Secret in runner.namespace, which you create, holding the App's id (key app-id) and its private key (key
+  # private-key). Empty: nothing is published, and lanes work as before.
+  secretRef:
+    name: ""
+
 # Linear, where the api takes tickets from (ADR 0047).
 linear:
   # The team whose issues labelled "rangelight" become sessions, by its key (for example RAN). Required when

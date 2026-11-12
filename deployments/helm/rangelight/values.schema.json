@@ -3,7 +3,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "publicUrl", "clusterDns", "clusterCidrs", "ingress", "oidc", "tls", "dex", "postgres", "nats", "gitMirror", "runner", "linear", "api",
+    "publicUrl", "clusterDns", "clusterCidrs", "ingress", "oidc", "tls", "dex", "postgres", "nats", "gitMirror", "runner", "githubApp", "linear", "api",
     "relay", "web"
   ],
   "properties": {
@@ -285,6 +285,21 @@
       },
       "if": { "properties": { "enabled": { "const": true } } },
       "then": { "properties": { "image": { "$ref": "#/$defs/pinnedImage" }, "repos": { "minItems": 1 } } }
+    },
+    "githubApp": {
+      "description": "The GitHub App that publishes each session's work branch.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["secretRef"],
+      "properties": {
+        "secretRef": {
+          "description": "The Secret in runner.namespace with the keys app-id and private-key; empty: publishing is off.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": { "name": { "anyOf": [{ "const": "" }, { "$ref": "#/$defs/dnsName" }] } }
+        }
+      }
     },
     "linear": {
       "description": "The Linear team the api takes tickets from, and its API key.",

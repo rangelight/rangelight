@@ -15,7 +15,7 @@ fn ticket(key: &str) -> Result<Ticket, DomainError> {
 }
 
 #[test]
-fn ticket_url_must_be_https_with_a_host_and_bounded() {
+fn ticket_url_must_be_a_linear_page_and_bounded() {
     let with_url = |url: String| ticket("RAN-1").unwrap().with_url(url);
     for url in [
         String::new(),
@@ -28,7 +28,11 @@ fn ticket_url_must_be_https_with_a_host_and_bounded() {
         "https://:443/x".into(),
         "https://user@evil.example/".into(),
         "https://linear.app/x y".into(),
-        format!("https://{}", "a".repeat(2041)),
+        "https://linear.app/".into(),
+        "https://evil.example/issue/RAN-1".into(),
+        "https://linear.app.evil.example/x".into(),
+        "https://linear.app:8443/x".into(),
+        format!("https://linear.app/{}", "a".repeat(2030)),
     ] {
         assert_eq!(
             with_url(url.clone()),

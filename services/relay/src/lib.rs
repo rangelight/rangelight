@@ -187,6 +187,7 @@ impl Relay {
                 title: event.title.clone(),
                 description: event.description.clone(),
                 criteria: event.criteria.clone(),
+                url: event.ticket_url.clone(),
                 ..Default::default()
             }
             .into(),

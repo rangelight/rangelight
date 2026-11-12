@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/rangelight/rangelight/services/runner/internal/config"
+	"github.com/rangelight/rangelight/services/runner/internal/github"
 	"github.com/rangelight/rangelight/services/runner/internal/session"
 )
 
@@ -46,20 +47,25 @@ func run() error {
 	}
 	workspace, tmp, ephemeral := cfg.Quantities()
 	dnsKey, dnsValue := cfg.DNSLabel()
+	var app *github.App // nil: publishing is off
+	if idFile, keyFile, on := cfg.GitHubApp(); on {
+		app = &github.App{API: cfg.GitHubAPIURL, IDFile: idFile, KeyFile: keyFile}
+	}
 	r := &session.Reconciler{Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Report: report, Options: session.Options{
 		AgentImage: cfg.AgentImage, MirrorURL: cfg.MirrorURL, MirrorTokenFile: cfg.MirrorTokenFile,
 		Workspace: workspace, Tmp: tmp, EphemeralStorage: ephemeral, Workers: cfg.Workers,
-		DNS: session.DNS{Namespace: cfg.DNSNamespace, LabelKey: dnsKey, LabelValue: dnsValue},
+		DNS:    session.DNS{Namespace: cfg.DNSNamespace, LabelKey: dnsKey, LabelValue: dnsValue},
+		GitHub: app, Upstreams: cfg.UpstreamURLs(), PublishImage: cfg.PublishImage,
 	}}
 	if err := r.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("session: %w", err)
 	}
-	srv := session.NewServer(cfg.Listen, &session.GitAuth{Client: mgr.GetClient(), Cache: mgr.GetCache(), Namespace: cfg.Namespace})
+	srv := session.NewServer(cfg.Listen, &session.GitAuth{Client: mgr.GetClient(), Cache: mgr.GetCache(), Reader: mgr.GetAPIReader(), Namespace: cfg.Namespace})
 	drain := 10 * time.Second
 	if err := mgr.Add(&manager.Server{Name: "http", Server: srv, ShutdownTimeout: &drain}); err != nil {
 		return fmt.Errorf("http: %w", err)
 	}
-	slog.Info("runner starting", "namespace", cfg.Namespace, "listen", cfg.Listen, "runner_id", cfg.RunnerID)
+	slog.Info("runner starting", "namespace", cfg.Namespace, "listen", cfg.Listen, "runner_id", cfg.RunnerID, "publishing", app != nil)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		return fmt.Errorf("manager: %w", err)
 	}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- The oldest unsent events, with what the relay needs to publish them: the event, and its\n-- session's ticket and workspace. A session with a failed row publishes nothing more, so its\n-- events never go out of order.\nSELECT o.id AS outbox_id, e.id AS event_id, e.session_id, e.seq, e.payload, e.at, s.namespace,\n  s.ticket_key, s.title, s.description, s.criteria, s.repo, s.base_ref, s.member\nFROM outbox o\nJOIN events e ON e.id = o.event_id\nJOIN sessions s ON s.id = e.session_id\nWHERE o.sent_at IS NULL\n  AND NOT EXISTS (\n    SELECT 1 FROM outbox f JOIN events fe ON fe.id = f.event_id\n    WHERE f.failed_at IS NOT NULL AND fe.session_id = e.session_id\n  )\nORDER BY o.id\nLIMIT $1\n",
+  "query": "-- Each session's last published desired state (its newest sent created or state_changed event),\n-- with what the relay needs to publish it again: what it puts back into an empty desired stream.\nSELECT DISTINCT ON (e.session_id) o.id AS outbox_id, e.id AS event_id, e.session_id, e.seq,\n  e.payload, e.at, s.namespace, s.ticket_key, s.title, s.description, s.criteria,\n  s.ticket_url, s.repo, s.base_ref, s.member\nFROM outbox o\nJOIN events e ON e.id = o.event_id\nJOIN sessions s ON s.id = e.session_id\nWHERE o.sent_at IS NOT NULL\n  AND e.type IN ('session.created', 'session.state_changed')\nORDER BY e.session_id, e.seq DESC\n",
   "describe": {
     "columns": [
       {
@@ -126,6 +126,17 @@
       },
       {
         "ordinal": 11,
+        "name": "ticket_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "ticket_url"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
         "name": "repo",
         "type_info": "Text",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "base_ref",
         "type_info": "Text",
         "origin": {
@@ -147,7 +158,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "member",
         "type_info": "Text",
         "origin": {
@@ -159,11 +170,10 @@
       }
     ],
     "parameters": {
-      "Left": [
-        "Int8"
-      ]
+      "Left": []
     },
     "nullable": [
+      false,
       false,
       false,
       false,
@@ -180,5 +190,5 @@
       false
     ]
   },
-  "hash": "e69a2a2e1b9645449278fe71f4fc8fffef606c9a0a4a436b4f66f271633e6e22"
+  "hash": "ac070d70b7a1a7b20752f7869ef790b9c36815621a346a27d844f940708fcb4c"
 }

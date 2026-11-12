@@ -204,7 +204,8 @@ impl Linear {
             node.title,
             node.description.unwrap_or_default(),
         )
-        .and_then(|ticket| ticket.with_url(node.url));
+        // A URL that isn't a Linear page drops the link, never the ticket.
+        .map(|ticket| ticket.clone().with_url(node.url).unwrap_or(ticket));
         if let Err(error) = &ticket
             && self
                 .warned

@@ -68,6 +68,9 @@ test_runner_admission_policy_confines_the_runner() {
   expect_line '  validationActions: ["Deny"]'
   expect_line "      expression: \"request.userInfo.username == 'system:serviceaccount:rl-runner-test:runner'\""
   grep -qF -e "request.namespace == 'rl-runner-test'" <<<"${OUT}" || fail "Sessions are not confined to runner.namespace"
+  # RAN-55: the only Jobs the runner may delete are its own publish Jobs.
+  expect_line '      message: "the runner deletes only its own publish Jobs"'
+  grep -qF -e "oldObject.metadata.labels['app.kubernetes.io/component'] == 'publish'" <<<"${OUT}" || fail "Job deletes aren't confined to publish Jobs"
 }
 
 # Least privilege: exactly these rules, and nothing on Secrets, exec, ServiceAccounts or RBAC.
@@ -84,9 +87,13 @@ ClusterRole networking.k8s.io networkpolicies  get list watch create update
 ClusterRole cilium.io ciliumnetworkpolicies  get list watch create update
 ClusterRole authentication.k8s.io tokenreviews  create
 Role rangelight.dev sessions  get list watch create patch update delete
-Role rangelight.dev sessions/status  patch" ]] || fail "RBAC rules changed:
+Role rangelight.dev sessions/status  patch
+Role batch jobs  get list watch create patch delete
+Role  secrets  create get" ]] || fail "RBAC rules changed:
 ${rules}"
-  expect_no_match 'secrets|pods/exec|serviceaccounts|"\*"|escalate|bind|impersonate'
+  expect_no_match 'pods/exec|serviceaccounts|"\*"|escalate|bind|impersonate'
+  # Secrets only in the runner's own Role, create and get (the publish token).
+  [[ "$(grep -c '"secrets"' <<<"${OUT}")" -eq 1 ]] || fail "secrets outside the Role's one create rule"
 }
 
 test_runner_is_reachable_only_from_the_git_mirror() {
@@ -125,6 +132,34 @@ test_refuses_a_runner_without_pinned_images() {
   expect_refused "/runner/image"
   render "${RUNNER[@]}" --set runner.workers=0
   expect_refused "/runner/workers"
+}
+
+# RAN-55: publishing is off without githubApp.secretRef, and the runner mounts nothing more than before.
+test_runner_publishes_nothing_without_the_github_app() {
+  render "${RUNNER[@]}" --show-only templates/runner/deployment.yaml
+  expect_ok
+  expect_no_match 'GITHUB|UPSTREAMS|PUBLISH|/var/run/rangelight/secrets|secret:'
+}
+
+# RAN-55: with it, the App's two keys are files where secret://<name>#<key> resolves, never environment values,
+# and the upstreams are gitMirror.repos'.
+test_runner_mounts_the_github_app_and_names_the_upstreams() {
+  local files
+  render "${RUNNER[@]}" --show-only templates/runner/deployment.yaml --set githubApp.secretRef.name=rangelight-github-app \
+    --set 'gitMirror.repos[0].name=demo' --set 'gitMirror.repos[0].upstream=https://github.com/acme/demo.git' \
+    --set 'gitMirror.repos[1].name=web' --set 'gitMirror.repos[1].upstream=https://github.com/acme/web.git' \
+    --set "gitMirror.image=ghcr.io/rangelight/git-mirror:test@sha256:$(printf '1%.0s' {1..64})"
+  expect_ok
+  expect_line '              value: "secret://rangelight-github-app#app-id"'
+  expect_line '              value: "secret://rangelight-github-app#private-key"'
+  expect_line '              value: "demo=https://github.com/acme/demo.git web=https://github.com/acme/web.git"'
+  expect_line '              value: "ghcr.io/rangelight/git-mirror:test@sha256:'"$(printf '1%.0s' {1..64})"'"'
+  expect_line '              mountPath: "/var/run/rangelight/secrets"'
+  files="$(grep -E '^ +path: "[^/]+/[^/]+"$' <<<"${OUT}" | tr -d ' "' | sed 's/^path://' | paste -sd' ')"
+  [[ "${files}" == "rangelight-github-app/app-id rangelight-github-app/private-key" ]] || fail "the runner mounts: ${files}"
+  expect_no_match 'secretKeyRef|optional:'
+  render "${RUNNER[@]}" --set githubApp.secretRef.name=Not_A_Name
+  expect_refused "/githubApp/secretRef/name"
 }
 
 # A template, not crds/: Helm applies crds/ on first install only, so an upgrade would never deliver the CRD.

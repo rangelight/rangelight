@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -55,7 +56,8 @@ func (p *status) report(s *Session) {
 		p.pending[id] = &runnerv1.Envelope{
 			MessageId: s.Status.PhaseID, ProtocolVersion: protocolVersion, RunnerId: p.runner,
 			Body: &runnerv1.Envelope_Status{Status: &runnerv1.SessionStatus{
-				SessionId: id, ObservedGeneration: uint64(max(0, s.Spec.Generation)), Phase: phase, Message: s.Status.Message,
+				SessionId: id, ObservedGeneration: uint64(max(0, s.Spec.Generation)), Phase: phase, Message: strings.TrimSpace(s.Status.Message + " " + s.Status.PublishMessage),
+				PullRequestUrl: s.Status.PullRequestURL,
 			}},
 		}
 	}

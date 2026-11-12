@@ -82,6 +82,16 @@ rules:
   - apiGroups: ["rangelight.dev"]
     resources: ["sessions/status"]
     verbs: ["patch"]
+  # Publishing (githubApp): one Job per push, created suspended and released once its Secret exists; an
+  # older one that never started is deleted when a newer push supersedes it.
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  # The Job's installation token: created, and read back after a restart to reuse and then revoke it. Only in
+  # this namespace, past the cache (no list or watch).
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get"]
 ---
 apiVersion: "rbac.authorization.k8s.io/v1"
 kind: "RoleBinding"

@@ -14,11 +14,13 @@ RUN apk add --no-cache \
     && adduser -S -D -H -u 10001 -G mirror mirror
 
 COPY services/git-mirror/nginx.conf /etc/git-mirror/nginx.conf
-COPY services/git-mirror/backend.sh services/git-mirror/identity.sh services/git-mirror/sync.sh /opt/git-mirror/
+COPY services/git-mirror/backend.sh services/git-mirror/identity.sh services/git-mirror/sync.sh \
+     services/git-mirror/publish.sh /opt/git-mirror/
 COPY services/git-mirror/hooks/ /opt/git-mirror/hooks/
 
 USER 10001:10001
 EXPOSE 8080
-# nginx needs the resolver as an address: take the pod's first nameserver. `-e stderr`: the root
+# nginx needs the resolver as an address: take the pod's first nameserver. The runner's host comes from
+# RANGELIGHT_RUNNER_NAMESPACE (the chart's runner.namespace), checked to be a DNS label. `-e stderr`: the root
 # filesystem is read-only, so nginx's built-in error log path can't be opened before the config is read.
-CMD ["sh", "-c", "awk '/^nameserver/ { ip = $2; if (ip ~ /:/) ip = \"[\" ip \"]\"; print \"resolver \" ip \" valid=30s;\"; exit }' /etc/resolv.conf >/tmp/resolver.conf && rm -f /tmp/nginx-inner.sock && exec nginx -e stderr -c /etc/git-mirror/nginx.conf -g 'daemon off;'"]
+CMD ["sh", "-c", "ns=\"${RANGELIGHT_RUNNER_NAMESPACE:-rangelight-runner}\" && printf '%s\\n' \"$ns\" | grep -qxE '[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?' && printf 'set $rl_runner \"runner.%s.svc.cluster.local:8080\";\\n' \"$ns\" >/tmp/runner.conf && awk '/^nameserver/ { ip = $2; if (ip ~ /:/) ip = \"[\" ip \"]\"; print \"resolver \" ip \" valid=30s;\"; exit }' /etc/resolv.conf >/tmp/resolver.conf && rm -f /tmp/nginx-inner.sock && exec nginx -e stderr -c /etc/git-mirror/nginx.conf -g 'daemon off;'"]

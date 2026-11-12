@@ -34,3 +34,14 @@ nats_token_file = "/var/run/secrets/rangelight/nats/token"
 # The runner protocol's subject tokens: rl.<org>.runner.<runner_id>.desired and .status.
 org = "default"
 runner_id = "default"
+# The GitHub App that pushes each lane's work branch upstream and opens its pull request (ADR 0011,
+# ADR 0040 §3): secret://<name>#<key> references to its id and its private key. Empty: publishing is off.
+github_app_id = ""
+github_app_private_key = ""
+# The GitHub API.
+github_api_url = "https://api.github.com"
+# The git mirror's image, by tag and digest: each publish is a Job running its publish.sh (the chart sets it).
+publish_image = ""
+# Where each git mirror repo's work branches are pushed: "<name>=<https URL> ..." (the chart sets it
+# from gitMirror.repos).
+upstreams = ""

@@ -33,6 +33,12 @@
         "minLength": 1,
         "maxLength": 2000
       }
+    },
+    "url": {
+      "description": "The ticket's page in Linear, which the session's pull request links. The runner keeps it out of the lane's ticket.json.",
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^https://linear\\.app/[^\\s]+$"
     }
   }
 }

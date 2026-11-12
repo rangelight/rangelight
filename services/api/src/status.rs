@@ -1,6 +1,7 @@
 //! The runners' reports (ADR 0021): a durable JetStream consumer of every runner's
 //! `rl.<org>.runner.<runner>.status`. Each `SessionStatus` becomes one chained event in one
-//! transaction (`Store::report_phase`), which the relay then fans out to `WatchSession`.
+//! transaction (`Store::report_phase`), which the relay then fans out to `WatchSession`. A
+//! report's pull request is kept only when it is on the configured repo's upstream.
 
 use std::time::{Duration, SystemTime};
 
@@ -8,7 +9,7 @@ use async_nats::jetstream::{self, AckKind, consumer::pull, stream};
 use buffa::Message;
 use futures_util::StreamExt;
 use rl_app::{Clock, IdGen, SystemClock, UuidV7};
-use rl_domain::{EventId, ReportPhase, SessionId, subject};
+use rl_domain::{EventId, ReportPhase, SessionId, Upstream, subject};
 use rl_proto::rangelight::runner::v1alpha1::__buffa::oneof::envelope::Body;
 use rl_proto::rangelight::runner::v1alpha1::Envelope;
 use rl_store::{Store, StoreError};
@@ -45,11 +46,21 @@ pub enum Outcome {
     Refused(&'static str),
 }
 
+/// What records the runners' reports: the store, and the upstream of the configured repo, the
+/// only place a session's pull request may be (none: no pull request is kept).
+#[derive(Debug, Clone)]
+pub struct Recorder {
+    store: Store,
+    upstream: Option<Upstream>,
+}
+
 /// The command a status message asks for, or why it can't be one. `runner` is the runner named
-/// by the subject it came on.
+/// by the subject it came on. A pull request URL that isn't one of `upstream`'s is dropped and
+/// logged with the session id only: the URL is the runner's, untrusted.
 fn command(
     payload: &[u8],
     runner: &str,
+    upstream: Option<&Upstream>,
     clock: &impl Clock,
     ids: &impl IdGen,
 ) -> Result<ReportPhase, &'static str> {
@@ -74,6 +85,16 @@ fn command(
         .as_known()
         .and_then(rl_chain::phase)
         .ok_or("phase")?;
+    let pull_request = match status.pull_request_url.as_str() {
+        "" => None,
+        url => {
+            let pull_request = upstream.and_then(|upstream| upstream.pull_request(url));
+            if pull_request.is_none() {
+                tracing::warn!(session_id = %session, "ignored a pull request url that isn't the repo's");
+            }
+            pull_request
+        }
+    };
     Ok(ReportPhase {
         session: SessionId(session),
         event: EventId(ids.new_id()),
@@ -83,35 +104,44 @@ fn command(
         phase,
         message: status.message,
         observed_generation: status.observed_generation,
+        pull_request,
     })
 }
 
-/// Records one status message from `runner`, its transaction bounded by 20s (below the
-/// consumer's 30s ack wait, so a stuck one can't outlive its delivery).
-///
-/// # Errors
-/// [`StoreError`] other than [`StoreError::NotFound`], or `None` on the time limit: worth
-/// redelivering.
-pub async fn record(
-    store: &Store,
-    payload: &[u8],
-    runner: &str,
-    clock: &impl Clock,
-    ids: &impl IdGen,
-) -> Result<Outcome, Option<StoreError>> {
-    let command = match command(payload, runner, clock, ids) {
-        Ok(command) => command,
-        Err(reason) => return Ok(Outcome::Refused(reason)),
-    };
-    let Ok(recorded) = tokio::time::timeout(RECORD_TIMEOUT, store.report_phase(&command)).await
-    else {
-        return Err(None);
-    };
-    match recorded {
-        Ok(true) => Ok(Outcome::Recorded),
-        Ok(false) => Ok(Outcome::Duplicate),
-        Err(StoreError::NotFound) => Ok(Outcome::Refused("unknown_session")),
-        Err(error) => Err(Some(error)),
+impl Recorder {
+    /// Records into `store`, keeping only `upstream`'s pull requests.
+    #[must_use]
+    pub fn new(store: Store, upstream: Option<Upstream>) -> Recorder {
+        Recorder { store, upstream }
+    }
+
+    /// Records one status message from `runner`, its transaction bounded by 20s (below the
+    /// consumer's 30s ack wait, so a stuck one can't outlive its delivery).
+    ///
+    /// # Errors
+    /// [`StoreError`] other than [`StoreError::NotFound`], or `None` on the time limit: worth
+    /// redelivering.
+    pub async fn record(
+        &self,
+        payload: &[u8],
+        runner: &str,
+        clock: &impl Clock,
+        ids: &impl IdGen,
+    ) -> Result<Outcome, Option<StoreError>> {
+        let command = match command(payload, runner, self.upstream.as_ref(), clock, ids) {
+            Ok(command) => command,
+            Err(reason) => return Ok(Outcome::Refused(reason)),
+        };
+        let recorded = self.store.report_phase(&command);
+        let Ok(recorded) = tokio::time::timeout(RECORD_TIMEOUT, recorded).await else {
+            return Err(None);
+        };
+        match recorded {
+            Ok(true) => Ok(Outcome::Recorded),
+            Ok(false) => Ok(Outcome::Duplicate),
+            Err(StoreError::NotFound) => Ok(Outcome::Refused("unknown_session")),
+            Err(error) => Err(Some(error)),
+        }
     }
 }
 
@@ -120,7 +150,7 @@ pub async fn record(
 /// only after its transaction commits, with the system clock and UUIDv7 ids. NATS failures are
 /// logged and retried, backing off to 30s.
 pub async fn consume(
-    store: Store,
+    recorder: Recorder,
     nats: async_nats::Client,
     org: String,
     replicas: usize,
@@ -134,7 +164,7 @@ pub async fn consume(
             pause = RETRY;
             while let Some(message) = messages.next().await {
                 let message = message.map_err(|e| e.to_string())?;
-                handle(&store, &message).await;
+                handle(&recorder, &message).await;
             }
             Ok::<(), String>(())
         };
@@ -189,7 +219,7 @@ async fn messages(
 /// Records one message and acknowledges it: ack when recorded or a duplicate, term when it can
 /// never be recorded, nak (redelivered after [`RETRY`]) when the store failed.
 #[tracing::instrument(skip_all, fields(subject = %message.subject))]
-async fn handle(store: &Store, message: &jetstream::Message) {
+async fn handle(recorder: &Recorder, message: &jetstream::Message) {
     // rl.<org>.runner.<runner>.status: the stream captures nothing else.
     let runner = message.subject.split('.').nth(3).unwrap_or_default();
     if let Ok(info) = message.info()
@@ -201,7 +231,10 @@ async fn handle(store: &Store, message: &jetstream::Message) {
         };
         tracing::warn!(delivered = info.delivered, session_id = %session, "a status message keeps failing");
     }
-    let ack = match record(store, &message.payload, runner, &SystemClock, &UuidV7).await {
+    let ack = match recorder
+        .record(&message.payload, runner, &SystemClock, &UuidV7)
+        .await
+    {
         Ok(Outcome::Recorded | Outcome::Duplicate) => AckKind::Ack,
         Ok(Outcome::Refused(reason)) => {
             tracing::warn!(reason, "refused a status message");

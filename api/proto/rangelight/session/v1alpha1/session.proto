@@ -42,6 +42,7 @@ message Session {
   string repo = 10; // the git mirror repo it works in
   google.protobuf.Timestamp created_at = 11;
   string ticket_url = 12; // the ticket in its tracker, https; empty for sessions from before it was recorded
+  string pull_request_url = 13; // the lane's PR on GitHub; empty until the runner reports one
 }
 
 message ListSessionsRequest {}
@@ -121,4 +122,5 @@ message PhaseChanged {
   uint64 observed_generation = 3; // the SessionDesired.generation the runner had applied
   string message_id = 4; // the SessionStatus Envelope.message_id this event records
   google.protobuf.Timestamp sent_at = 5; // the Envelope.sent_at: when the runner sent it
+  string pull_request_url = 6; // set on the report that first names the session's PR, empty otherwise
 }

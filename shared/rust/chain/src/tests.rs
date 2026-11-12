@@ -147,11 +147,16 @@ fn a_phase_change_encodes_and_every_phase_maps_both_ways() {
         observed_generation: 2,
         message_id: Uuid::from_u128(7),
         sent_at: Some(UNIX_EPOCH + Duration::from_hours(500_000)),
+        pull_request_url: Some("https://github.com/acme/shop/pull/7".into()),
     };
     let Some(Kind::PhaseChanged(decoded)) = decode(&payload(&change)).unwrap().kind else {
         panic!("not a phase change")
     };
     assert_eq!(decoded.observed_generation, 2);
+    assert_eq!(
+        decoded.pull_request_url,
+        "https://github.com/acme/shop/pull/7"
+    );
     assert_eq!(decoded.message_id, Uuid::from_u128(7).to_string());
     assert_eq!(
         decoded.sent_at.into_option().map(|t| t.seconds),

@@ -75,6 +75,19 @@ test_api_config_names_linear_and_rolls_the_pod() {
   [[ -n "${before}" && "$(grep 'checksum/config' <<<"${OUT}")" != "${before}" ]] || fail "a config change doesn't roll the api"
 }
 
+# RAN-56: the api keeps only the pull requests of its repo's upstream, from that repo's gitMirror.repos entry.
+test_api_config_names_its_repos_upstream() {
+  render "${SERVE[@]}" --show-only templates/api/configmap.yaml
+  expect_ok
+  expect_no_match 'RANGELIGHT_API_UPSTREAM'
+  render "${SERVE[@]}" --show-only templates/api/configmap.yaml \
+    --set 'gitMirror.repos[0].name=demo' --set 'gitMirror.repos[0].upstream=https://github.com/acme/demo.git' \
+    --set 'gitMirror.repos[1].name=shop' --set 'gitMirror.repos[1].upstream=https://github.com/acme/shop.git'
+  expect_ok
+  expect_line '  RANGELIGHT_API_UPSTREAM: "https://github.com/acme/shop.git"'
+  [[ "$(grep -c 'RANGELIGHT_API_UPSTREAM' <<<"${OUT}")" -eq 1 ]] || fail "more than one upstream"
+}
+
 test_api_network_policy() {
   render "${SERVE[@]}" --show-only templates/api/networkpolicy.yaml --set ingress.from.httpsPort=8443
   expect_ok

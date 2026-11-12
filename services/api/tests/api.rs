@@ -7,7 +7,8 @@ mod common;
 use std::io::Write;
 use std::time::Duration;
 
-use api::intake_once;
+use api::status::Recorder;
+use api::{intake_once, link_once};
 use async_nats::jetstream::message::PublishMessage;
 use buffa::Message;
 use connectrpc::ErrorCode;
@@ -15,7 +16,7 @@ use connectrpc::client::HttpClient;
 use relay::Relay;
 use rl_app::{SystemClock, UuidV7, change_state};
 use rl_config::SecretRef;
-use rl_domain::{INTAKE_LABEL, SessionId, State, Ticket, Tracker};
+use rl_domain::{INTAKE_LABEL, SessionId, State, Ticket, Tracker, Upstream};
 use rl_proto::rangelight::runner::v1alpha1::__buffa::oneof::envelope::Body;
 use rl_proto::rangelight::runner::v1alpha1::{DesiredState, Envelope, Phase, SessionStatus};
 use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::change::Kind;
@@ -417,6 +418,14 @@ impl rl_app::TicketSource for Hangs {
     fn tickets(&self) -> impl Future<Output = Result<Vec<Ticket>, rl_app::TicketError>> + Send {
         std::future::pending()
     }
+
+    fn link_pull_request(
+        &self,
+        _ticket_id: &str,
+        _url: &str,
+    ) -> impl Future<Output = Result<(), rl_app::TicketError>> + Send {
+        std::future::pending()
+    }
 }
 
 /// Review 1: shutdown doesn't wait for an intake round stuck on the tracker.
@@ -486,12 +495,13 @@ async fn a_silent_connection_is_closed() {
     );
 }
 
-/// A runner's status for `session`, as the runner sends it.
-fn status(session: &str, message_id: uuid::Uuid) -> Vec<u8> {
+/// A runner's status for `session`, naming `pull_request_url` ("" for none), as the runner sends it.
+fn status(session: &str, message_id: uuid::Uuid, pull_request_url: &str) -> Vec<u8> {
     let status = SessionStatus {
         session_id: session.into(),
         observed_generation: 1,
         phase: Phase::PHASE_RUNNING.into(),
+        pull_request_url: pull_request_url.into(),
         ..Default::default()
     };
     Envelope {
@@ -562,8 +572,9 @@ async fn a_status_becomes_exactly_one_chained_event() {
     intake(&store, &FakeTickets(vec![ticket(8, &[INTAKE_LABEL])])).await;
     let id = store.list_sessions(1).await.unwrap()[0].id;
     let cancel = CancellationToken::new();
+    let recorder = Recorder::new(store.clone(), None);
     let consumer = tokio::spawn(api::status::consume(
-        store.clone(),
+        recorder.clone(),
         rl_testkit::nats().await,
         org.clone(),
         1,
@@ -577,14 +588,14 @@ async fn a_status_becomes_exactly_one_chained_event() {
     let mut watch = client.watch_session(request).await.unwrap();
 
     let message_id = uuid::Uuid::now_v7();
-    let payload = status(&id.0.to_string(), message_id);
+    let payload = status(&id.0.to_string(), message_id, "");
     publish_status(&org, payload.clone()).await;
     publish_status(&org, payload.clone()).await;
     assert_eq!(
         reported_phase(&store).await,
         Some(rl_domain::Phase::Running)
     );
-    let third = api::status::record(&store, &payload, "r1", &SystemClock, &UuidV7).await;
+    let third = recorder.record(&payload, "r1", &SystemClock, &UuidV7).await;
     assert_eq!(third.unwrap(), api::status::Outcome::Duplicate);
     assert_eq!(
         store.chain(id).await.unwrap().len(),
@@ -616,4 +627,200 @@ async fn a_status_becomes_exactly_one_chained_event() {
     );
     cancel.cancel();
     consumer.await.unwrap();
+}
+
+/// RAN-56 AC1, AC2 and AC4: from the runner's status stream, a foreign pull request is ignored and
+/// the session's own is stored and served.
+#[tokio::test]
+async fn a_pull_request_is_stored_and_served() {
+    let (store, org) = (rl_testkit::store("api::pull_request").await, org());
+    intake(&store, &FakeTickets(vec![ticket(9, &[INTAKE_LABEL])])).await;
+    let id = store.list_sessions(1).await.unwrap()[0].id.0.to_string();
+    let upstream = Upstream::new("shop", "https://github.com/acme/shop.git").unwrap();
+    let cancel = CancellationToken::new();
+    let consumer = tokio::spawn(api::status::consume(
+        Recorder::new(store.clone(), Some(upstream)),
+        rl_testkit::nats().await,
+        org.clone(),
+        1,
+        cancel.clone(),
+    ));
+    let ours = "https://github.com/acme/shop/pull/7";
+    // Review H1: one the database's check would refuse, in case Rust's check ever let it through.
+    for bad in [
+        "https://github.com/evil/shop/pull/7",
+        "HTTPS://GitHub.com/acme/shop/pull/7",
+    ] {
+        publish_status(&org, status(&id, uuid::Uuid::now_v7(), bad)).await;
+    }
+    publish_status(&org, status(&id, uuid::Uuid::now_v7(), ours)).await;
+    let mut stored = None;
+    for _ in 0..100 {
+        stored = store.list_sessions(1).await.unwrap()[0]
+            .pull_request_url
+            .clone();
+        if stored.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(stored.as_deref(), Some(ours));
+    let session = SessionId(id.parse().unwrap());
+    assert_eq!(
+        store.chain(session).await.unwrap().len(),
+        4,
+        "created, and each report's phase: a bad URL never blocks its report"
+    );
+    let (_served, client) = served(&store, &org).await;
+    let request = GetSessionRequest {
+        session_id: id.clone(),
+        ..Default::default()
+    };
+    let served = client.get_session(request).await.unwrap().into_owned();
+    assert_eq!(served.session.into_option().unwrap().pull_request_url, ours);
+    cancel.cancel();
+    consumer.await.unwrap();
+}
+
+const OURS: &str = "https://github.com/acme/shop/pull/7";
+
+/// A session for ticket `n` whose runner reported [`OURS`].
+async fn with_pull_request(store: &Store, n: u32) {
+    intake(store, &FakeTickets(vec![ticket(n, &[INTAKE_LABEL])])).await;
+    let id = store.list_sessions(1).await.unwrap()[0].id.0.to_string();
+    let upstream = Upstream::new("shop", "https://github.com/acme/shop").unwrap();
+    let report = status(&id, uuid::Uuid::now_v7(), OURS);
+    Recorder::new(store.clone(), Some(upstream))
+        .record(&report, "r1", &SystemClock, &UuidV7)
+        .await
+        .unwrap();
+}
+
+/// RAN-56 AC3 and AC4: a Linear failure keeps the stored pull request and is retried; then it is
+/// attached to the ticket exactly once.
+#[tokio::test]
+async fn a_pull_request_is_attached_to_its_ticket_once() {
+    let store = rl_testkit::store("api::pull_request_link").await;
+    with_pull_request(&store, 9).await;
+    let ours = OURS;
+    let key = key_file();
+    let linear = |stub: &LinearStub| linear(stub, &key);
+    let down = LinearStub::start(Reply::Status(500)).await;
+    assert_eq!(
+        link_once(&store, &linear(&down), &SystemClock)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        store.unlinked_pull_requests(10).await.unwrap().len(),
+        1,
+        "kept for a retry"
+    );
+    let up = LinearStub::start(Reply::Tickets(Vec::new())).await;
+    assert_eq!(
+        link_once(&store, &linear(&up), &SystemClock).await.unwrap(),
+        1
+    );
+    assert_eq!(
+        link_once(&store, &linear(&up), &SystemClock).await.unwrap(),
+        0,
+        "once"
+    );
+    let requests = up.requests();
+    assert_eq!(requests.len(), 1);
+    let variables = &requests[0].body["variables"];
+    assert_eq!(
+        (variables["issue"].as_str(), variables["url"].as_str()),
+        (Some("issue-9"), Some(ours))
+    );
+    assert!(
+        requests[0].body["query"]
+            .as_str()
+            .unwrap()
+            .contains("attachmentCreate")
+    );
+}
+
+/// RAN-56 review M1: Linear refusing a link (a GraphQL error: the issue is gone) is recorded, and
+/// that link is never tried again.
+#[tokio::test]
+async fn a_refused_link_is_never_tried_again() {
+    let store = rl_testkit::store("api::pull_request_refused").await;
+    with_pull_request(&store, 10).await;
+    let key = key_file();
+    let gone = serde_json::json!({ "data": null, "errors": [{ "message": "Entity not found" }] });
+    let refusing = LinearStub::start(Reply::Answer(gone)).await;
+    assert_eq!(
+        link_once(&store, &linear(&refusing, &key), &SystemClock)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        link_once(&store, &linear(&refusing, &key), &SystemClock)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(refusing.requests().len(), 1, "tried once");
+    assert_eq!(store.unlinked_pull_requests(10).await.unwrap(), []);
+    assert_eq!(
+        store.list_sessions(1).await.unwrap()[0]
+            .pull_request_url
+            .as_deref(),
+        Some(OURS),
+        "the URL stays"
+    );
+}
+
+/// A tracker that lists its tickets but never answers a link.
+struct LinksHang(FakeTickets);
+
+impl rl_app::TicketSource for LinksHang {
+    fn tickets(&self) -> impl Future<Output = Result<Vec<Ticket>, rl_app::TicketError>> + Send {
+        self.0.tickets()
+    }
+
+    fn link_pull_request(
+        &self,
+        _ticket_id: &str,
+        _url: &str,
+    ) -> impl Future<Output = Result<(), rl_app::TicketError>> + Send {
+        std::future::pending()
+    }
+}
+
+/// RAN-56 review M2: links run in their own loop, so a tracker hanging on one never holds up
+/// intake; shutdown stops both.
+#[tokio::test]
+async fn a_hanging_link_doesnt_hold_up_intake() {
+    let store = rl_testkit::store("api::link_hangs").await;
+    with_pull_request(&store, 11).await;
+    let source = || LinksHang(FakeTickets(vec![ticket(12, &[INTAKE_LABEL])]));
+    let cancel = CancellationToken::new();
+    let links = tokio::spawn(api::link_loop(store.clone(), source(), cancel.clone()));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let intake = tokio::spawn(api::intake_loop(
+        store.clone(),
+        source(),
+        rl_testkit::workspace(),
+        cancel.clone(),
+    ));
+    let mut sessions = 0;
+    for _ in 0..40 {
+        sessions = store.list_sessions(10).await.unwrap().len();
+        if sessions == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(sessions, 2, "intake went on while a link hung");
+    cancel.cancel();
+    for task in [links, intake] {
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("the loop stopped")
+            .unwrap();
+    }
 }

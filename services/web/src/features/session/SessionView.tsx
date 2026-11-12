@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { AppLink } from "@/components/rl/app-link";
 import { LiveStatus } from "@/components/rl/live-status";
 import { Notice } from "@/components/rl/notice";
+import { PullRequestLink } from "@/components/rl/pull-request-link";
 import { PhaseBadge, StateBadge } from "@/components/rl/state-badge";
 import { TicketLink } from "@/components/rl/ticket-link";
 import { ViewHeader } from "@/components/rl/view-header";
@@ -50,7 +51,7 @@ export function SessionView({ id }: { id: string }) {
           <Header session={state.session}>
             <LiveStatus paused={watch === "watching" ? null : watch} onReconnect={reconnect} />
           </Header>
-          <div className="grid min-h-0 flex-1 grid-rows-2 lg:grid-cols-[minmax(320px,2fr)_minmax(0,3fr)] lg:grid-rows-1">
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-2 lg:grid-cols-[minmax(320px,2fr)_minmax(0,3fr)] lg:grid-rows-1">
             <Feed events={feed} />
             <Terminal sessionId={id} />
           </div>
@@ -80,6 +81,7 @@ function Header({ session, children }: { session: Session; children: ReactNode }
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <BackLink />
           <TicketLink session={session} />
+          <PullRequestLink session={session} />
           <span className="font-mono text-[12px] text-t2">{session.repo || "no repo yet"}</span>
           <PhaseBadge phase={session.phase} />
           <StateBadge state={session.state} />

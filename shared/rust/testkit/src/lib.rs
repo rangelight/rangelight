@@ -64,6 +64,14 @@ impl TicketSource for FakeTickets {
             .map(|seed| seed.ticket.clone());
         std::future::ready(Ok(labelled.collect()))
     }
+
+    fn link_pull_request(
+        &self,
+        _ticket_id: &str,
+        _url: &str,
+    ) -> impl Future<Output = Result<(), TicketError>> + Send {
+        std::future::ready(Ok(()))
+    }
 }
 
 /// A [`Clock`] stopped at one time.
@@ -111,7 +119,7 @@ pub fn ticket(n: u32, labels: &[&str]) -> Seed {
 
 /// The contract every [`TicketSource`] passes (ADR 0049 §2.2). `make` builds a source over
 /// exactly the given seeds. A source lists every ticket carrying [`INTAKE_LABEL`] once, across as
-/// many pages as it takes, and no other.
+/// many pages as it takes, and no other; and links a pull request to a ticket, again and again.
 pub async fn ticket_source_contract<S, F, Fut>(make: F)
 where
     S: TicketSource,
@@ -144,6 +152,14 @@ where
         listed, expected,
         "a source lists every labelled ticket once, and nothing else"
     );
+
+    let source = make(vec![ticket(1, &[INTAKE_LABEL])]).await;
+    for _ in 0..2 {
+        source
+            .link_pull_request("issue-1", "https://github.com/acme/shop/pull/7")
+            .await
+            .unwrap();
+    }
 }
 
 /// The workspace tests start sessions in: repo `shop` at `main`, for member `ariel`.

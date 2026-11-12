@@ -101,6 +101,40 @@ test("AC1 the phase follows the runner's reports, on the list and in the feed", 
   await expect(page.locator("header")).toContainText("Failed");
 });
 
+test("RAN-56 the PR link shows live, on the row and in the session view", async ({ page }) => {
+  const url = "https://github.com/acme/storefront/pull/7";
+  await page.goto("/");
+  await expect(row(page, "RAN-101").getByRole("link", { name: /pull request/ })).toHaveCount(0);
+  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await stub(page, "report", { sessionId: FIRST, phase: Phase.RUNNING, pullRequestUrl: url });
+  const link = row(page, "RAN-101").getByRole("link", { name: /#7 pull request/ });
+  await expect(link).toHaveAttribute("href", url);
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+
+  await page.goto(`/sessions/${FIRST}`);
+  await expect(
+    page.locator("header").getByRole("link", { name: /#7 pull request/ }),
+  ).toHaveAttribute("href", url);
+});
+
+test("RAN-56 at 360x640 the list and the session view fit, PR link included", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.goto("/");
+  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await stub(page, "report", {
+    sessionId: FIRST,
+    phase: Phase.RUNNING,
+    pullRequestUrl: "https://github.com/acme/storefront/pull/7",
+  });
+  const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+  await expect(row(page, "RAN-101").getByRole("link", { name: /#7 pull request/ })).toBeVisible();
+  expect(await fits()).toBe(true);
+  await page.goto(`/sessions/${FIRST}`);
+  await expect(page.locator("header").getByRole("link", { name: /#7 pull request/ })).toBeVisible();
+  expect(await fits()).toBe(true);
+});
+
 test("AC1 a session created after the page loaded shows up without a reload", async ({ page }) => {
   await page.goto("/");
   await expect(row(page, "RAN-101")).toBeVisible();

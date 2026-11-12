@@ -29,6 +29,9 @@ stream_replicas = 1
 # Where the team's sessions work, until repo onboarding maps teams to repos (ADR 0047): the git
 # mirror's name for the repo (`repo`, no default) and its approved base branch.
 base_ref = "main"
+# That repo's upstream, https://github.com/<owner>/<repo>: a lane's pull request is kept (and
+# attached to its ticket) only when it is one of this repo's. Empty: no pull request is kept.
+upstream = ""
 # Whose Claude home the team's lanes mount (ADR 0046 amendment). No default.
 # `extra_ca_file`, unset by default: a PEM bundle of CA certificates the api's HTTPS (the issuer,
 # Linear) trusts beside the platform's roots, for an issuer behind your own CA. A file that holds no

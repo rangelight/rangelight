@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use rl_auth::{Registration, Url};
 use rl_config::{ConfigError, SecretRef};
-use rl_domain::{Workspace, subject};
+use rl_domain::{Upstream, Workspace, subject};
 use rl_tickets_linear::Linear;
 use rustls::pki_types::CertificateDer;
 use rustls::pki_types::pem::PemObject;
@@ -48,6 +48,9 @@ pub struct Config {
     pub stream_replicas: usize,
     /// The git mirror's name for the repo the team's sessions work on.
     pub repo: String,
+    /// That repo's upstream, `https://github.com/<owner>/<repo>`: where its pull requests are.
+    /// Empty: none, and no session keeps a pull request.
+    pub upstream: String,
     /// That repo's approved base branch.
     pub base_ref: String,
     /// Whose Claude home the team's lanes mount.
@@ -140,9 +143,23 @@ impl Config {
         Ok(ders)
     }
 
+    /// The upstream of the team's repo, if one is configured.
+    ///
+    /// # Errors
+    /// [`ConfigError`] when `upstream` isn't empty or a GitHub repo.
+    pub fn upstream(&self) -> Result<Option<Upstream>, ConfigError> {
+        if self.upstream.is_empty() {
+            return Ok(None);
+        }
+        Upstream::new(&self.repo, &self.upstream)
+            .map(Some)
+            .map_err(|e| ConfigError(format!("upstream: {e}")))
+    }
+
     fn validate(self) -> Result<Config, ConfigError> {
         subject::token(&self.org).map_err(|e| ConfigError(e.to_string()))?;
         self.workspace()?;
+        self.upstream()?;
         if !matches!(self.stream_replicas, 1..=5) {
             return Err(ConfigError("stream_replicas must be 1 to 5".into()));
         }
@@ -273,7 +290,22 @@ member = \"ariel\"
     }
 
     #[test]
-    fn the_workspace_and_replicas_are_checked() {
+    fn the_upstream_is_optional_or_a_github_repo() {
+        assert_eq!(defaults().upstream().unwrap(), None);
+        let config = Config {
+            upstream: "https://github.com/acme/shop.git".into(),
+            ..defaults()
+        };
+        let upstream = config.upstream().unwrap().unwrap();
+        assert!(
+            upstream
+                .pull_request("https://github.com/acme/shop/pull/1")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn the_workspace_upstream_and_replicas_are_checked() {
         for bad in [
             Config {
                 repo: "shop.git".into(),
@@ -285,6 +317,10 @@ member = \"ariel\"
             },
             Config {
                 stream_replicas: 0,
+                ..defaults()
+            },
+            Config {
+                upstream: "https://gitlab.com/acme/shop".into(),
                 ..defaults()
             },
         ] {

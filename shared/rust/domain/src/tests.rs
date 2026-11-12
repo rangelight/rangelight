@@ -221,12 +221,105 @@ fn phase_names_round_trip_and_reports_cap_their_message() {
         message: "é".repeat(PHASE_MESSAGE_MAX + 1),
         observed_generation: 3,
         sent_at: None,
+        pull_request: None,
     };
-    let Change::PhaseChanged { message, .. } = report.change() else {
+    let Change::PhaseChanged { message, .. } = report.change("shop", None) else {
         panic!("not a phase change")
     };
     assert_eq!(message.chars().count(), PHASE_MESSAGE_MAX);
-    assert_eq!(report.change().state(), None);
+    assert_eq!(report.change("shop", None).state(), None);
+}
+
+#[test]
+fn an_upstream_is_a_github_repo() {
+    for url in [
+        "https://github.com/acme/shop",
+        "https://github.com/acme/shop.git",
+        "https://github.com/a-1/s_h.o-p",
+    ] {
+        assert!(Upstream::new("shop", url).is_ok(), "{url}");
+    }
+    for url in [
+        "",
+        "http://github.com/acme/shop",
+        "https://gitlab.com/acme/shop",
+        "https://github.com/acme",
+        "https://github.com/acme/",
+        "https://github.com/acme/shop/",
+        "https://github.com/acme/shop/x",
+        "https://github.com.evil.example/acme/shop",
+        "https://github.com/ac me/shop",
+    ] {
+        assert_eq!(
+            Upstream::new("shop", url),
+            Err(DomainError::InvalidUpstream),
+            "{url:?}"
+        );
+    }
+}
+
+#[test]
+fn only_a_pull_request_of_the_upstream_is_one() {
+    let upstream = Upstream::new("shop", "https://github.com/acme/shop.git").unwrap();
+    let pr = upstream
+        .pull_request("https://github.com/Acme/Shop/pull/42")
+        .unwrap();
+    assert_eq!(
+        (pr.repo(), pr.url()),
+        ("shop", "https://github.com/Acme/Shop/pull/42")
+    );
+    for url in [
+        "",
+        "https://github.com/acme/shop/pull/",
+        "https://github.com/acme/shop/pull/0",
+        "https://github.com/acme/shop/pull/042",
+        "https://github.com/acme/shop/pull/42/files",
+        "https://github.com/acme/shop/pull/42?x=1",
+        "https://github.com/acme/shop/pull/12345678901",
+        "https://github.com/acme/shopx/pull/42",
+        "https://github.com/evil/shop/pull/42",
+        "https://github.com/acme/shop/issues/42",
+        "http://github.com/acme/shop/pull/42",
+        "https://github.com/acme/shé/pull/42",
+        // The database's check is case-sensitive: so is this, for all but owner and repo.
+        "HTTPS://github.com/acme/shop/pull/42",
+        "https://GitHub.com/acme/shop/pull/42",
+        "https://github.com/acme/shop/PULL/42",
+    ] {
+        assert_eq!(upstream.pull_request(url), None, "{url:?}");
+    }
+}
+
+#[test]
+fn a_session_keeps_the_first_pull_request_of_its_own_repo() {
+    let upstream = Upstream::new("shop", "https://github.com/acme/shop").unwrap();
+    let report = ReportPhase {
+        session: SessionId(uuid::Uuid::nil()),
+        event: EventId(uuid::Uuid::nil()),
+        at: std::time::SystemTime::UNIX_EPOCH,
+        message_id: uuid::Uuid::nil(),
+        phase: Phase::Running,
+        message: String::new(),
+        observed_generation: 1,
+        sent_at: None,
+        pull_request: upstream.pull_request("https://github.com/acme/shop/pull/7"),
+    };
+    let recorded = |repo: &str, recorded: Option<&str>| match report.change(repo, recorded) {
+        Change::PhaseChanged {
+            pull_request_url, ..
+        } => pull_request_url,
+        _ => panic!("not a phase change"),
+    };
+    assert_eq!(
+        recorded("shop", None).as_deref(),
+        Some("https://github.com/acme/shop/pull/7")
+    );
+    assert_eq!(recorded("other", None), None, "another repo's session");
+    assert_eq!(
+        recorded("shop", Some("https://github.com/acme/shop/pull/1")),
+        None,
+        "it has one"
+    );
 }
 
 #[test]

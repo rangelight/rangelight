@@ -1226,6 +1226,7 @@ type SessionStatus struct {
 	PreviewUrls        []string               `protobuf:"bytes,6,rep,name=preview_urls,json=previewUrls,proto3" json:"preview_urls,omitempty"`
 	NodeName           string                 `protobuf:"bytes,7,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
 	Message            string                 `protobuf:"bytes,8,opt,name=message,proto3" json:"message,omitempty"`
+	PullRequestUrl     string                 `protobuf:"bytes,9,opt,name=pull_request_url,json=pullRequestUrl,proto3" json:"pull_request_url,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1312,6 +1313,13 @@ func (x *SessionStatus) GetNodeName() string {
 func (x *SessionStatus) GetMessage() string {
 	if x != nil {
 		return x.Message
+	}
+	return ""
+}
+
+func (x *SessionStatus) GetPullRequestUrl() string {
+	if x != nil {
+		return x.PullRequestUrl
 	}
 	return ""
 }
@@ -2044,7 +2052,7 @@ const file_rangelight_runner_v1alpha1_runner_proto_rawDesc = "" +
 	"\x05layer\x18\x01 \x01(\x0e2!.rangelight.runner.v1alpha1.LayerR\x05layer\x12\x14\n" +
 	"\x05ready\x18\x02 \x01(\bR\x05ready\x123\n" +
 	"\aelapsed\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\aelapsed\x12\x16\n" +
-	"\x06detail\x18\x04 \x01(\tR\x06detail\"\xd6\x02\n" +
+	"\x06detail\x18\x04 \x01(\tR\x06detail\"\x80\x03\n" +
 	"\rSessionStatus\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12/\n" +
@@ -2054,7 +2062,8 @@ const file_rangelight_runner_v1alpha1_runner_proto_rawDesc = "" +
 	"\fpreempted_by\x18\x05 \x01(\tR\vpreemptedBy\x12!\n" +
 	"\fpreview_urls\x18\x06 \x03(\tR\vpreviewUrls\x12\x1b\n" +
 	"\tnode_name\x18\a \x01(\tR\bnodeName\x12\x18\n" +
-	"\amessage\x18\b \x01(\tR\amessage\"\xd4\x02\n" +
+	"\amessage\x18\b \x01(\tR\amessage\x12(\n" +
+	"\x10pull_request_url\x18\t \x01(\tR\x0epullRequestUrl\"\xd4\x02\n" +
 	"\aCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x1d\n" +

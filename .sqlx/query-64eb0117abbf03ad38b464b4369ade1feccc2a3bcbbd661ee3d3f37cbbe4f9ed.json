@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- The session's phase from a report, unless a later report (a greater UUIDv7 message_id: uuid\n-- compares bytewise, which is time order for v7) already set it; and its first pull request ($6,\n-- NULL for none). The generation always moves on.\nUPDATE sessions SET\n  phase = CASE WHEN phase_message_id IS NULL OR $5 > phase_message_id THEN $2 ELSE phase END,\n  phase_message_id = GREATEST(phase_message_id, $5),\n  pull_request_url = COALESCE(pull_request_url, $6),\n  generation = $3,\n  updated_at = $4\nWHERE id = $1\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8",
+        "Timestamptz",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "64eb0117abbf03ad38b464b4369ade1feccc2a3bcbbd661ee3d3f37cbbe4f9ed"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- The newest sessions first.\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, state, phase,\n  generation, created_at\nFROM sessions\nORDER BY created_at DESC, id DESC\nLIMIT $1\n",
+  "query": "-- The newest sessions first.\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, state, phase,\n  pull_request_url, generation, created_at\nFROM sessions\nORDER BY created_at DESC, id DESC\nLIMIT $1\n",
   "describe": {
     "columns": [
       {
@@ -115,6 +115,17 @@
       },
       {
         "ordinal": 10,
+        "name": "pull_request_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "pull_request_url"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
         "name": "generation",
         "type_info": "Int8",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -152,9 +163,10 @@
       false,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "5696fba7699c641b6ca8797931e10de1b39fd0849a27550ced394cfa1732305a"
+  "hash": "891fffdd1246b57f0e5a88cac4c12a64c3666551f06e88ac47e22f36fe9976dc"
 }

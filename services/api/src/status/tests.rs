@@ -28,7 +28,7 @@ fn envelope(edit: impl FnOnce(&mut Envelope, &mut SessionStatus)) -> Vec<u8> {
 #[test]
 fn a_status_becomes_a_report_and_anything_else_is_refused() {
     let clock = FixedClock(SystemTime::UNIX_EPOCH);
-    let parse = |payload: &[u8]| command(payload, "r1", &clock, &SeqIds::default());
+    let parse = |payload: &[u8]| command(payload, "r1", None, &clock, &SeqIds::default());
     let report = parse(&envelope(|_, _| {})).unwrap();
     assert_eq!(report.message_id, Uuid::from_u128(9));
     assert_eq!(report.observed_generation, 2);
@@ -59,4 +59,30 @@ fn a_status_becomes_a_report_and_anything_else_is_refused() {
         ..Default::default()
     };
     assert_eq!(parse(&not_a_status.encode_to_vec()), Err("not_a_status"));
+}
+
+#[test]
+fn only_a_pull_request_of_the_upstream_is_kept() {
+    let clock = FixedClock(SystemTime::UNIX_EPOCH);
+    let upstream = Upstream::new("shop", "https://github.com/acme/shop.git").unwrap();
+    let with = |url: &str, upstream: Option<&Upstream>| {
+        let payload = envelope(|_, s| s.pull_request_url = url.into());
+        // A bad URL never refuses the report: its phase is still recorded.
+        let report = command(&payload, "r1", upstream, &clock, &SeqIds::default()).unwrap();
+        assert_eq!(report.phase, rl_domain::Phase::Running);
+        report.pull_request.map(|pr| pr.url().to_owned())
+    };
+    let ours = "https://github.com/acme/shop/pull/7";
+    assert_eq!(with(ours, Some(&upstream)).as_deref(), Some(ours));
+    assert_eq!(with("", Some(&upstream)), None);
+    assert_eq!(with(ours, None), None, "no upstream configured");
+    for foreign in [
+        "https://github.com/evil/shop/pull/7",
+        "https://evil.example/acme/shop/pull/7",
+        "javascript:alert(1)",
+        // Review H1: the database's check is case-sensitive; this must never reach it.
+        "HTTPS://GitHub.com/acme/shop/pull/7",
+    ] {
+        assert_eq!(with(foreign, Some(&upstream)), None, "{foreign}");
+    }
 }

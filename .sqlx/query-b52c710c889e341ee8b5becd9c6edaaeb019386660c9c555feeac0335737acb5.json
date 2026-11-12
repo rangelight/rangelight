@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- The session's ticket links its pull request $2 since $3. A no-op if its pull request isn't $2.\nUPDATE sessions SET pull_request_linked_at = $3 WHERE id = $1 AND pull_request_url = $2\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b52c710c889e341ee8b5becd9c6edaaeb019386660c9c555feeac0335737acb5"
+}

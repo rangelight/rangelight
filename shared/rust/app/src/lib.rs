@@ -15,9 +15,17 @@ pub trait TicketSource: Send + Sync {
     /// Every ticket in scope that carries [`rl_domain::INTAKE_LABEL`]. The tracker filters;
     /// callers don't check again.
     fn tickets(&self) -> impl Future<Output = Result<Vec<Ticket>, TicketError>> + Send;
+
+    /// Links the pull request at `url` to the ticket the tracker knows as `ticket_id`. Linking
+    /// one already linked changes nothing. [`TicketError::Refused`] when the tracker won't, ever.
+    fn link_pull_request(
+        &self,
+        ticket_id: &str,
+        url: &str,
+    ) -> impl Future<Output = Result<(), TicketError>> + Send;
 }
 
-/// Why a [`TicketSource`] couldn't list tickets. Never carries a credential.
+/// Why a [`TicketSource`] couldn't list tickets or link one. Never carries a credential.
 #[derive(Debug, thiserror::Error)]
 pub enum TicketError {
     /// The tracker refused the credential.
@@ -29,6 +37,10 @@ pub enum TicketError {
     /// The tracker answered with something that isn't a valid ticket list.
     #[error("the ticket tracker sent a malformed answer: {0}")]
     Malformed(String),
+    /// The tracker answered, and refused the request for good (say, the ticket is gone):
+    /// retrying won't help.
+    #[error("the ticket tracker refused: {0}")]
+    Refused(String),
     /// The credential couldn't be read.
     #[error("the ticket tracker credential can't be read: {0}")]
     Credential(String),

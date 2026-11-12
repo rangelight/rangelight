@@ -232,3 +232,26 @@ async fn an_invalid_issue_is_skipped_not_fatal() {
     let ids: Vec<_> = tickets.iter().map(|t| t.id().to_owned()).collect();
     assert_eq!(ids, ["issue-1", "issue-3"]);
 }
+
+/// RAN-56 review M1: Linear saying no (a GraphQL error, say the issue is gone) is a refusal, never
+/// retried; a failure on the way (5xx) is worth retrying.
+#[tokio::test]
+async fn a_graphql_error_refuses_a_link_and_a_5xx_is_unavailable() {
+    let key = key_file();
+    let url = "https://github.com/acme/shop/pull/7";
+    let gone = serde_json::json!({ "data": null, "errors": [{ "message": "Entity not found" }] });
+    for answer in [
+        gone,
+        serde_json::json!({ "data": { "attachmentCreate": { "success": false } } }),
+    ] {
+        let stub = LinearStub::start(Reply::Answer(answer)).await;
+        let error = linear(&stub, &key).link_pull_request("issue-1", url).await;
+        assert!(matches!(error, Err(TicketError::Refused(_))), "{error:?}");
+    }
+    let down = LinearStub::start(Reply::Status(502)).await;
+    let error = linear(&down, &key).link_pull_request("issue-1", url).await;
+    assert!(
+        matches!(error, Err(TicketError::Unavailable(_))),
+        "{error:?}"
+    );
+}

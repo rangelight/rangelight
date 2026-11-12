@@ -13,6 +13,13 @@ The control plane's front door (ADR 0031, ADR 0033):
   `session.phase_changed` event and sets the session's phase in one transaction, and is acked only
   after it commits; `UNIQUE (events.message_id)` makes a redelivery a no-op. A message that can
   never be recorded is terminated, with its reason logged.
+- **Pull requests** (RAN-56). A status's `pull_request_url` is kept only when it is
+  `https://github.com/<owner>/<repo>/pull/<n>` on `upstream`, the configured repo's GitHub repo,
+  and the session works in that repo; anything else is ignored and logged with the session id only.
+  A session keeps its first one: it is stored, recorded on that report's event, and served as
+  `Session.pull_request_url`. After each intake round, a link round attaches every unlinked one to
+  its Linear issue (`attachmentCreate`, idempotent by URL) and records `pull_request_linked_at`; a
+  Linear failure is logged and retried next round, and the stored URL stays.
 - **Session API**, Connect-RPC (`api/proto/rangelight/session/v1alpha1/session.proto`), on
   `listen` (8080): `ListSessions`, `GetSession`, and the server streams `WatchSession` (one
   session) and `WatchSessions` (a snapshot of every session, then each change), fed by the relay's
@@ -52,7 +59,7 @@ The control plane's front door (ADR 0031, ADR 0033):
 
 Config: `configs/api.default.toml`, then `/etc/rangelight/api.toml`, then `RANGELIGHT_API_*`.
 `linear_team`, `public_url` (`https://<host>[:<port>]`), `oidc_issuer` (https), `repo` and `member` have no
-default; `linear_url` must be https. Secrets are references: `database_url`, `linear_api_key` and `oidc_client_secret` name
+default; `linear_url` must be https; `upstream` is empty (no pull requests kept) or a GitHub repo URL. Secrets are references: `database_url`, `linear_api_key` and `oidc_client_secret` name
 mounted Secret files (`secret://<name>#<key>` → `/var/run/rangelight/secrets/<name>/<key>`). The
 Linear key is read at each poll and never logged.
 
@@ -64,6 +71,6 @@ scripts/test/services.sh run cargo nextest run -p api         # just these tests
 docker build -f build/package/docker/api/Dockerfile .         # the image
 ```
 
-Code: `src/lib.rs` (intake loop, server), `src/sessions.rs` (handlers), `src/auth.rs` (sign-in; `src/auth/recheck.rs`, long-lived responses),
+Code: `src/lib.rs` (intake and link rounds, server), `src/sessions.rs` (handlers), `src/auth.rs` (sign-in; `src/auth/recheck.rs`, long-lived responses),
 `src/status.rs` (runner status), `src/config.rs`, `src/main.rs` (wiring). Tests: `tests/api.rs`, end to end through a
 Linear stub, the relay and a real Connect client; `tests/auth.rs`, sign-in through the test Dex.

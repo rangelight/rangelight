@@ -170,12 +170,14 @@ pub fn to_proto(change: &Change) -> proto::Change {
             observed_generation,
             message_id,
             sent_at,
+            pull_request_url,
         } => Kind::from(proto::PhaseChanged {
             phase: proto_phase(*phase).into(),
             message: message.clone(),
             observed_generation: *observed_generation,
             message_id: message_id.to_string(),
             sent_at: sent_at.map(Timestamp::from).into(),
+            pull_request_url: pull_request_url.clone().unwrap_or_default(),
             ..Default::default()
         }),
     };

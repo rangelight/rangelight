@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use rl_domain::{ChangeState, NewSession, Phase, ReportPhase, SessionId, State};
+use rl_domain::{Change, ChangeState, NewSession, Phase, ReportPhase, SessionId, State};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -31,6 +31,8 @@ pub struct SessionRow {
     pub state: State,
     /// The phase its runner last reported, if it has.
     pub phase: Option<Phase>,
+    /// The lane's pull request, once its runner reported one.
+    pub pull_request_url: Option<String>,
     /// The seq of the session's last event.
     pub generation: u64,
     /// When the session was created.
@@ -100,12 +102,11 @@ impl Store {
         let at = rl_chain::micros(command.at);
         let change = command.change();
         let mut tx = self.pool.begin().await?;
-        let current =
-            sqlx::query_file_scalar!("../../../db/queries/sessions/lock.sql", command.session.0)
-                .fetch_optional(&mut *tx)
-                .await?
-                .ok_or(StoreError::NotFound)?;
-        let to = State::parse(&current)?.change_to(command.to)?;
+        let current = sqlx::query_file!("../../../db/queries/sessions/lock.sql", command.session.0)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        let to = State::parse(&current.state)?.change_to(command.to)?;
         let seq = events::append(
             &mut tx,
             NewEvent {
@@ -133,7 +134,9 @@ impl Store {
 
     /// Records a runner's status: locks the session's row, and unless the status's message is
     /// already recorded, appends its event, sets the phase (unless a later report already did)
-    /// and inserts the outbox row, in one transaction. Returns false, writing nothing, for a message already recorded.
+    /// and the session's first pull request ([`ReportPhase::change`] decides), and inserts the
+    /// outbox row, in one transaction. Returns false, writing nothing, for a message already
+    /// recorded.
     ///
     /// # Errors
     /// [`StoreError::NotFound`], or [`StoreError::Db`] or [`StoreError::Timeout`]; nothing is
@@ -141,9 +144,8 @@ impl Store {
     #[tracing::instrument(skip_all, fields(session_id = %command.session.0, message_id = %command.message_id))]
     pub async fn report_phase(&self, command: &ReportPhase) -> Result<bool, StoreError> {
         let at = rl_chain::micros(command.at);
-        let change = command.change();
         let mut tx = self.pool.begin().await?;
-        sqlx::query_file_scalar!("../../../db/queries/sessions/lock.sql", command.session.0)
+        let session = sqlx::query_file!("../../../db/queries/sessions/lock.sql", command.session.0)
             .fetch_optional(&mut *tx)
             .await?
             .ok_or(StoreError::NotFound)?;
@@ -157,6 +159,20 @@ impl Store {
         if recorded {
             return Ok(false);
         }
+        let change = command.change(&session.repo, session.pull_request_url.as_deref());
+        if command
+            .pull_request
+            .as_ref()
+            .is_some_and(|pr| pr.repo() != session.repo)
+        {
+            tracing::warn!("ignored a pull request of another repo's upstream");
+        }
+        let pull_request_url = match &change {
+            Change::PhaseChanged {
+                pull_request_url, ..
+            } => pull_request_url.as_deref(),
+            _ => None,
+        };
         let seq = events::append(
             &mut tx,
             NewEvent {
@@ -175,12 +191,78 @@ impl Store {
             seq,
             timestamp(at),
             command.message_id,
+            pull_request_url,
         )
         .execute(&mut *tx)
         .await?;
         outbox::insert(&mut tx, command.event).await?;
         tx.commit().await?;
         Ok(true)
+    }
+
+    /// The sessions whose pull request is still to link (neither linked nor refused), the least
+    /// recently tried first, at most `limit`.
+    ///
+    /// # Errors
+    /// [`StoreError::Db`], or [`StoreError::Domain`] for a stored state or phase that isn't one.
+    pub async fn unlinked_pull_requests(&self, limit: u16) -> Result<Vec<SessionRow>, StoreError> {
+        sqlx::query_file_as!(
+            Record,
+            "../../../db/queries/sessions/unlinked.sql",
+            i64::from(limit)
+        )
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(SessionRow::try_from)
+        .collect()
+    }
+
+    /// Records that the session's ticket links its pull request `url` since `at`; a no-op when
+    /// the session's pull request isn't `url`.
+    ///
+    /// # Errors
+    /// [`StoreError::Db`] or [`StoreError::Timeout`].
+    pub async fn pull_request_linked(
+        &self,
+        session: SessionId,
+        url: &str,
+        at: SystemTime,
+    ) -> Result<(), StoreError> {
+        sqlx::query_file!(
+            "../../../db/queries/sessions/linked.sql",
+            session.0,
+            url,
+            timestamp(rl_chain::micros(at)),
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Records that linking the session's pull request `url` failed at `at`, for good when
+    /// `refused`: a refused one is never listed again, another is listed after those tried
+    /// longer ago. A no-op when the session's pull request isn't `url`.
+    ///
+    /// # Errors
+    /// [`StoreError::Db`] or [`StoreError::Timeout`].
+    pub async fn pull_request_link_failed(
+        &self,
+        session: SessionId,
+        url: &str,
+        at: SystemTime,
+        refused: bool,
+    ) -> Result<(), StoreError> {
+        sqlx::query_file!(
+            "../../../db/queries/sessions/link_failed.sql",
+            session.0,
+            url,
+            timestamp(rl_chain::micros(at)),
+            refused,
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     /// The newest sessions first, at most `limit`.
@@ -269,6 +351,7 @@ struct Record {
     repo: String,
     state: String,
     phase: Option<String>,
+    pull_request_url: Option<String>,
     generation: i64,
     created_at: OffsetDateTime,
 }
@@ -288,6 +371,7 @@ impl TryFrom<Record> for SessionRow {
             repo: row.repo,
             state: State::parse(&row.state)?,
             phase: row.phase.as_deref().map(Phase::parse).transpose()?,
+            pull_request_url: row.pull_request_url,
             generation: to_u64(row.generation, "generation")?,
             created_at: SystemTime::from(row.created_at),
         })

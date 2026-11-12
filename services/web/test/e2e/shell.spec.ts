@@ -22,7 +22,8 @@ test("AC1 the rail has Sessions and the session last opened, and no dead links",
   isMobile,
 }) => {
   await page.goto("/");
-  await expect(nav(page).getByRole("link")).toHaveCount(1);
+  // Sessions, the Fleet wall and Up next (RAN-75); no session opened yet.
+  await expect(nav(page).getByRole("link")).toHaveCount(3);
   await expect(nav(page).getByRole("link", { name: "Sessions" })).toHaveAttribute(
     "aria-current",
     "page",
@@ -39,7 +40,7 @@ test("AC1 the rail has Sessions and the session last opened, and no dead links",
   // Back to it from the rail.
   await press(page, current, isMobile);
   await expect(page).toHaveURL(new RegExp(`${SESSION}$`));
-  await expect(nav(page).getByRole("link")).toHaveCount(2);
+  await expect(nav(page).getByRole("link")).toHaveCount(4);
 });
 
 test("AC2 the top bar: the view, the live status, who is signed in, and sign-out", async ({

@@ -12,11 +12,15 @@ The Workbench: every session as a row, and each session's live event feed and te
   is refused, sends the browser to `/auth/login`, which brings it back to `/`. Back within 10
   seconds still signed out, the view shows "You're signed out" with a Sign in button instead.
 - **Shell** (`src/features/shell/`, the mock-up's): a rail with a view's icon only once the view
-  exists (Sessions, the session last opened); a top bar with the view, the live status of the one
+  exists (Sessions, the Fleet wall, Up next, the session last opened); a top bar with the view, the live status of the one
   `WatchSessions` stream every part shares, the member from `AuthService.WhoAmI`, search and Sign out
   (`POST /auth/logout`); the fleet of sessions not torn down, a column that collapses (remembered in
   this browser) or a sheet below 1024 px; a command palette (Ctrl/⌘ K, or Search) and `?` for the
   keys. On phones the rail is a bottom bar, and a session view shows its phase as a stage strip.
+- **Fleet wall** (`/wall`) and **Up next** (`/up-next`), from the same stream
+  (`src/features/sessions/lanes.ts` says which is which): a tile per live lane (its pod started and
+  isn't gone), with its state, phase, last activity and a waiting-for-you mark; and the sessions with
+  no lane yet (no runner report, or queued; not torn down), oldest first.
 - **Look**: tokens only from `src/styles/tokens.css`, primitives in `src/components/ui`, product
   components in `src/components/rl`, one folder per feature in `src/features/`.
 - **Phones** are a first-class target: below 1024 px the session view shows its terminal and feed

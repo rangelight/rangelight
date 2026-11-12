@@ -1,5 +1,6 @@
 // Every session, live: one WatchSessions stream for the whole Workbench (the shell's fleet and the
 // Sessions page share it), a snapshot and then every change.
+import { timestampMs } from "@bufbuild/protobuf/wkt";
 import type { Session } from "@gen/proto/rangelight/session/v1alpha1/session_pb.ts";
 import {
   createContext,
@@ -30,6 +31,9 @@ export const retries = (state: SessionsState): boolean =>
 interface Value {
   state: SessionsState;
   reload: () => void;
+  /** When each session's newest event this tab saw committed, in ms (the Fleet wall's last
+   * activity). A Session carries no such time, so it starts empty and fills as events arrive. */
+  activity: ReadonlyMap<string, number>;
 }
 
 const Sessions = createContext<Value | null>(null);
@@ -37,6 +41,7 @@ const Sessions = createContext<Value | null>(null);
 export function SessionsProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SessionsState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const [activity, setActivity] = useState<ReadonlyMap<string, number>>(new Map());
 
   useEffect(() => {
     const abort = new AbortController();
@@ -49,6 +54,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
           setState((s) =>
             s.status === "ready" ? { ...s, sessions: applyEvent(s.sessions, e) } : s,
           );
+          const at = e.at && timestampMs(e.at);
+          if (at) setActivity((m) => new Map(m).set(e.sessionId, at));
         },
       },
       abort.signal,
@@ -75,7 +82,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     };
   }, [state, reload]);
 
-  return createElement(Sessions.Provider, { value: { state, reload } }, children);
+  return createElement(Sessions.Provider, { value: { state, reload, activity } }, children);
 }
 
 /** The shared stream's state, and a way to reload it now. */

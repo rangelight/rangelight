@@ -298,3 +298,16 @@ test("RAN-63 waiting for you fits the phone, on the list and in the session view
   // Once the terminal has fitted itself to the screen it is left with and the view has settled.
   await expect(() => fitsTheWidth(page)).toPass({ timeout: 5_000 });
 });
+
+test("RAN-71 a signed-out visit on a phone ends at sign-in; the loop guard's notice fits", async ({
+  page,
+}) => {
+  await stub(page, "reset", { sessions: SESSIONS, signedOut: true });
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/auth\/login$/);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "You're signed out" })).toBeVisible();
+  await fitsTheWidth(page);
+  await touchTargets(page);
+  await axe(page);
+});

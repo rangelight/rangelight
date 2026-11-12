@@ -292,3 +292,35 @@ for (const theme of ["light", "dark"] as const) {
     }
   });
 }
+
+test("RAN-71 a signed-out visitor is sent to sign in, and lands on / after", async ({ page }) => {
+  await stub(page, "reset", { sessions: SESSIONS, signedOut: true });
+  await page.goto(`/sessions/${FIRST}`);
+  await expect(page).toHaveURL(/\/auth\/login$/);
+});
+
+test("RAN-71 back from sign-in still signed out: a notice, not a redirect loop", async ({
+  page,
+}) => {
+  await stub(page, "reset", { sessions: SESSIONS, signedOut: true });
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/auth\/login$/);
+  // Back within 10 seconds, still without a login.
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "You're signed out" })).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/auth\/login$/);
+});
+
+test("RAN-71 a terminal refused for want of a login sends the browser to sign in", async ({
+  page,
+}) => {
+  await page.goto(`/sessions/${FIRST}`);
+  const terminal = page.getByRole("region", { name: "Terminal" });
+  await expect(terminal.getByRole("status")).toHaveText("Connected");
+  // The login ends: the socket closes, and the next upgrade is refused with 401.
+  await stub(page, "reset", { sessions: SESSIONS, signedOut: true });
+  await terminal.getByRole("button", { name: "Reconnect" }).click();
+  await expect(page).toHaveURL(/\/auth\/login$/);
+});

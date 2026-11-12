@@ -35,6 +35,7 @@ export type StubSession = z.infer<typeof StubSessionSchema>;
 const Reset = z.object({
   sessions: z.array(StubSessionSchema).default([]),
   fail: z.boolean().default(false),
+  signedOut: z.boolean().default(false),
 });
 const Emit = z.object({
   sessionId: z.string(),
@@ -58,11 +59,20 @@ interface Watcher {
 const world: {
   sessions: Session[];
   fail: boolean;
+  /** No live login: every api call and terminal upgrade gets 401, as the api's login gate answers. */
+  signedOut: boolean;
   watchers: Map<string, Set<Watcher>>;
   lastResize: { cols: number; rows: number } | null;
   /** Every byte the terminal sent since the reset, as UTF-8. */
   input: string;
-} = { sessions: [], fail: false, watchers: new Map(), lastResize: null, input: "" };
+} = {
+  sessions: [],
+  fail: false,
+  signedOut: false,
+  watchers: new Map(),
+  lastResize: null,
+  input: "",
+};
 
 const toSession = (s: StubSession): Session =>
   create(SessionSchema, {
@@ -249,11 +259,16 @@ async function body(req: IncomingMessage): Promise<unknown> {
 function command(name: string, b: unknown): unknown {
   switch (name) {
     case "reset": {
-      const { sessions, fail } = Reset.parse(b);
+      const { sessions, fail, signedOut } = Reset.parse(b);
       world.fail = fail;
+      world.signedOut = signedOut;
       world.sessions = sessions.map(toSession);
       world.lastResize = null;
       world.input = "";
+      // A fresh world: open terminals close, as if the api restarted.
+      terminals.forEach((ws) => {
+        ws.terminate();
+      });
       return {};
     }
     case "emit": {
@@ -290,7 +305,12 @@ function command(name: string, b: unknown): unknown {
   }
 }
 
+/** The open terminal sockets. */
+const terminals = new Set<WebSocket>();
+
 function terminal(ws: WebSocket): void {
+  terminals.add(ws);
+  ws.on("close", () => terminals.delete(ws));
   ws.on("message", (raw: Buffer) => {
     const frame: unknown = JSON.parse(raw.toString());
     if (typeof frame !== "object" || frame === null || !("type" in frame)) {
@@ -316,6 +336,16 @@ export function startStub(): Promise<Server> {
     const name = /^\/__stub\/(reset|emit|create|report|agent|abort|state)$/.exec(
       req.url ?? "",
     )?.[1];
+    if (name === undefined && req.url === "/auth/login") {
+      res.setHeader("content-type", "text/html");
+      res.end("<!doctype html><title>Sign in</title><h1>The stub's sign-in page</h1>");
+      return;
+    }
+    if (name === undefined && world.signedOut) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ code: "unauthenticated", message: "unauthenticated" }));
+      return;
+    }
     if (name === undefined) {
       handler(req, res);
       return;
@@ -326,6 +356,10 @@ export function startStub(): Promise<Server> {
     });
   });
   server.on("upgrade", (req, socket, head) => {
+    if (world.signedOut) {
+      socket.end("HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\n\r\n");
+      return;
+    }
     if (!/^\/v1alpha1\/sessions\/[^/]+\/terminal$/.test(req.url ?? "")) {
       socket.destroy();
       return;

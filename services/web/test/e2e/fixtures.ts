@@ -1,4 +1,5 @@
-// What both specs share: the sessions they start from, and the stub's controls (test/e2e/stub.ts).
+// What the specs share: the sessions they start from, and the stub's controls (test/e2e/stub.ts).
+import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page } from "@playwright/test";
 import { DesiredState } from "@gen/proto/rangelight/runner/v1alpha1/runner_pb.ts";
 import { z } from "zod";
@@ -41,9 +42,50 @@ export async function stub(page: Page, command: string, data: object = {}): Prom
 
 const StubState = z.object({
   watching: z.number(),
+  watchingAll: z.number(),
+  signedOut: z.boolean(),
   lastResize: z.object({ cols: z.number(), rows: z.number() }).nullable(),
   input: z.string(),
 });
 export const stubState = async (page: Page) => StubState.parse(await stub(page, "state"));
 
 export const row = (page: Page, key: string) => page.getByRole("row").filter({ hasText: key });
+
+/** No horizontal page scroll, and nothing reaches past the screen's edge but the key bar's keys,
+ * which scroll in their own strip. */
+export async function fitsTheWidth(page: Page): Promise<void> {
+  const wide = await page.evaluate(() => {
+    const scroller = document.scrollingElement;
+    if (scroller && scroller.scrollWidth > innerWidth)
+      return [`page ${String(scroller.scrollWidth)}`];
+    return [...document.querySelectorAll("body *")]
+      .filter((el) => !el.closest('[aria-label="Terminal keys"]'))
+      .filter((el) => el.getBoundingClientRect().right > innerWidth + 0.5)
+      .map((el) => el.outerHTML.slice(0, 80));
+  });
+  expect(wide).toEqual([]);
+}
+
+/** Every link, button and tab on screen is at least 44 by 44 px (a terminal key 40 by 44). */
+export async function touchTargets(page: Page): Promise<void> {
+  const small = await page.evaluate(() =>
+    [...document.querySelectorAll("a, button, [role=tab]")]
+      .map((el) => ({ el, r: el.getBoundingClientRect() }))
+      .filter(({ r }) => r.width > 0 && r.height > 0 && r.right > 0 && r.left < innerWidth)
+      // The key bar's keys may be 40 px wide, to fit more of them.
+      .filter(({ el, r }) => {
+        const minWidth = el.closest('[aria-label="Terminal keys"]') ? 39.5 : 43.5;
+        return r.width < minWidth || r.height < 43.5;
+      })
+      .map(({ el, r }) => `${el.textContent} ${String(r.width)}x${String(r.height)}`),
+  );
+  expect(small).toEqual([]);
+}
+
+/** No serious or critical axe violation. */
+export async function axe(page: Page): Promise<void> {
+  const { violations } = await new AxeBuilder({ page }).analyze();
+  expect(
+    violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id),
+  ).toEqual([]);
+}

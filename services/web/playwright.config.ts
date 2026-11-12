@@ -5,7 +5,7 @@ import { defineConfig } from "@playwright/test";
 
 const phone = (width: number, height: number) => ({
   name: `phone-${String(width)}x${String(height)}`,
-  testMatch: "phone.spec.ts",
+  testMatch: ["phone.spec.ts", "shell.spec.ts"],
   use: { viewport: { width, height }, isMobile: true, hasTouch: true },
 });
 

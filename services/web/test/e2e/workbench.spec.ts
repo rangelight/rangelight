@@ -29,7 +29,7 @@ test("AC1 every session is a row: ticket and Linear link, repo, state, age", asy
 test("AC1 rows update live from one WatchSessions stream", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Live")).toBeVisible();
-  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await expect.poll(async () => (await stubState(page)).watchingAll).toBe(1);
   await stub(page, "emit", { sessionId: FIRST, state: DesiredState.WARM });
   await expect(row(page, "RAN-101")).toContainText("Warm");
 });
@@ -39,7 +39,7 @@ test("AC1 the phase follows the runner's reports, on the list and in the feed", 
 }) => {
   await page.goto("/");
   await expect(row(page, "RAN-101")).toContainText("Not reported");
-  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await expect.poll(async () => (await stubState(page)).watchingAll).toBe(1);
   await stub(page, "report", { sessionId: FIRST, phase: Phase.RUNNING });
   await expect(row(page, "RAN-101")).toContainText("Running");
 
@@ -61,7 +61,7 @@ test("RAN-56 the PR link shows live, on the row and in the session view", async 
   const url = "https://github.com/acme/storefront/pull/7";
   await page.goto("/");
   await expect(row(page, "RAN-101").getByRole("link", { name: /pull request/ })).toHaveCount(0);
-  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await expect.poll(async () => (await stubState(page)).watchingAll).toBe(1);
   await stub(page, "report", { sessionId: FIRST, phase: Phase.RUNNING, pullRequestUrl: url });
   const link = row(page, "RAN-101").getByRole("link", { name: /#7 pull request/ });
   await expect(link).toHaveAttribute("href", url);
@@ -77,7 +77,7 @@ test("RAN-56 the PR link shows live, on the row and in the session view", async 
 test("RAN-56 at 360x640 the list and the session view fit, PR link included", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 640 });
   await page.goto("/");
-  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await expect.poll(async () => (await stubState(page)).watchingAll).toBe(1);
   await stub(page, "report", {
     sessionId: FIRST,
     phase: Phase.RUNNING,
@@ -98,7 +98,7 @@ test("RAN-63 an ask shows waiting for you live, on the row and in the session vi
   page,
 }) => {
   await page.goto("/");
-  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await expect.poll(async () => (await stubState(page)).watchingAll).toBe(1);
   await stub(page, "agent", { sessionId: FIRST, question: SIGN_IN });
   await expect(row(page, "RAN-101")).toContainText("Waiting for you");
   await stub(page, "agent", { sessionId: FIRST, question: "" });
@@ -125,7 +125,7 @@ test("RAN-72 while the session loads, its view's frame is already there", async 
 test("AC1 a session created after the page loaded shows up without a reload", async ({ page }) => {
   await page.goto("/");
   await expect(row(page, "RAN-101")).toBeVisible();
-  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await expect.poll(async () => (await stubState(page)).watchingAll).toBe(1);
   await stub(page, "create", {
     id: "019a5f10-0000-7000-8000-000000000104",
     ticketKey: "RAN-104",
@@ -145,7 +145,7 @@ test("AC1 a session created after the page loaded shows up without a reload", as
 
 test("AC1 missed events offer a reconnect that reloads the list", async ({ page }) => {
   await page.goto("/");
-  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await expect.poll(async () => (await stubState(page)).watchingAll).toBe(1);
   await stub(page, "abort", { sessionId: "*" });
   await expect(page.getByText("Events were missed")).toBeVisible();
   await page.getByRole("button", { name: "Reconnect" }).click();

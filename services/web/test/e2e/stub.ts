@@ -6,6 +6,7 @@ import { create } from "@bufbuild/protobuf";
 import { timestampFromMs } from "@bufbuild/protobuf/wkt";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { connectNodeAdapter } from "@connectrpc/connect-node";
+import { AuthService } from "@gen/proto/rangelight/auth/v1alpha1/auth_pb.ts";
 import { DesiredState, Phase } from "@gen/proto/rangelight/runner/v1alpha1/runner_pb.ts";
 import {
   ChangeSchema,
@@ -35,9 +36,12 @@ export type StubSession = z.infer<typeof StubSessionSchema>;
 const Reset = z.object({
   sessions: z.array(StubSessionSchema).default([]),
   fail: z.boolean().default(false),
+  /** No live login: every api call and terminal upgrade gets 401, as the api's login gate answers. */
   signedOut: z.boolean().default(false),
   /** GetSession never answers: the session view stays loading (RAN-72). */
   hold: z.boolean().default(false),
+  /** POST /auth/logout answers 503 and keeps the login, as the api does when Postgres fails. */
+  logoutFails: z.boolean().default(false),
 });
 const Emit = z.object({
   sessionId: z.string(),
@@ -58,25 +62,13 @@ interface Watcher {
   abort: () => void;
 }
 
-const world: {
+const world: Omit<z.infer<typeof Reset>, "sessions"> & {
   sessions: Session[];
-  fail: boolean;
-  /** No live login: every api call and terminal upgrade gets 401, as the api's login gate answers. */
-  signedOut: boolean;
-  hold: boolean;
   watchers: Map<string, Set<Watcher>>;
   lastResize: { cols: number; rows: number } | null;
   /** Every byte the terminal sent since the reset, as UTF-8. */
   input: string;
-} = {
-  sessions: [],
-  fail: false,
-  signedOut: false,
-  hold: false,
-  watchers: new Map(),
-  lastResize: null,
-  input: "",
-};
+} = { ...Reset.parse({}), sessions: [], watchers: new Map(), lastResize: null, input: "" };
 
 const toSession = (s: StubSession): Session =>
   create(SessionSchema, {
@@ -231,6 +223,7 @@ async function* watchAll(signal: AbortSignal): AsyncGenerator<WatchSessionsRespo
 
 const handler = connectNodeAdapter({
   routes: (router) => {
+    router.service(AuthService, { whoAmI: () => ({ member: "ariel" }) });
     router.service(SessionService, {
       getSession: async (req, ctx) => {
         if (world.hold)
@@ -267,10 +260,8 @@ async function body(req: IncomingMessage): Promise<unknown> {
 function command(name: string, b: unknown): unknown {
   switch (name) {
     case "reset": {
-      const { sessions, fail, signedOut, hold } = Reset.parse(b);
-      world.fail = fail;
-      world.signedOut = signedOut;
-      world.hold = hold;
+      const { sessions, ...flags } = Reset.parse(b);
+      Object.assign(world, flags);
       world.sessions = sessions.map(toSession);
       world.lastResize = null;
       world.input = "";
@@ -307,7 +298,12 @@ function command(name: string, b: unknown): unknown {
       return {
         lastResize: world.lastResize,
         input: world.input,
-        watching: [...world.watchers.values()].reduce((n, s) => n + s.size, 0),
+        // One session's watchers (WatchSession), and every session's (WatchSessions, the shell's).
+        watching: [...world.watchers]
+          .filter(([key]) => key !== ALL)
+          .reduce((n, [, s]) => n + s.size, 0),
+        watchingAll: world.watchers.get(ALL)?.size ?? 0,
+        signedOut: world.signedOut,
       };
     default:
       return undefined;
@@ -345,6 +341,16 @@ export function startStub(): Promise<Server> {
     const name = /^\/__stub\/(reset|emit|create|report|agent|abort|state)$/.exec(
       req.url ?? "",
     )?.[1];
+    if (name === undefined && req.url === "/auth/logout" && req.method === "POST") {
+      if (world.logoutFails) {
+        res.writeHead(503, { "content-type": "application/json" });
+        res.end(JSON.stringify({ code: "unavailable", message: "store_unavailable" }));
+        return;
+      }
+      world.signedOut = true;
+      res.writeHead(204).end();
+      return;
+    }
     if (name === undefined && req.url === "/auth/login") {
       res.setHeader("content-type", "text/html");
       res.end("<!doctype html><title>Sign in</title><h1>The stub's sign-in page</h1>");

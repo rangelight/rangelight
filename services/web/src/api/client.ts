@@ -2,6 +2,7 @@
 // The api and the Workbench share an origin (ADR 0040 §4), so nothing here names a host.
 import { Code, ConnectError, createClient, type Interceptor } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
+import { AuthService } from "@gen/proto/rangelight/auth/v1alpha1/auth_pb.ts";
 import { SessionService } from "@gen/proto/rangelight/session/v1alpha1/session_pb.ts";
 
 /** Where a signed-out visitor signs in; the api sends them back to "/" (it takes no return path). */
@@ -46,6 +47,19 @@ const transport = createConnectTransport({
 
 /** The session API: GetSession, WatchSession and WatchSessions. */
 export const sessions = createClient(SessionService, transport);
+
+/** WhoAmI: the signed-in member. */
+export const auth = createClient(AuthService, transport);
+
+/** Ends the login (the api's same-origin check sees this page's Origin), then goes to sign in.
+ * Only the api's 204 means the login ended: on any other answer, or none, it kept the login and its
+ * cookie, so this stays on the page and says false. */
+export async function signOut(): Promise<boolean> {
+  const answer = await fetch("/auth/logout", { method: "POST" }).catch(() => null);
+  if (answer?.status !== 204) return false;
+  location.assign(SIGN_IN);
+  return true;
+}
 
 /** The WebSocket subprotocol of api/jsonschema/terminal.v1alpha1.schema.json. */
 export const TERMINAL_PROTOCOL = "terminal.v1alpha1.rangelight.dev";

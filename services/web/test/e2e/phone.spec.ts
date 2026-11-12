@@ -1,49 +1,10 @@
 // The Workbench on a phone: portrait, touch, at the sizes of playwright.config.ts's phone projects.
-import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 import { DesiredState, Phase } from "@gen/proto/rangelight/runner/v1alpha1/runner_pb.ts";
-import { FIRST, row, SESSIONS, stub, stubState } from "./fixtures";
+import { axe, FIRST, fitsTheWidth, row, SESSIONS, stub, stubState, touchTargets } from "./fixtures";
 
 const SESSION = `/sessions/${FIRST}`;
 const textarea = (page: Page) => page.locator(".xterm-helper-textarea");
-
-/** No horizontal page scroll, and nothing reaches past the screen's edge but the key bar's keys,
- * which scroll in their own strip. */
-async function fitsTheWidth(page: Page): Promise<void> {
-  const wide = await page.evaluate(() => {
-    const scroller = document.scrollingElement;
-    if (scroller && scroller.scrollWidth > innerWidth)
-      return [`page ${String(scroller.scrollWidth)}`];
-    return [...document.querySelectorAll("body *")]
-      .filter((el) => !el.closest('[aria-label="Terminal keys"]'))
-      .filter((el) => el.getBoundingClientRect().right > innerWidth + 0.5)
-      .map((el) => el.outerHTML.slice(0, 80));
-  });
-  expect(wide).toEqual([]);
-}
-
-/** Every link, button and tab on screen is at least 44 by 44 px (a terminal key 40 by 44). */
-async function touchTargets(page: Page): Promise<void> {
-  const small = await page.evaluate(() =>
-    [...document.querySelectorAll("a, button, [role=tab]")]
-      .map((el) => ({ el, r: el.getBoundingClientRect() }))
-      .filter(({ r }) => r.width > 0 && r.height > 0 && r.right > 0 && r.left < innerWidth)
-      // The key bar's keys may be 40 px wide, to fit more of them.
-      .filter(({ el, r }) => {
-        const minWidth = el.closest('[aria-label="Terminal keys"]') ? 39.5 : 43.5;
-        return r.width < minWidth || r.height < 43.5;
-      })
-      .map(({ el, r }) => `${el.textContent} ${String(r.width)}x${String(r.height)}`),
-  );
-  expect(small).toEqual([]);
-}
-
-async function axe(page: Page): Promise<void> {
-  const { violations } = await new AxeBuilder({ page }).analyze();
-  expect(
-    violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id),
-  ).toEqual([]);
-}
 
 async function connected(page: Page): Promise<void> {
   await expect(page.getByRole("region", { name: "Terminal" }).getByRole("status")).toHaveText(
@@ -65,9 +26,11 @@ test("AC1 the sessions list fits the screen, every target a thumb's size", async
   await fitsTheWidth(page);
   await touchTargets(page);
   await axe(page);
-  // No rail on a phone: its two items are in the header.
-  const nav = page.locator("header").getByRole("navigation", { name: "Primary" });
+  // No rail on a phone: it is the bottom bar (RAN-74).
+  const nav = page.getByRole("navigation", { name: "Primary" });
   await expect(nav.getByRole("link", { name: "Sessions" })).toBeVisible();
+  const bar = await nav.boundingBox();
+  expect((bar?.y ?? 0) + (bar?.height ?? 0)).toBeCloseTo(page.viewportSize()?.height ?? 0, 0);
   await nav.getByRole("button", { name: "Dark theme" }).tap();
   await expect(page.locator("html")).toHaveClass(/dark/);
 });
@@ -287,7 +250,7 @@ test("RAN-63 waiting for you fits the phone, on the list and in the session view
   page,
 }) => {
   await page.goto("/");
-  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await expect.poll(async () => (await stubState(page)).watchingAll).toBe(1);
   const question =
     "Please sign in to Claude: open this lane's terminal, type /login, and answer Yes when Claude asks whether you trust the folder. The lane starts by itself once you're signed in.";
   await stub(page, "agent", { sessionId: FIRST, question });

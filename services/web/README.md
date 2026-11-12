@@ -10,6 +10,10 @@ The Workbench: every session as a row, and each session's live event feed and te
   reads the session once that stream is open (`src/api/live.ts`).
 - **Look**: tokens only from `src/styles/tokens.css`, primitives in `src/components/ui`, product
   components in `src/components/rl`, one folder per feature in `src/features/`.
+- **Phones** are a first-class target: below 1024 px the session view shows its terminal and feed
+  as tabs, the app follows the visual viewport so the terminal refits above the soft keyboard, and
+  touch or narrow screens get a key bar (Esc, Tab, Shift+Tab, Ctrl+C, arrows, /, Enter) and 44 px
+  targets (the `touch` variant in `tokens.css`). `test/e2e/phone.spec.ts` runs at 360x640 and 390x844.
 
 ```sh
 pnpm --filter web dev     # http://127.0.0.1:4173, proxying the api paths to :4180

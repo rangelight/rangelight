@@ -59,7 +59,9 @@ const world: {
   fail: boolean;
   watchers: Map<string, Set<Watcher>>;
   lastResize: { cols: number; rows: number } | null;
-} = { sessions: [], fail: false, watchers: new Map(), lastResize: null };
+  /** Every byte the terminal sent since the reset, as UTF-8. */
+  input: string;
+} = { sessions: [], fail: false, watchers: new Map(), lastResize: null, input: "" };
 
 const toSession = (s: StubSession): Session =>
   create(SessionSchema, {
@@ -239,6 +241,7 @@ function command(name: string, b: unknown): unknown {
       world.fail = fail;
       world.sessions = sessions.map(toSession);
       world.lastResize = null;
+      world.input = "";
       return {};
     }
     case "emit": {
@@ -262,6 +265,7 @@ function command(name: string, b: unknown): unknown {
     case "state":
       return {
         lastResize: world.lastResize,
+        input: world.input,
         watching: [...world.watchers.values()].reduce((n, s) => n + s.size, 0),
       };
     default:
@@ -276,9 +280,10 @@ function terminal(ws: WebSocket): void {
       ws.close(1008);
       return;
     }
-    if (frame.type === "input" && "data" in frame)
+    if (frame.type === "input" && "data" in frame) {
+      world.input += Buffer.from(String(frame.data), "base64").toString("utf8");
       ws.send(JSON.stringify({ type: "output", data: frame.data }));
-    else if (frame.type === "resize" && "cols" in frame && "rows" in frame)
+    } else if (frame.type === "resize" && "cols" in frame && "rows" in frame)
       world.lastResize = { cols: Number(frame.cols), rows: Number(frame.rows) };
     else ws.close(1008);
   });

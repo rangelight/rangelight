@@ -68,13 +68,10 @@ function Item({ event }: { event: Event }) {
 /** The session's events as they commit (WatchSession sends from the next one on). */
 export function Feed({ events }: { events: readonly Event[] }) {
   return (
-    <section
-      aria-labelledby="feed-title"
-      className="flex min-h-0 flex-col border-line max-lg:border-b lg:border-r"
-    >
+    <section aria-labelledby="feed-title" className="flex min-h-0 flex-col border-line lg:border-r">
       <h2
         id="feed-title"
-        className="shrink-0 border-b border-line px-4 py-2.5 text-[12px] font-semibold text-foreground"
+        className="shrink-0 border-b border-line px-4 py-2.5 text-[12px] font-semibold text-foreground max-lg:sr-only"
       >
         Feed
       </h2>

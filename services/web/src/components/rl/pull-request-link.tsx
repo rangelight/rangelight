@@ -11,7 +11,7 @@ export function PullRequestLink({ session }: { session: Session }) {
       href={session.pullRequestUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 rounded-sm font-mono text-[12px] text-dim hover:text-rl"
+      className="inline-flex items-center justify-center gap-1 rounded-sm touch:min-h-11 touch:min-w-11 font-mono text-[12px] text-dim hover:text-rl"
     >
       <GitPullRequest className="size-3" aria-hidden />#{number}
       <span className="sr-only"> pull request on GitHub (opens in a new tab)</span>

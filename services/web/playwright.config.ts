@@ -1,6 +1,13 @@
 // End-to-end tests of the Workbench against the stub api (test/e2e/stub.ts). The screenshots in
-// test/screenshots/ are the review artifact: each view in light and dark.
+// test/screenshots/ are the review artifact: each view in light and dark. phone.spec.ts runs at two
+// phone sizes, portrait, with touch.
 import { defineConfig } from "@playwright/test";
+
+const phone = (width: number, height: number) => ({
+  name: `phone-${String(width)}x${String(height)}`,
+  testMatch: "phone.spec.ts",
+  use: { viewport: { width, height }, isMobile: true, hasTouch: true },
+});
 
 export default defineConfig({
   testDir: "test/e2e",
@@ -19,6 +26,7 @@ export default defineConfig({
     timezoneId: "UTC",
     browserName: "chromium",
   },
+  projects: [{ name: "desktop", testIgnore: "phone.spec.ts" }, phone(360, 640), phone(390, 844)],
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.02, animations: "disabled", caret: "hide" } },
   // The production build, as the image serves it.
   webServer: {

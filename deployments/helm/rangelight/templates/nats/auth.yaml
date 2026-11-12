@@ -2,7 +2,8 @@
 ---
 # Who may connect to the bundled NATS server (templates/nats/_auth.conf.tpl, ADR 0021 amendment): the api's auth callout
 # signs every client in. The server includes it from /etc/nats-auth; its public keys come from the Secret
-# rangelight-nats-auth (or nats.auth.existingSecret).
+# rangelight-nats-auth (or nats.auth.existingSecret). It also holds files/nats/archive.sh, which the server's init
+# container runs before each start (RAN-78).
 apiVersion: "v1"
 kind: "ConfigMap"
 metadata:
@@ -13,4 +14,6 @@ metadata:
 data:
   auth.conf: |
     {{- regexReplaceAll "(?m)^ +$" (include "rangelight.natsAuthConf" . | nindent 4) "" }}
+  archive.sh: |
+    {{- regexReplaceAll "(?m)^ +$" (.Files.Get "files/nats/archive.sh" | nindent 4) "" }}
 {{- end }}

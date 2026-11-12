@@ -70,8 +70,8 @@ ts() {
 }
 
 deploy() {
-  # helm, kubeconform, yamllint: the chart tests.
-  need shellcheck helm kubeconform yamllint || failed "deploy (tools)"
+  # helm, kubeconform, yamllint: the chart tests; nats-server: the NATS upgrade test (test/nats.sh).
+  need shellcheck helm kubeconform yamllint nats-server || failed "deploy (tools)"
   local scripts=() t
   mapfile -t scripts < <(repo_files | grep -E '\.sh$|^services/git-mirror/hooks/[^/]+$')
   shellcheck -x -- "${scripts[@]}"

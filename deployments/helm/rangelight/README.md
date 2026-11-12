@@ -118,9 +118,17 @@ clients included. Find your cluster's issuer with `kubectl get --raw /.well-know
   6. Values: `nats.external.url` (`tls://`, or `nats://` to a Service in this cluster), `nats.auth.account` and
      `nats.auth.laneAccount` (the two public keys), and `nats.auth.existingSecret` holding `issuer-seed`,
      `lane-issuer-seed` and `auth-user-seed`.
-- **Upgrading from before sign-in** moves JetStream out of NATS's global account into `RL`. The old streams stay
-  on the volume, unused. At every start the relay puts back each session's last published desired state from
-  Postgres wherever the desired stream lacks it, before it publishes anything newer, so runners lose nothing.
+- **Upgrading from before sign-in** moves JetStream out of NATS's global account (`$G`) into `RL`. The server
+  never recovers the old streams, and its startup probe (the full `/healthz`, kept so that a stream that really
+  can't be recovered still stops it) would fail on them at every start. So before each start the NATS pod's init
+  container `archive-orphans` (`files/nats/archive.sh`) moves `/data/jetstream/$G` whole to
+  `/data/archived-G-<UTC time>` on the same volume, and logs what it moved
+  (`kubectl logs -n rangelight-system rangelight-nats-0 -c archive-orphans`). It acts only when `$G` holds
+  nothing but Rangelight's streams (`rl-<org>-*`); anything else there is logged and left, and so is an existing
+  archive. It never touches `RL`. To restore the archive (to read it with a server of the version before sign-in,
+  say): scale the server to 0, then from any pod that mounts the volume run
+  `mv /data/archived-G-<time> '/data/jetstream/$G'` (single quotes: `$G` is a literal name), and start that older
+  server on it. At every start the relay puts back each session's last published desired state from Postgres wherever the desired stream lacks it, before it publishes anything newer, so runners lose nothing.
   Status reports the api hadn't recorded yet are lost; each runner reports again at a session's next phase
   change.
 - **NATS restarts when its sign-in config changes.** The server's pod carries `checksum/auth`, the sha256 of the

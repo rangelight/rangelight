@@ -168,6 +168,31 @@ nats:
           fsGroup: 1000
           seccompProfile:
             type: "RuntimeDefault"
+        # Before each start: archives the streams an install from before sign-in left in the global account, which
+        # the server would never recover and its startup probe would fail on (files/nats/archive.sh, README).
+        initContainers:
+          - name: "archive-orphans"
+            image:
+              $tplYaml: "{{ .Values.container.image.fullImageName | quote }}"
+            command: ["sh", "/etc/nats-auth/archive.sh", "/data/jetstream", "/etc/nats-auth/auth.conf"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - "ALL"
+            resources:
+              requests:
+                cpu: "10m"
+                memory: "16Mi"
+              limits:
+                memory: "64Mi"
+            volumeMounts:
+              - name: "rangelight-nats-js"
+                mountPath: "/data"
+              - name: "auth"
+                mountPath: "/etc/nats-auth"
+                readOnly: true
     # auth.conf at /etc/nats-auth; a changed one rolls the server (checksum/auth above).
     patch:
       - op: "add"

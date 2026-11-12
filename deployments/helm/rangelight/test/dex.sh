@@ -22,6 +22,12 @@ test_dex_bundled_pinned_restricted_with_secrets_from_secrets() {
   expect_line "                  name: rangelight-oidc"
   expect_line "            secretName: rangelight-dex-config"
   expect_no_match '^ +value: '
+  # RAN-53: Dex renders its config into /tmp, a memory volume; the root stays read-only.
+  expect_line "            readOnlyRootFilesystem: true"
+  [[ "$(grep -A1 -e '- mountPath: /tmp$' <<<"${OUT}" | tail -1)" == "              name: tmp" ]] ||
+    fail "Dex without /tmp mounted from the tmp volume"
+  expect_line "            medium: Memory"
+  expect_line "            sizeLimit: 16Mi"
   render --show-only templates/dex/serviceaccount.yaml
   expect_ok
   expect_line "automountServiceAccountToken: false"

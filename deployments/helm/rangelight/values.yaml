@@ -213,6 +213,15 @@ dex:
     capabilities:
       drop:
         - "ALL"
+  # The root stays read-only; Dex writes its rendered config to /tmp at start, so /tmp is a small memory volume.
+  volumes:
+    - name: "tmp"
+      emptyDir:
+        medium: "Memory"
+        sizeLimit: "16Mi"
+  volumeMounts:
+    - name: "tmp"
+      mountPath: "/tmp"
   # Resources of the Dex server.
   resources:
     requests:

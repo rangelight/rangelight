@@ -43,7 +43,8 @@ spec:
             - name: "RANGELIGHT_RUNNER_AGENT_IMAGE"
               value: {{ required "runner.agentImage is required" .Values.runner.agentImage | quote }}
             - name: "RANGELIGHT_RUNNER_MIRROR_URL"
-              value: {{ printf "http://git-mirror.%s.svc.cluster.local:8080" .Release.Namespace | quote }}
+              # Empty without the mirror: lanes then fail, and a deleted Session has no mirror repo to remove.
+              value: {{ ternary (printf "http://git-mirror.%s.svc.cluster.local:8080" .Release.Namespace) "" .Values.gitMirror.enabled | quote }}
             - name: "RANGELIGHT_RUNNER_DNS_NAMESPACE"
               value: {{ .Values.clusterDns.namespace | quote }}
             - name: "RANGELIGHT_RUNNER_DNS_POD_LABEL"

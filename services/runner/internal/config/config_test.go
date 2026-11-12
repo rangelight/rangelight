@@ -70,6 +70,14 @@ func TestGitHubApp(t *testing.T) {
 	}
 }
 
+// No git mirror deployed: an empty mirror_url (lanes then fail; deleted Sessions have no repo to drop).
+func TestNoMirror(t *testing.T) {
+	c, err := load(filepath.Join(t.TempDir(), "absent.toml"), []string{"RANGELIGHT_RUNNER_AGENT_IMAGE=" + image, "RANGELIGHT_RUNNER_MIRROR_URL="})
+	if err != nil || c.MirrorURL != "" {
+		t.Fatalf("%q, %v", c.MirrorURL, err)
+	}
+}
+
 // A test's fake GitHub may be plain http, on loopback only.
 func TestGitHubAPIOverHTTPOnLoopback(t *testing.T) {
 	for _, u := range []string{"http://127.0.0.1:8080", "http://[::1]:8080", "http://localhost:8080"} {

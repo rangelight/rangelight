@@ -174,7 +174,7 @@ installation token for that repository only, revoked once used. The runner then 
 the session's base branch (`api.baseRef`), titled `<ticket key>: <ticket title>`, linking the Linear ticket.
 Later pushes update the same pull request. A failed push is retried by its Job twice; then, and for anything
 GitHub refuses for good, the session's status message says why and the next push tries again. Without the
-value nothing is published. Each upstream must be `https://github.com/<owner>/<repo>.git`. The mirror refuses
+value nothing is published, and a session that pushes says so in its status message. Each upstream must be `https://github.com/<owner>/<repo>.git`. The mirror refuses
 any file over 100 MiB, which GitHub would refuse too.
 
 **Lane branches run your CI.** A pushed `rangelight/*` branch and its pull request trigger the repo's `push` and

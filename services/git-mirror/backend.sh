@@ -23,6 +23,19 @@ root="${GIT_PROJECT_ROOT-}"
 [[ "${root}" == /* && -d "${root}" ]] || refuse "500 Internal Server Error" "no repository root"
 rl_identity || refuse "403 Forbidden" "no valid identity"
 
+# The runner drops a closed session's repo (RAN-65): DELETE /sessions/<id>.git, the id a session id
+# (the Session CRD's UUIDv7), so the path can only ever be a session repo, never an upstream repo.
+if [[ "${REQUEST_METHOD-}" == DELETE ]]; then
+  [[ "${RL_ROLE}" == runner ]] || refuse "403 Forbidden" "only the runner removes a session's repo"
+  [[ "${PATH_INFO-}" =~ ^/sessions/([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.git$ ]] ||
+    refuse "404 Not Found" "not found"
+  dir="${root}/sessions/${BASH_REMATCH[1]}.git"
+  [[ -d "${dir}" ]] || refuse "404 Not Found" "no repo sessions/${BASH_REMATCH[1]}.git"
+  rm -rf -- "${dir}"
+  printf 'Status: 204 No Content\r\n\r\n'
+  exit 0
+fi
+
 # Smart HTTP only. The dumb protocol (info/refs without ?service=, objects/*, packed-refs)
 # would serve files directly instead of through upload-pack.
 name='[A-Za-z0-9][A-Za-z0-9._-]*'

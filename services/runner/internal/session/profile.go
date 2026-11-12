@@ -70,6 +70,9 @@ func newProfiles(mirrorURL, tokenFile string) (*profiles, error) {
 // the runner's /tmp per worker at once (size the chart's runner.tmpSize to Workers of them).
 // Upgrade: a partial clone (blob:none) once the mirror sets uploadpack.allowFilter.
 func (p *profiles) read(ctx context.Context, repo, baseRef string) (string, []byte, error) {
+	if p.mirrorURL == "" {
+		return "", nil, failed("no git mirror is deployed (gitMirror.enabled): a lane reads its profile and its repo from it")
+	}
 	// The projected token rotates: read it at each fetch. It goes only into the request's
 	// Authorization header, never into the URL, argv or a log line.
 	token, err := os.ReadFile(p.tokenFile)

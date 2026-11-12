@@ -213,6 +213,7 @@ suite() {
   test_big_push_goes_chunked
   test_ac6_sync_keeps_session_refs
   test_publish_copies_only_the_work_branch
+  test_runner_drops_a_closed_sessions_repo
   [[ "${MODE}" != nginx ]] || test_limits_hold_back_one_identity_and_one_address
 }
 

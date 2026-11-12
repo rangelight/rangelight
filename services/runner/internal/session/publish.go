@@ -31,13 +31,21 @@ const (
 	publishTokenDir  = "/var/run/rangelight/publish" //nolint:gosec // a mount path, not a credential
 	jobNameLabel     = "batch.kubernetes.io/job-name"
 	nothingToPublish = "nothing to publish"
-	publishUID       = 10001 // the git mirror image's user
+	// publishingOff is the status message of a session that pushed while no GitHub App is configured.
+	publishingOff = "publishing is off: no GitHub App configured (githubApp.secretRef)"
+	publishUID    = 10001 // the git mirror image's user
 )
 
 // publishDue moves the publish of s's last pushed commit on by one step, and returns how long to
 // wait before trying again after a failure (0: the Job's own events bring the Session back).
 func (r *Reconciler) publishDue(ctx context.Context, s *Session) time.Duration {
-	if r.GitHub == nil || s.Status.Pushes == s.Status.PublishedPush {
+	if r.GitHub == nil {
+		if s.Status.Pushes > 0 {
+			s.Status.PublishMessage = publishingOff
+		}
+		return 0
+	}
+	if s.Status.Pushes == s.Status.PublishedPush {
 		return 0
 	}
 	if wait := r.pub.wait(s.Spec.ID); wait > 0 {

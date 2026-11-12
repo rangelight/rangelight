@@ -94,7 +94,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 headers.append((key, value.strip()))
         self.answer(status, headers, rest)
 
-    do_GET = do_POST = run
+    do_GET = do_POST = do_DELETE = run
 
     def log_message(self, *args):
         pass

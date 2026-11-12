@@ -335,3 +335,25 @@ publish() {
     env "${env[@]}" "${HERE}/publish.sh" "$1" "${BASE}" "$2"
   fi
 }
+
+# RAN-65: the runner drops a closed session's repo (DELETE /sessions/<id>.git); no other identity can, and
+# no other path is ever removed, an upstream repo least of all.
+test_runner_drops_a_closed_sessions_repo() {
+  local id=019a5e1c-0000-7000-8000-000000000065 repo path
+  repo="${SRV}/sessions/${id}.git"
+  git init -q --bare "${repo}"
+  check "a session can't drop a session repo" "[[ \$(drop a /sessions/${id}.git) == 403 && -d '${repo}' ]]"
+  check "no identity can't either" "[[ \$(drop deny /sessions/${id}.git) == 401 && -d '${repo}' ]]"
+  for path in "/sessions/../demo.git" "/sessions/%2e%2e/demo.git" "/sessions/demo.git" "/demo.git" "/sessions/${id}.git/../../demo.git"; do
+    check "the runner can't drop ${path}" "[[ \$(drop r '${path}') != 204 && -d '${SRV}/demo.git/objects' && -d '${repo}' ]]"
+  done
+  check "the runner drops the session's repo" "[[ \$(drop r /sessions/${id}.git) == 204 && ! -e '${repo}' ]]"
+  check "a repo already gone is a 404" "[[ \$(drop r /sessions/${id}.git) == 404 ]]"
+  check "the upstream repo is untouched" "git --git-dir '${SRV}/demo.git' rev-parse -q --verify refs/heads/main >/dev/null"
+}
+
+# drop <user> <path>: DELETE the path as that identity; prints the HTTP status.
+drop() {
+  curl -s --path-as-is -o "${TMP}/out" -w '%{http_code}' -X DELETE -H "X-Stub-User: $1" \
+    -H "X-Test-Client-IP: $(client_ip "$1")" "${BASE}$2"
+}

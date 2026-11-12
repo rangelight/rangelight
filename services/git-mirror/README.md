@@ -13,7 +13,7 @@ with `[a-z0-9]`). Anything else, or no answer, is refused. `backend.sh` and the 
 | --- | --- | --- | --- |
 | `/<repo>.git` | `<repo>.git`: upstream refs only | any identity | fetch |
 | `/session/<repo>.git` | `sessions/<own id>.git` | that session | fetch, push its own refs |
-| `/sessions/<id>.git` | `sessions/<id>.git` | the runner | fetch |
+| `/sessions/<id>.git` | `sessions/<id>.git` | the runner | fetch; `DELETE` drops the repo of a closed session (`<id>` a session's UUIDv7) |
 
 - **One repo per session.** It is created on the session's first push. It borrows `<repo>.git`'s
   objects (`objects/info/alternates`) but writes only its own, so no session can name, reach or
@@ -23,7 +23,8 @@ with `[a-z0-9]`). Anything else, or no answer, is refused. `backend.sh` and the 
   only objects that pass fsck:
   - `refs/rangelight/sessions/<id>/…`: checkpoints, append-only (no delete, no rewind);
   - `refs/heads/rangelight/<id>/…`: its branches (force-push and delete allowed).
-- **The runner** is the trusted control plane. It may read every repo and push none.
+- **The runner** is the trusted control plane. It may read every repo and push none, and it may `DELETE`
+  a closed session's repo (`/sessions/<id>.git`, never an upstream repo).
 - **Upstream** reaches `<repo>.git` only through `sync.sh`: explicit refspecs, never `--mirror`,
   never `refs/heads/rangelight*`, and no gc (session repos depend on these objects).
 - **Limits** (`nginx.conf`):

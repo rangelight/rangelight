@@ -1,6 +1,6 @@
 //! What each identity may do on NATS, as its user JWT says (ADR 0021 amendment, ADR 0043): the
 //! subject lists of `rl_domain::subject`, and which account it joins. Limits are the accounts'
-//! (`files/nats/auth.conf`): the server doesn't apply a callout user's own.
+//! (`templates/nats/_auth.conf.tpl`): the server doesn't apply a callout user's own.
 //!
 //! ponytail: no publish-rate limit, which NATS doesn't have per user. Ceiling: a lane can flood
 //! its own output subject. Upgrade: the api rate-limits what it relays from a lane (ADR 0043).

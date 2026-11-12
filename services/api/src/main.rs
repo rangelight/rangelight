@@ -3,7 +3,10 @@
 //! server until SIGTERM or Ctrl-C.
 
 use anyhow::Context;
-use api::{Auth, SessionApi, config::Config, connect_nats, intake_loop, link_loop, serve, status};
+use api::{
+    Auth, SessionApi, check_intake_label, config::Config, connect_nats, intake_loop, link_loop,
+    serve, status,
+};
 use rl_store::Store;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
@@ -21,6 +24,7 @@ async fn main() -> anyhow::Result<()> {
     let cancel = CancellationToken::new();
     let (nats, callout) = connect_nats(&config, store.clone(), cancel.clone()).await?;
     let linear = config.linear(&roots)?;
+    tokio::spawn(check_intake_label(linear.clone()));
     let provider = rl_auth::Provider::new(
         config.oidc_issuer.clone(),
         config.registration()?,

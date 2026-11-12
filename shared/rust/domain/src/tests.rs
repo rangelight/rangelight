@@ -138,6 +138,68 @@ fn criteria_are_the_ac_lines_of_the_description_with_their_continuations() {
     assert_eq!(ticket::criteria(""), Vec::<String>::new());
 }
 
+/// RAN-64 AC1: a numbered list under an Acceptance heading, any level or bold, as every RAN
+/// ticket is written; a wrapped item is one criterion; AC lines still count, once each.
+#[test]
+fn criteria_are_also_the_numbered_items_under_an_acceptance_heading() {
+    let description = "Steps\n1. not a criterion\n\n## Acceptance criteria\n1. first,\n   wrapped\n2) second\n\n   3. an indented paragraph is part of nothing\n10. tenth\n## Notes\n1. not one either";
+    assert_eq!(
+        ticket::criteria(description),
+        ["first, wrapped", "second", "tenth"]
+    );
+    let bold = "**Acceptance:**\n1. **Bold** start\n2. AC7 counted once\nAC8 outside the list\n\nText\n3. still under the heading";
+    assert_eq!(
+        ticket::criteria(bold),
+        [
+            "Bold start",
+            "AC7 counted once",
+            "AC8 outside the list",
+            "still under the heading"
+        ]
+    );
+    for heading in [
+        "# Acceptance",
+        "### ACCEPTANCE CRITERIA:",
+        "**Acceptance criteria**",
+    ] {
+        assert_eq!(
+            ticket::criteria(&format!("{heading}\n1. one")),
+            ["one"],
+            "{heading}"
+        );
+    }
+    for not_one in [
+        "Acceptance\n1. a plain line isn't a heading",
+        "#Acceptance\n1. nor is #word",
+        "## Acceptance\n1.5 seconds isn't an item",
+    ] {
+        assert_eq!(ticket::criteria(not_one), Vec::<String>::new(), "{not_one}");
+    }
+}
+
+/// RAN-64 review 4 and 5: nothing inside a code fence counts, not even a heading; a numbered or AC
+/// item wholly in bold is an item, and any other bold line is a heading, so it ends the section.
+#[test]
+fn criteria_skip_code_fences_and_read_bold_items_as_items() {
+    let fenced = "## Acceptance\n1. one\n```md\n# Acceptance\n## Notes\n2. in a fence\n```\n~~~\n3. in a tilde fence\n```\nstill fenced\n~~~\n4. four";
+    assert_eq!(ticket::criteria(fenced), ["one", "four"]);
+    let opened = "## Acceptance\n1. one\n```\n## Notes";
+    assert_eq!(
+        ticket::criteria(opened),
+        ["one"],
+        "an unclosed fence runs to the end"
+    );
+    let bold = "**Acceptance criteria**\n**1. first**\n2. second\n**Notes**\n3. third";
+    assert_eq!(ticket::criteria(bold), ["first", "second"]);
+    let scope = "**Acceptance criteria**\n1. a\n**Out of scope**\n1. don't touch X";
+    assert_eq!(ticket::criteria(scope), ["a"]);
+    assert_eq!(
+        ticket::criteria("**1. no heading yet**"),
+        Vec::<String>::new()
+    );
+    assert_eq!(ticket::criteria("**AC1 bold whole**"), ["AC1 bold whole"]);
+}
+
 /// AC6: the rule's limits are the schema's, and the schema's examples pass or fail here as they
 /// do in `scripts/check.sh spec`.
 #[test]

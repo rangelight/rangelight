@@ -1,4 +1,4 @@
-//! The only Postgres access (ADR 0049 §2.4): sessions, events, outbox, and sign-in. Every command
+//! The only Postgres access (ADR 0049 §2.4): sessions, events, outbox, sign-in, and skipped tickets. Every command
 //! writes its state, its chained event and its outbox row in one transaction (ADR 0031). SQL lives in `db/queries/<area>/*.sql`, one
 //! module per area, compile-time checked against `.sqlx/`.
 #![deny(missing_docs)]
@@ -16,11 +16,13 @@ mod auth;
 mod events;
 mod outbox;
 mod sessions;
+mod skips;
 
 pub use auth::NewLogin;
 pub use events::ChainEvent;
 pub use outbox::Unsent;
 pub use sessions::{SessionRow, Snapshot};
+pub use skips::SkipRow;
 
 /// The schema, from `db/migrations/`.
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../../db/migrations");

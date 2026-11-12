@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- The skip of ticket ($1, $2) at version $3 was commented on at $4. A no-op if the ticket was edited\n-- since: the new version is commented on.\nUPDATE ticket_skips SET commented_at = $4\nWHERE tracker = $1 AND ticket_id = $2 AND version = $3\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a0792cfe8294751e95557e4bb6ed317cf061f59502b35f37206a338cb06b2ec5"
+}

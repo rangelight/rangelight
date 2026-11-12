@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- Intake skipped ticket ($1, $2) at version $3, saying $4. A new version is a new skip to comment on;\n-- the same one changes nothing.\nINSERT INTO ticket_skips (tracker, ticket_id, version, body) VALUES ($1, $2, $3, $4)\nON CONFLICT (tracker, ticket_id) DO UPDATE SET\n  version = EXCLUDED.version, body = EXCLUDED.body,\n  commented_at = NULL, tried_at = NULL, refused_at = NULL\nWHERE ticket_skips.version <> EXCLUDED.version\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d7f6b4dcc76339fdcc8ee131fb8e45c70931547b3bdd5b2edb446dc0e290dfd4"
+}

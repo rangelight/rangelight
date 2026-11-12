@@ -22,6 +22,7 @@ async fn new_session(n: u32, ids: &SeqIds) -> NewSession {
     intake(&source, &rl_testkit::workspace(), &clock(), ids)
         .await
         .unwrap()
+        .sessions
         .remove(0)
 }
 

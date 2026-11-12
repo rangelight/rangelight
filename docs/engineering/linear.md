@@ -30,7 +30,9 @@ No date labels and no synonym pairs. A new label is a change to this page.
 ## Templates
 
 Each template carries the acceptance-criteria block. Criteria are numbered, and each one is
-checkable by a test named after it (`AC1`, `AC2`, ...).
+checkable by a test named after it (`AC1`, `AC2`, ...). Rangelight's intake reads them as `AC<n>`
+lines or as a numbered list (`1.`, `2.`) under an "Acceptance criteria" heading, and comments on a
+labelled ticket that has none.
 
 **Feature**
 

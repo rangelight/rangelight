@@ -31,7 +31,7 @@ mod linear_stub;
 mod nats_auth;
 
 pub use browser::{Browser, Page};
-pub use dex::{Dex, PUBLIC_URL, dex, sign_in_at_dex};
+pub use dex::{Dex, PUBLIC_URL, dex, page_after_dex_login, sign_in_at_dex};
 pub use https_stub::HttpsStub;
 pub use linear_stub::{LinearStub, Reply, StubRequest};
 pub use nats_auth::{AuthNats, FakeIssuer, NATS_AUDIENCE, now};

@@ -11,11 +11,24 @@ export const SIGN_IN = "/auth/login";
 /** When we last sent the browser to sign in, so coming back still signed out doesn't loop. */
 const SENT_AT = "rl-sign-in-at";
 const LOOP_MS = 10_000;
+/** Set when the member signed out in this tab: it stays signed out until they press Sign in. */
+const SIGNED_OUT_HERE = "rl-signed-out";
 
-/** Sends the browser to sign in, unless it was sent there in the last 10 seconds: then it came
- * back still signed out, and the view's notice offers "Sign in" instead of a redirect loop. */
+/** Whether the member signed out in this tab and hasn't pressed Sign in since. */
+export function signedOutHere(): boolean {
+  try {
+    return sessionStorage.getItem(SIGNED_OUT_HERE) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Sends the browser to sign in, unless it was sent there in the last 10 seconds (it came back
+ * still signed out) or the member signed out in this tab: then the view's notice offers "Sign in"
+ * instead of a redirect. */
 export function signIn(now = Date.now()): void {
   try {
+    if (sessionStorage.getItem(SIGNED_OUT_HERE) !== null) return;
     if (now - Number(sessionStorage.getItem(SENT_AT)) < LOOP_MS) return;
     sessionStorage.setItem(SENT_AT, String(now));
   } catch {
@@ -23,6 +36,20 @@ export function signIn(now = Date.now()): void {
     return;
   }
   location.assign(SIGN_IN);
+}
+
+/** The notice's Sign in: always goes, and marks it sent so no automatic redirect follows it. After
+ * a sign-out in this tab it asks the provider to confirm (`prompt=consent`, the one value the api
+ * takes), so a live GitHub session doesn't sign the member straight back in (RAN-82). */
+export function signInAgain(now = Date.now()): void {
+  const confirm = signedOutHere();
+  try {
+    sessionStorage.removeItem(SIGNED_OUT_HERE);
+    sessionStorage.setItem(SENT_AT, String(now));
+  } catch {
+    // No storage: nothing to clear or mark.
+  }
+  location.assign(confirm ? `${SIGN_IN}?prompt=consent` : SIGN_IN);
 }
 
 /** Whether a failed call's reason (`describe` in live.ts) says the login is missing or over. */
@@ -51,13 +78,19 @@ export const sessions = createClient(SessionService, transport);
 /** WhoAmI: the signed-in member. */
 export const auth = createClient(AuthService, transport);
 
-/** Ends the login (the api's same-origin check sees this page's Origin), then goes to sign in.
- * Only the api's 204 means the login ended: on any other answer, or none, it kept the login and its
- * cookie, so this stays on the page and says false. */
+/** Ends the login (the api's same-origin check sees this page's Origin), then shows the Workbench
+ * signed out: no redirect to sign in, which a live GitHub session would answer by signing the
+ * member straight back in (RAN-82). Only the api's 204 means the login ended: on any other answer,
+ * or none, it kept the login and its cookie, so this stays on the page and says false. */
 export async function signOut(): Promise<boolean> {
   const answer = await fetch("/auth/logout", { method: "POST" }).catch(() => null);
   if (answer?.status !== 204) return false;
-  location.assign(SIGN_IN);
+  try {
+    sessionStorage.setItem(SIGNED_OUT_HERE, "1");
+  } catch {
+    // No storage: signIn() redirects nowhere anyway.
+  }
+  location.assign("/");
   return true;
 }
 

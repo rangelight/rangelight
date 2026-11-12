@@ -83,10 +83,10 @@ fn huge(_: &str) -> String {
 async fn an_issuer_behind_your_own_ca_needs_the_extra_root() {
     let stub = HttpsStub::start(|url| discovery(&format!("{url}/dex"))).await;
     let issuer = Url::parse(&format!("{}/dex", stub.url)).unwrap();
-    let error = provider(&issuer).start().await.unwrap_err();
+    let error = provider(&issuer).start(false).await.unwrap_err();
     assert!(matches!(error, AuthError::Unavailable(_)), "{error}");
     with_roots(&issuer, std::slice::from_ref(&stub.ca))
-        .start()
+        .start(false)
         .await
         .unwrap();
 }
@@ -95,7 +95,7 @@ async fn an_issuer_behind_your_own_ca_needs_the_extra_root() {
 async fn an_answer_over_one_mib_is_refused() {
     for with_length in [true, false] {
         let issuer = stub(huge, with_length, Arc::default()).await;
-        let error = provider(&issuer).start().await.unwrap_err();
+        let error = provider(&issuer).start(false).await.unwrap_err();
         assert!(
             matches!(&error, AuthError::Unavailable(why) if why.contains("over 1048576 bytes")),
             "{error}"
@@ -110,7 +110,7 @@ async fn discovery_is_fetched_once_for_many_callers() {
     let provider = Arc::new(provider(&issuer));
     let starts = (0..20).map(|_| {
         let provider = provider.clone();
-        tokio::spawn(async move { provider.start().await.map(drop) })
+        tokio::spawn(async move { provider.start(false).await.map(drop) })
     });
     for start in starts {
         start.await.unwrap().unwrap();
@@ -140,7 +140,7 @@ async fn a_hung_provider_is_asked_once() {
     let starts: Vec<_> = (0..20)
         .map(|_| {
             let provider = provider.clone();
-            tokio::spawn(async move { provider.start().await.map(drop) })
+            tokio::spawn(async move { provider.start(false).await.map(drop) })
         })
         .collect();
     let all = async {
@@ -155,7 +155,7 @@ async fn a_hung_provider_is_asked_once() {
         .await
         .expect("every waiter failed with the one fetch");
     assert!(matches!(
-        provider.start().await,
+        provider.start(false).await,
         Err(AuthError::Unavailable(_))
     ));
     assert_eq!(count.load(Ordering::SeqCst), 1);

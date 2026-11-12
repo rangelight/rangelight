@@ -72,6 +72,26 @@ pub async fn sign_in_at_dex(authorization: &Url, email: &str, redirect: &Url) ->
     }
 }
 
+/// Signs `email` in at Dex as [`sign_in_at_dex`] does, but returns the body of the page Dex shows
+/// after the password form: its approval screen under `prompt=consent`, for one (RAN-82). Only for
+/// a flow that stops at Dex: it follows redirects, so one back to the callback would fail.
+pub async fn page_after_dex_login(authorization: &Url, email: &str) -> String {
+    let http = reqwest::Client::builder()
+        .redirect(Policy::limited(10))
+        .build()
+        .unwrap();
+    let form = http.get(authorization.clone()).send().await.unwrap();
+    assert_eq!(form.status(), StatusCode::OK, "Dex's login form");
+    let url = form.url().clone();
+    let page = http
+        .post(url)
+        .form(&[("login", email), ("password", PASSWORD)])
+        .send()
+        .await
+        .unwrap();
+    page.text().await.unwrap()
+}
+
 fn next(url: &Url, response: &reqwest::Response) -> Url {
     let location = response.headers()[LOCATION].to_str().unwrap();
     url.join(location).unwrap()

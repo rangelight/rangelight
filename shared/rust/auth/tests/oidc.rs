@@ -5,7 +5,7 @@ use std::io::Write;
 
 use rl_auth::{AuthError, Identity, Provider, Started};
 use rl_config::SecretRef;
-use rl_testkit::{Dex, dex, sign_in_at_dex};
+use rl_testkit::{Dex, dex, page_after_dex_login, sign_in_at_dex};
 use secrecy::{ExposeSecret, SecretString};
 
 fn provider(dex: &Dex, client: &str, secret: SecretRef) -> Provider {
@@ -28,7 +28,7 @@ fn with_claim(dex: &Dex, client: &str, secret: SecretRef, member_claim: &str) ->
 
 /// Starts a sign-in with `provider` and walks Dex as kilgore: the code it comes back with.
 async fn code(provider: &Provider, dex: &Dex) -> (Started, String) {
-    let started = provider.start().await.unwrap();
+    let started = provider.start(false).await.unwrap();
     let back = sign_in_at_dex(&started.url, "kilgore@example.com", &dex.redirect).await;
     let param = |name: &str| {
         back.query_pairs()
@@ -44,7 +44,7 @@ async fn code(provider: &Provider, dex: &Dex) -> (Started, String) {
 async fn the_authorization_url_asks_for_s256_pkce_state_and_nonce() {
     let dex = dex();
     let started = provider(&dex, "rangelight-api", dex.secret.clone())
-        .start()
+        .start(false)
         .await
         .unwrap();
     let pairs: Vec<(String, String)> = started.url.query_pairs().into_owned().collect();
@@ -182,4 +182,26 @@ async fn the_client_secret_is_in_no_error() {
     assert!(
         !format!("{:?}", started.pkce_verifier).contains(started.pkce_verifier.expose_secret())
     );
+}
+
+/// RAN-82: a sign-in started with `confirm` asks for `prompt=consent`, and the bundled Dex then
+/// stops at its approval screen instead of signing the member straight back in (its GitHub
+/// connector passes no prompt to GitHub, so this is the confirmation there is). Without it, no
+/// prompt is asked for.
+#[tokio::test]
+async fn a_confirmed_sign_in_asks_the_member_to_grant_access() {
+    let dex = dex();
+    let provider = provider(&dex, "rangelight-api", dex.secret.clone());
+    let prompt = |started: &Started| {
+        started
+            .url
+            .query_pairs()
+            .find(|(k, _)| k == "prompt")
+            .map(|(_, v)| v.into_owned())
+    };
+    assert_eq!(prompt(&provider.start(false).await.unwrap()), None);
+    let confirmed = provider.start(true).await.unwrap();
+    assert_eq!(prompt(&confirmed).as_deref(), Some("consent"));
+    let page = page_after_dex_login(&confirmed.url, "kilgore@example.com").await;
+    assert!(page.contains("Grant Access"), "{page:.300}");
 }

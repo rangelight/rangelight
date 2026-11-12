@@ -129,17 +129,29 @@ fn store_unavailable(error: &StoreError) -> Response {
     ConnectError::unavailable("store_unavailable").into_response()
 }
 
-/// GET /auth/login: starts a sign-in and sends the browser to the provider.
-async fn login(State(auth): State<Auth>) -> Response {
-    match start(&auth).await {
+/// What `/auth/login` takes: only `prompt=consent`, from the Workbench's Sign in after a sign-out.
+#[derive(Debug, Deserialize)]
+struct Login {
+    prompt: Option<String>,
+}
+
+/// GET /auth/login: starts a sign-in and sends the browser to the provider. `?prompt=consent` has
+/// the provider ask the member to confirm (RAN-82); any other `prompt` is refused, never passed on.
+async fn login(State(auth): State<Auth>, Query(query): Query<Login>) -> Response {
+    let confirm = match query.prompt.as_deref() {
+        None => false,
+        Some("consent") => true,
+        Some(_) => return ConnectError::invalid_argument("prompt").into_response(),
+    };
+    match start(&auth, confirm).await {
         Ok(response) => response,
         Err(error) => error.into_response(),
     }
 }
 
-async fn start(auth: &Auth) -> Result<Response, SignInError> {
+async fn start(auth: &Auth, confirm: bool) -> Result<Response, SignInError> {
     let provider = &auth.0.provider;
-    let started = provider.start().await?;
+    let started = provider.start(confirm).await?;
     // Nothing is stored: state, nonce and PKCE verifier travel sealed in the cookie (review M1).
     let sealed = provider.seal(&started, SystemTime::now())?;
     let cookie = set_cookie(SIGN_IN_COOKIE, &sealed, SIGN_IN_TTL)?;

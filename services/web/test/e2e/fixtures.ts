@@ -44,6 +44,7 @@ const StubState = z.object({
   watching: z.number(),
   watchingAll: z.number(),
   signedOut: z.boolean(),
+  signIns: z.array(z.string()),
   lastResize: z.object({ cols: z.number(), rows: z.number() }).nullable(),
   input: z.string(),
 });

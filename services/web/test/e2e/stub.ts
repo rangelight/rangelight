@@ -69,6 +69,8 @@ const world: Omit<z.infer<typeof Reset>, "sessions"> & {
   /** Every byte the terminal sent since the reset, as UTF-8. */
   input: string;
 } = { ...Reset.parse({}), sessions: [], watchers: new Map(), lastResize: null, input: "" };
+/** Every /auth/login request since the reset, path and query. */
+const signIns: string[] = [];
 
 const toSession = (s: StubSession): Session =>
   create(SessionSchema, {
@@ -265,6 +267,7 @@ function command(name: string, b: unknown): unknown {
       world.sessions = sessions.map(toSession);
       world.lastResize = null;
       world.input = "";
+      signIns.length = 0;
       // A fresh world: open terminals close, as if the api restarted.
       terminals.forEach((ws) => {
         ws.terminate();
@@ -304,6 +307,7 @@ function command(name: string, b: unknown): unknown {
           .reduce((n, [, s]) => n + s.size, 0),
         watchingAll: world.watchers.get(ALL)?.size ?? 0,
         signedOut: world.signedOut,
+        signIns: [...signIns],
       };
     default:
       return undefined;
@@ -351,7 +355,8 @@ export function startStub(): Promise<Server> {
       res.writeHead(204).end();
       return;
     }
-    if (name === undefined && req.url === "/auth/login") {
+    if (name === undefined && /^\/auth\/login(\?|$)/.test(req.url ?? "")) {
+      signIns.push(req.url ?? "");
       res.setHeader("content-type", "text/html");
       res.end("<!doctype html><title>Sign in</title><h1>The stub's sign-in page</h1>");
       return;

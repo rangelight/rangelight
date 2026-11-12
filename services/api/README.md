@@ -44,7 +44,10 @@ The control plane's front door (ADR 0031, ADR 0033):
   that doesn't take a frame within 10 seconds is closed with 1011.
 - **Sign-in** (ADR 0028, ADR 0033), OIDC against bundled Dex or any provider (`shared/rust/auth`):
   `GET /auth/login` starts the authorization-code flow with PKCE (S256), `state` (also in the
-  cookie `__Host-rl_login`, so a callback only works in the browser that started it) and `nonce`;
+  cookie `__Host-rl_login`, so a callback only works in the browser that started it) and `nonce`.
+  `?prompt=consent`, the one `prompt` it takes (any other is 400), asks the provider for it: the
+  Workbench's Sign in after a sign-out, so bundled Dex asks the member to grant access instead of
+  signing them straight back in (its GitHub connector passes no prompt on to GitHub);
   `GET /auth/callback` takes the sign-in once, exchanges the code, verifies the ID token (signature
   via discovery and JWKS, issuer, audience, expiry, nonce), and sets `__Host-rl_session`
   (`HttpOnly; Secure; SameSite=Lax; Path=/`): a random 256-bit token whose SHA-256 is the

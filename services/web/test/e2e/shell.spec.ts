@@ -60,7 +60,7 @@ test("AC2 the top bar: the view, the live status, who is signed in, and sign-out
   await expect(status).toContainText("Reconnecting…");
   await expect(page.getByText("Signed in as ariel")).toBeAttached();
   await press(page, page.getByRole("button", { name: "Sign out" }), isMobile);
-  await expect(page).toHaveURL(/\/auth\/login$/);
+  await expect(page.getByText("You're signed out")).toBeVisible();
   expect((await stubState(page)).signedOut).toBe(true);
 });
 
@@ -80,7 +80,35 @@ test("AC2 a sign-out the api refuses keeps the page, and says you are still sign
   // The api recovers: the same button signs out.
   await stub(page, "reset", { sessions: SESSIONS });
   await press(page, page.getByRole("button", { name: "Sign out" }), isMobile);
-  await expect(page).toHaveURL(/\/auth\/login$/);
+  await expect(page.getByText("You're signed out")).toBeVisible();
+});
+
+test("RAN-82 sign out stays signed out until Sign in, which asks the provider to confirm, once", async ({
+  page,
+  isMobile,
+}) => {
+  await page.goto(SESSION);
+  await expect(page.getByText("Signed in as ariel")).toBeAttached();
+  await press(page, page.getByRole("button", { name: "Sign out" }), isMobile);
+  // The signed-out page, and it stays: no request to sign in, even on a reload in this tab.
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText("You're signed out")).toBeVisible();
+  await page.waitForTimeout(1500);
+  await page.reload();
+  await expect(page.getByText("You're signed out")).toBeVisible();
+  await page.waitForTimeout(1500);
+  expect((await stubState(page)).signIns).toEqual([]);
+  await fitsTheWidth(page);
+  await axe(page);
+  // Sign in: one redirect, asking for the provider's confirmation.
+  await press(page, page.getByRole("button", { name: "Sign in" }), isMobile);
+  await expect(page).toHaveURL(/\/auth\/login\?prompt=consent$/);
+  await page.waitForTimeout(500);
+  expect((await stubState(page)).signIns).toEqual(["/auth/login?prompt=consent"]);
+  // Another tab, still signed out, goes to sign in once, as before (RAN-71).
+  const other = await page.context().newPage();
+  await other.goto("/");
+  await expect(other).toHaveURL(/\/auth\/login$/);
 });
 
 test("AC3 the fleet lists live sessions with their state and who waits; it collapses, remembered", async ({

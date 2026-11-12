@@ -583,3 +583,30 @@ async fn healthz_answers_without_a_login() {
     let page = served.browser().get("/healthz").await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
 }
+
+/// RAN-82: `/auth/login?prompt=consent` asks the provider for `prompt=consent` (the Workbench's
+/// Sign in after a sign-out); a plain `/auth/login` asks for no prompt; any other `prompt` is
+/// refused, never passed on.
+#[tokio::test]
+async fn sign_in_takes_only_prompt_consent() {
+    let (_db, served) = app("api::auth_prompt").await;
+    let prompt = |location: Option<String>| {
+        let url = rl_auth::Url::parse(&location.unwrap()).unwrap();
+        url.query_pairs()
+            .find(|(k, _)| k == "prompt")
+            .map(|(_, v)| v.into_owned())
+    };
+    let plain = served.browser().get("/auth/login").await;
+    assert_eq!(plain.status, StatusCode::SEE_OTHER);
+    assert_eq!(prompt(plain.location), None);
+    let confirm = served.browser().get("/auth/login?prompt=consent").await;
+    assert_eq!(confirm.status, StatusCode::SEE_OTHER);
+    assert_eq!(prompt(confirm.location).as_deref(), Some("consent"));
+    for other in ["none", "login", "consent%20login", "select_account"] {
+        let page = served
+            .browser()
+            .get(&format!("/auth/login?prompt={other}"))
+            .await;
+        assert_eq!(page.status, StatusCode::BAD_REQUEST, "{other}");
+    }
+}

@@ -16,7 +16,8 @@ use std::time::{Duration, Instant};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use openidconnect::core::{
-    CoreAuthenticationFlow, CoreClient, CoreIdToken, CoreIdTokenClaims, CoreProviderMetadata,
+    CoreAuthPrompt, CoreAuthenticationFlow, CoreClient, CoreIdToken, CoreIdTokenClaims,
+    CoreProviderMetadata,
 };
 use openidconnect::{
     AsyncHttpClient, AuthorizationCode, ClaimsVerificationError, ClientId, ClientSecret, CsrfToken,
@@ -178,11 +179,13 @@ impl Provider {
     }
 
     /// Starts a sign-in: a fresh state, nonce and PKCE (S256) verifier, and the URL that asks the
-    /// provider for `openid profile`.
+    /// provider for `openid profile`. With `confirm`, the URL also says `prompt=consent`: the
+    /// provider asks the member to confirm instead of signing them in silently (bundled Dex shows
+    /// its approval screen; its GitHub connector passes nothing on to GitHub, RAN-82).
     ///
     /// # Errors
     /// [`AuthError::Unavailable`] if discovery fails.
-    pub async fn start(&self) -> Result<Started, AuthError> {
+    pub async fn start(&self, confirm: bool) -> Result<Started, AuthError> {
         let client = CoreClient::from_provider_metadata(
             self.discover(false).await?,
             self.client_id.clone(),
@@ -190,15 +193,18 @@ impl Provider {
         )
         .set_redirect_uri(self.redirect.clone());
         let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
-        let (url, state, nonce) = client
+        let mut request = client
             .authorize_url(
                 CoreAuthenticationFlow::AuthorizationCode,
                 CsrfToken::new_random,
                 Nonce::new_random,
             )
             .add_scope(Scope::new("profile".into()))
-            .set_pkce_challenge(challenge)
-            .url();
+            .set_pkce_challenge(challenge);
+        if confirm {
+            request = request.add_prompt(CoreAuthPrompt::Consent);
+        }
+        let (url, state, nonce) = request.url();
         Ok(Started {
             url,
             state: state.into_secret().into(),

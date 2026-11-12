@@ -101,7 +101,7 @@ export function startTerminal(o: TerminalOptions): Terminal {
     servers: o.natsUrl,
     name: `rl-agent-${o.sessionId}`,
     authenticator: tokenAuthenticator(token),
-    waitOnFirstConnect: true,
+    // No waitOnFirstConnect: a failed first connect rejects, so connectUntil logs why and tries again.
     maxReconnectAttempts: -1,
     // By default two refused sign-ins in a row stop the client for good.
     ignoreAuthErrorAbort: true,

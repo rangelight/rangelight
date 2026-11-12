@@ -135,7 +135,7 @@ nats:
     # kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes, for example ["10.0.0.5/32"].
     apiServerCidrs: []
   # The upstream chart's settings (https://github.com/nats-io/k8s/tree/main/helm/charts/nats).
-  # The server's name, and so its Service: the api connects to nats://rangelight-nats.rangelight-system.svc:4222.
+  # The server's name, and so its Service: the api connects to nats://rangelight-nats.rangelight-system.svc.cluster.local:4222.
   fullnameOverride: "rangelight-nats"
   global:
     labels:

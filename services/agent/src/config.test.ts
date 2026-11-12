@@ -9,7 +9,7 @@ const env = {
   RANGELIGHT_AGENT_MIRROR_URL: "http://git-mirror.rangelight-system:8080/",
   RANGELIGHT_AGENT_REPO: "opentelemetry-demo",
   RANGELIGHT_AGENT_UNDER_CHANGE: "frontend,cart",
-  RANGELIGHT_AGENT_NATS_URL: "nats://rangelight-nats.rangelight-system.svc:4222",
+  RANGELIGHT_AGENT_NATS_URL: "nats://rangelight-nats.rangelight-system.svc.cluster.local:4222",
   CLAUDE_CONFIG_DIR: "/home/node/.claude",
 };
 const none = "/nonexistent/agent.toml";
@@ -27,7 +27,7 @@ test("config: defaults from configs/agent.default.toml, then the environment", (
     profileFile: "/etc/rangelight/profile.json",
     ticketFile: "/etc/rangelight/ticket.json",
     underChange: ["frontend", "cart"],
-    natsUrl: "nats://rangelight-nats.rangelight-system.svc:4222",
+    natsUrl: "nats://rangelight-nats.rangelight-system.svc.cluster.local:4222",
     natsTokenFile: "/var/run/secrets/rangelight/nats/token",
     org: "default",
     claudeConfigDir: "/home/node/.claude",
@@ -64,7 +64,15 @@ test("config: an invalid or unknown value fails with every bad key named", () =>
     "nats://user:pass@nats:4222",
     "nats://nats.example.com:4222",
     "nats://a.svc:4222,b.svc:4222",
+    // RAN-66: a bare .svc, which the lane can't resolve.
+    "nats://rangelight-nats.rangelight-system.svc:4222",
     "nats://nats.rangelight-system.svc:4222/x",
+    // RAN-66 security review M1: the same rule as the runner's, rl_nats's and the chart's.
+    "nats://evil.com,x.svc.cluster.local",
+    "nats://x.ns.svc.cluster.local:4222?",
+    "nats://x.ns.svc.cluster.local:4222#",
+    "nats://x.ns.svc.cluster.local:0",
+    "nats://.svc.cluster.local:4222",
   ]) {
     expect(() => loadConfig({ ...env, RANGELIGHT_AGENT_NATS_URL: url }, none)).toThrow(/nats_url/);
   }

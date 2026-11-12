@@ -147,7 +147,7 @@ egress 443 ip:0.0.0.0/0-10.42.0.0/16-10.43.0.0/16
 egress 443,6443 ip:10.0.0.5/32" ]] || fail "the api's peers:
 $(network_peers)"
   render "${SERVE[@]}" --show-only templates/api/networkpolicy.yaml --set nats.enabled=false \
-    --set nats.external.url=nats://nats.messaging.svc --set nats.auth.existingSecret=nats-keys
+    --set nats.external.url=nats://nats.messaging.svc.cluster.local --set nats.auth.existingSecret=nats-keys
   expect_line '          port: 4222'
 }
 

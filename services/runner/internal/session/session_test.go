@@ -596,7 +596,7 @@ func TestAnthropicEgress(t *testing.T) {
 }
 
 // natsHost is the host of the suite's nats_url.
-const natsHost = "rangelight-nats.rangelight-system.svc"
+const natsHost = "rangelight-nats.rangelight-system.svc.cluster.local"
 
 func TestRetriesUntilTheMirrorHasTheRepo(t *testing.T) {
 	s := newSession(t, "late")

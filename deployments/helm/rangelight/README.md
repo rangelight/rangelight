@@ -65,7 +65,7 @@ the relay gets the database's the same way. No secret is ever an environment val
 
 - `RANGELIGHT_API_DATABASE_URL`: `secret://rangelight-pg-app#uri` (bundled), the Secret CloudNativePG
   generates, or `secret://<postgres.external.secretRef.name>#<key>`. There's no password in values or git.
-- `RANGELIGHT_API_NATS_URL`: `nats://rangelight-nats.rangelight-system.svc:4222`, or `nats.external.url`.
+- `RANGELIGHT_API_NATS_URL`: `nats://rangelight-nats.rangelight-system.svc.cluster.local:4222`, or `nats.external.url`.
 - `RANGELIGHT_API_PUBLIC_URL`, `RANGELIGHT_API_OIDC_ISSUER` (`<publicUrl>/dex`, or `oidc.issuer`),
   `RANGELIGHT_API_OIDC_CLIENT_ID`, `RANGELIGHT_API_OIDC_MEMBER_CLAIM`, and `RANGELIGHT_API_OIDC_CLIENT_SECRET` as a reference to
   `oidc.clientSecretRef`.

@@ -8,7 +8,7 @@ listen = "0.0.0.0:8080"
 # The Postgres URL, as a secret reference: the mounted Secret file holds the whole URL.
 database_url = "secret://postgres#url"
 # NATS (ADR 0021): tls://, or nats:// to a Service in this cluster, since the relay's token travels to it.
-nats_url = "nats://rangelight-nats.rangelight-system.svc:4222"
+nats_url = "nats://rangelight-nats.rangelight-system.svc.cluster.local:4222"
 # The relay's projected token for NATS (audience rangelight-nats), read again at every connect.
 nats_token_file = "/var/run/secrets/rangelight/nats/token"
 # The org's NATS subject token (ADR 0021): subjects are rl.<org>.…

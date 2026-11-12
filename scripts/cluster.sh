@@ -127,7 +127,9 @@ up() {
   local dev=(--values "${ROOT}/deployments/dev/values.yaml" --values "${RANGELIGHT_VALUES}" --set-string "gitMirror.image=${GIT_MIRROR_IMAGE}" --set-string "runner.image=${RUNNER_IMAGE}" --set-string "runner.agentImage=${AGENT_IMAGE}" --set-string "api.image=${API_IMAGE}" --set-string "relay.image=${RELAY_IMAGE}" --set-string "web.image=${WEB_IMAGE}")
   if [[ "${RANGELIGHT_DRY_RUN:-}" == true ]]; then
     namespace_manifest
-    helm template "${RELEASE}" "${CHART}" --namespace "${SYSTEM_NS}" --api-versions postgresql.cnpg.io/v1/Cluster "${dev[@]}"
+    # The dev cluster has Cilium (the lanes need it): the api reaches the API server through its CiliumNetworkPolicy.
+    helm template "${RELEASE}" "${CHART}" --namespace "${SYSTEM_NS}" --api-versions postgresql.cnpg.io/v1/Cluster \
+      --api-versions cilium.io/v2 "${dev[@]}"
     return 0
   fi
   namespace_manifest | k apply -f -
@@ -153,10 +155,9 @@ down() {
 
 # What the smoke pods run, in their own shell; like the probes below, no double quotes or backslashes.
 PSQL_SMOKE="[ \$(psql \$POSTGRES_URL -tAc 'select 1') = 1 ]"
-# A JetStream round trip: a file-backed stream, one message in, the same message out through a pull consumer.
-# It stops at the first failing step, whose error ends the log, and always removes the stream.
+# NATS signs every client in as itself (ADR 0021 amendment): an anonymous one, as this pod is, must be refused.
 # shellcheck disable=SC2016
-NATS_SMOKE='set -e; trap '"'"'rc=$?; nats stream rm -f rl-smoke >/dev/null 2>&1 || true; exit $rc'"'"' EXIT; nats stream rm -f rl-smoke >/dev/null 2>&1 || true; nats stream add rl-smoke --subjects rl.smoke --storage file --replicas 1 --defaults >/dev/null; nats pub rl.smoke ok; nats consumer add rl-smoke rl-smoke --pull --defaults >/dev/null; got=$(nats consumer next rl-smoke rl-smoke --raw); [ $got = ok ] || { echo consume: got $got, want ok >&2; exit 1; }'
+NATS_SMOKE='out=$(nats pub rl.smoke ok 2>&1) && { echo an anonymous client was let in >&2; exit 1; }; case $out in *uthorization*) ;; *) echo $out >&2; exit 1 ;; esac'
 # The smoke pods' clients write to their working directory and HOME: a writable emptyDir at /tmp (the root
 # filesystem isn't theirs as uid 65532).
 SMOKE_TMP=$'\n  volumes:\n    - name: "tmp"\n      emptyDir: {}'
@@ -214,7 +215,7 @@ $(restricted_pod "${SMOKE_PODS[0]}" smoke "${PSQL_IMAGE}" "${PSQL_SMOKE}" "$(smo
 $(restricted_pod "${SMOKE_PODS[1]}" smoke "${NATS_BOX_IMAGE}" "${NATS_SMOKE}" "$(smoke_container "" "" "${nats}")" "${SMOKE_TMP}")
 EOF
   check_smoke "${SMOKE_PODS[0]}" "psql 'select 1' with the Secret ${secret}, from a restricted pod"
-  check_smoke "${SMOKE_PODS[1]}" "JetStream publish and consume on ${nats}, from a restricted pod"
+  check_smoke "${SMOKE_PODS[1]}" "NATS refuses an anonymous client on ${nats}, from a restricted pod"
   [[ "${FAILS}" -eq 0 ]] || die "smoke: ${FAILS} check(s) failed"
 }
 

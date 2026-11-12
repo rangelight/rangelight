@@ -1,0 +1,43 @@
+{
+  "description": "What each NATS identity may publish and subscribe to, for org acme, runner r1 and one session (ADR 0021 amendment). rl-domain's subject lists must produce exactly this; the runner's protocol tests run under the runner entry.",
+  "org": "acme",
+  "runner_id": "r1",
+  "session": "0190f3a0-0000-7000-8000-000000000001",
+  "api": {
+    "publish": [
+      "$JS.API.STREAM.CREATE.rl-acme-status",
+      "$JS.API.STREAM.UPDATE.rl-acme-status",
+      "$JS.API.STREAM.INFO.rl-acme-status",
+      "$JS.API.CONSUMER.CREATE.rl-acme-status.api.rl.acme.runner.*.status",
+      "$JS.API.CONSUMER.INFO.rl-acme-status.api",
+      "$JS.API.CONSUMER.MSG.NEXT.rl-acme-status.api",
+      "$JS.ACK.rl-acme-status.api.>",
+      "rl.acme.pty.*.in"
+    ],
+    "subscribe": ["rl.acme.session.*.events", "rl.acme.pty.*.out", "_INBOX_api.>"]
+  },
+  "relay": {
+    "publish": [
+      "$JS.API.STREAM.CREATE.rl-acme-desired",
+      "$JS.API.STREAM.UPDATE.rl-acme-desired",
+      "$JS.API.STREAM.INFO.rl-acme-desired",
+      "rl.acme.runner.*.desired.*",
+      "rl.acme.session.*.events"
+    ],
+    "subscribe": ["_INBOX_relay.>"]
+  },
+  "runner": {
+    "publish": [
+      "$JS.API.CONSUMER.CREATE.rl-acme-desired.runner-r1.rl.acme.runner.r1.desired.*",
+      "$JS.API.CONSUMER.INFO.rl-acme-desired.runner-r1",
+      "$JS.API.CONSUMER.MSG.NEXT.rl-acme-desired.runner-r1",
+      "$JS.ACK.rl-acme-desired.runner-r1.>",
+      "rl.acme.runner.r1.status"
+    ],
+    "subscribe": ["_INBOX_runner-r1.>"]
+  },
+  "lane": {
+    "publish": ["rl.acme.pty.0190f3a0-0000-7000-8000-000000000001.out"],
+    "subscribe": ["rl.acme.pty.0190f3a0-0000-7000-8000-000000000001.in"]
+  }
+}

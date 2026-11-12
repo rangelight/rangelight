@@ -1,6 +1,6 @@
 //! Test support (ADR 0049 §2.2, §8): fakes for the seams, the `TicketSource` contract suite, a
-//! Linear stub, an HTTPS stub behind a throwaway CA, and real Postgres, NATS and Dex. A
-//! dev-dependency only.
+//! Linear stub, an HTTPS stub behind a throwaway CA, real Postgres, NATS (also with the bundled
+//! sign-in config) and Dex, and a fake ServiceAccount token issuer. A dev-dependency only.
 //!
 //! Postgres, NATS and Dex come from `scripts/test/services.sh run`, which sets `DATABASE_URL`
 //! (read by sqlx) and `RANGELIGHT_TESTKIT_*`.
@@ -28,11 +28,13 @@ mod browser;
 mod dex;
 mod https_stub;
 mod linear_stub;
+mod nats_auth;
 
 pub use browser::{Browser, Page};
 pub use dex::{Dex, PUBLIC_URL, dex, sign_in_at_dex};
 pub use https_stub::HttpsStub;
 pub use linear_stub::{LinearStub, Reply, StubRequest};
+pub use nats_auth::{AuthNats, FakeIssuer, NATS_AUDIENCE, now};
 
 /// A ticket as a tracker holds it, with its labels: what a test seeds a source with.
 #[derive(Debug, Clone, PartialEq, Eq)]

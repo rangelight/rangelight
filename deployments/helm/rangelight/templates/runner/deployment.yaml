@@ -76,6 +76,10 @@ spec:
             - name: "git-mirror-token"
               mountPath: "/var/run/secrets/rangelight/git-mirror"
               readOnly: true
+            # Its identity at NATS (nats_token_file): the api's auth callout maps it to this runner.
+            - name: "nats-token"
+              mountPath: "/var/run/secrets/rangelight/nats"
+              readOnly: true
       volumes:
         - name: "tmp"
           emptyDir:
@@ -87,4 +91,5 @@ spec:
                   audience: "rangelight-git-mirror"
                   expirationSeconds: 600
                   path: "token"
+        {{- include "rangelight.natsTokenVolume" . | nindent 8 }}
 {{- end }}

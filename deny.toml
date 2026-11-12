@@ -67,6 +67,9 @@ skip = [
   { crate = "pem-rfc7468@0.7", reason = "der 0.7, for openidconnect" },
   { crate = "pkcs8@0.10", reason = "rsa 0.9, for openidconnect" },
   { crate = "spki@0.7", reason = "rsa 0.9, for openidconnect" },
+  { crate = "ed25519-dalek@2", reason = "nkeys 0.4, for async-nats and the NATS auth callout (openidconnect uses 3)" },
+  { crate = "ed25519@2", reason = "ed25519-dalek 2, for nkeys" },
+  { crate = "curve25519-dalek@4", reason = "ed25519-dalek 2, for nkeys" },
 ]
 # Adapter crates stay out of rl-domain (ADR 0049 §2.1): only their owning crate depends on them.
 # I/O crates list every crate allowed to depend on them directly, so rl-domain (sync, no I/O)
@@ -74,11 +77,11 @@ skip = [
 deny = [
   { crate = "sqlx", wrappers = ["rl-store", "rl-testkit"] },
   { crate = "cedar-policy", wrappers = ["rl-policy", "rl-testkit"] },
-  { crate = "reqwest", wrappers = ["rl-auth", "rl-testkit", "rl-tickets-linear"] },
-  { crate = "async-nats", wrappers = ["api", "relay", "rl-testkit"] },
+  { crate = "reqwest", wrappers = ["api", "rl-auth", "rl-testkit", "rl-tickets-linear"] },
+  { crate = "async-nats", wrappers = ["api", "relay", "rl-nats", "rl-testkit"] },
   { crate = "hyper", wrappers = ["api", "axum", "connectrpc", "hyper-rustls", "hyper-util", "reqwest"] },
   { crate = "tokio", wrappers = [
-    "api", "relay", "rl-app", "rl-auth", "rl-store", "rl-testkit", "rl-tickets-linear",
+    "api", "relay", "rl-app", "rl-auth", "rl-nats", "rl-store", "rl-testkit", "rl-tickets-linear",
     "async-nats", "axum", "connectrpc", "h2", "hyper", "hyper-rustls", "hyper-util", "reqwest", "sqlx-core",
     "sqlx-macros-core", "tokio-rustls", "tokio-stream", "tokio-util", "tower", "tryhard",
   ] },

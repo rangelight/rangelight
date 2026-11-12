@@ -1,0 +1,182 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- Each session's last published desired state (its newest sent created or state_changed event),\n-- with what the relay needs to publish it again: what it puts back into an empty desired stream.\nSELECT DISTINCT ON (e.session_id) o.id AS outbox_id, e.id AS event_id, e.session_id, e.seq,\n  e.payload, e.at, s.namespace, s.ticket_key, s.title, s.description, s.criteria, s.repo,\n  s.base_ref, s.member\nFROM outbox o\nJOIN events e ON e.id = o.event_id\nJOIN sessions s ON s.id = e.session_id\nWHERE o.sent_at IS NOT NULL\n  AND e.type IN ('session.created', 'session.state_changed')\nORDER BY e.session_id, e.seq DESC\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "outbox_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "outbox",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "event_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "session_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "session_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "seq",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "payload",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "payload"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "namespace",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "namespace"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "ticket_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "ticket_key"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "criteria",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "criteria"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "repo",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "repo"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "base_ref",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "base_ref"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "member",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "member"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c842626bbdc634696c509ef7ce7b7e47e0b932835b603d21de896a1114ae6c4d"
+}

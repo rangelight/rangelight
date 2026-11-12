@@ -29,12 +29,13 @@ test_api_pod_is_restricted_pinned_with_one_replica() {
 }
 
 # Secrets by reference: each key as a file where secret://<name>#<key> resolves, never an environment value.
-test_api_mounts_exactly_its_three_secret_keys() {
+test_api_mounts_exactly_its_five_secret_keys() {
   local files
   render "${SERVE[@]}" --show-only templates/api/deployment.yaml
   expect_ok
   files="$(grep -E '^ +path: "[^/]+/[^/]+"$' <<<"${OUT}" | tr -d ' "' | sed 's/^path://' | paste -sd' ')"
-  [[ "${files}" == "rangelight-pg-app/uri rangelight-oidc/client-secret rangelight-linear/api-key" ]] || fail "the api mounts: ${files}"
+  [[ "${files}" == "rangelight-pg-app/uri rangelight-oidc/client-secret rangelight-linear/api-key rangelight-api-nats/issuer-seed rangelight-api-nats/auth-user-seed" ]] ||
+    fail "the api mounts: ${files}"
   expect_line '              mountPath: "/var/run/rangelight/secrets"'
   # Not optional: the pod doesn't start until every Secret and key exists.
   expect_no_match 'optional:'
@@ -57,7 +58,7 @@ test_api_trusts_an_extra_ca_bundle_only_when_set() {
     --set tls.extraCaSecretRef.key=bundle.pem
   expect_ok
   files="$(grep -E '^ +path: "[^/]+/[^/]+"$' <<<"${OUT}" | tr -d ' "' | sed 's/^path://' | paste -sd' ')"
-  [[ "${files}" == "rangelight-pg-app/uri rangelight-oidc/client-secret rangelight-linear/api-key corp-ca/bundle.pem" ]] ||
+  [[ "${files}" == "rangelight-pg-app/uri rangelight-oidc/client-secret rangelight-linear/api-key rangelight-api-nats/issuer-seed rangelight-api-nats/auth-user-seed corp-ca/bundle.pem" ]] ||
     fail "the api mounts: ${files}"
   render "${SERVE[@]}" --set tls.extraCaSecretRef.name=Corp_CA
   expect_refused "/tls/extraCaSecretRef/name"
@@ -96,8 +97,27 @@ egress 53 ns:kubernetes.io/metadata.name=kube-system pod:k8s-app=kube-dns
 egress 5432 pod:cnpg.io/cluster=rangelight-pg
 egress 4222 pod:app.kubernetes.io/name=nats,app.kubernetes.io/instance=rangelight
 egress 8443 ns:kubernetes.io/metadata.name=ingress-nginx pod:app.kubernetes.io/name=ingress-nginx
-egress 443 ip:0.0.0.0/0-10.42.0.0/16-10.43.0.0/16" ]] || fail "the api's peers:
+egress 443 ip:0.0.0.0/0-10.42.0.0/16-10.43.0.0/16
+egress 443,6443 ip:10.0.0.5/32" ]] || fail "the api's peers:
 $(network_peers)"
+}
+
+# The API server (the NATS auth callout's token keys): by Cilium's kube-apiserver entity when the cluster has Cilium,
+# else only at nats.auth.apiServerCidrs, which is then required. Never port 6443 at any address.
+test_api_reaches_only_the_api_server() {
+  render "${SERVE[@]}" --api-versions cilium.io/v2 --show-only templates/api/networkpolicy.yaml
+  expect_ok
+  ! network_peers | grep -q '6443' || fail "a NetworkPolicy rule to the API server beside Cilium's: $(network_peers | grep 6443)"
+  render "${SERVE[@]}" --api-versions cilium.io/v2 --show-only templates/api/ciliumnetworkpolicy.yaml
+  expect_ok
+  expect_line '        - "kube-apiserver"'
+  [[ "$(grep -cE '^ +- port: "(443|6443)"$' <<<"${OUT}")" -eq 2 ]] || fail "the CiliumNetworkPolicy's ports"
+  render "${SERVE[@]}" --show-only templates/api/ciliumnetworkpolicy.yaml
+  [[ "${STATUS}" -ne 0 ]] || fail "a CiliumNetworkPolicy without Cilium"
+  render "${SERVE[@]}" --set-json 'nats.auth.apiServerCidrs=[]'
+  expect_refused "nats.auth.apiServerCidrs is required without Cilium"
+  render "${SERVE[@]}" --api-versions cilium.io/v2 --set-json 'nats.auth.apiServerCidrs=[]' --show-only templates/api/networkpolicy.yaml
+  expect_ok
 }
 
 # Your own issuer on another port: the HTTPS rule allows that port too, and the api needs no route to the controller.
@@ -105,27 +125,29 @@ test_api_reaches_its_own_issuer_on_its_port() {
   render "${SERVE[@]}" --show-only templates/api/networkpolicy.yaml "${EXTERNAL_OIDC[@]}" \
     --set oidc.issuer=https://idp.example.com:8443/realms/eng
   expect_ok
-  [[ "$(network_peers | tail -1)" == "egress 443,8443 ip:0.0.0.0/0-10.42.0.0/16-10.43.0.0/16" ]] ||
-    fail "the api's HTTPS egress: $(network_peers | tail -1)"
+  [[ "$(network_peers | grep 'ip:0.0.0.0')" == "egress 443,8443 ip:0.0.0.0/0-10.42.0.0/16-10.43.0.0/16" ]] ||
+    fail "the api's HTTPS egress: $(network_peers | grep 'ip:0.0.0.0')"
   ! network_peers | grep -q '^egress .*ingress-nginx' || fail "the api reaches the controller without bundled Dex"
   render "${SERVE[@]}" --show-only templates/api/networkpolicy.yaml "${EXTERNAL_OIDC[@]}" \
     --set oidc.issuer=https://idp.example.com:443
-  [[ "$(network_peers | tail -1)" == "egress 443 ip:0.0.0.0/0-10.42.0.0/16-10.43.0.0/16" ]] ||
-    fail "the api's HTTPS egress: $(network_peers | tail -1)"
+  [[ "$(network_peers | grep 'ip:0.0.0.0')" == "egress 443 ip:0.0.0.0/0-10.42.0.0/16-10.43.0.0/16" ]] ||
+    fail "the api's HTTPS egress: $(network_peers | grep 'ip:0.0.0.0')"
 }
 
 test_api_network_policy_with_external_services_and_no_ingress() {
   # No Ingress, no ingress.from: nothing may reach the api.
   render -f "${CHART}/test/serve-values.yaml" --show-only templates/api/networkpolicy.yaml \
     --set postgres.enabled=false --set postgres.external.secretRef.name=pg --set nats.enabled=false \
-    --set nats.external.url=tls://nats.example.com:7422 "${EXTERNAL_OIDC[@]}"
+    --set nats.external.url=tls://nats.example.com:7422 --set nats.auth.existingSecret=nats-keys "${EXTERNAL_OIDC[@]}"
   expect_ok
   [[ "$(network_peers)" == "egress 53 ns:kubernetes.io/metadata.name=kube-system pod:k8s-app=kube-dns
 egress 5432 any
 egress 7422 any
-egress 443 ip:0.0.0.0/0-10.42.0.0/16-10.43.0.0/16" ]] || fail "the api's peers:
+egress 443 ip:0.0.0.0/0-10.42.0.0/16-10.43.0.0/16
+egress 443,6443 ip:10.0.0.5/32" ]] || fail "the api's peers:
 $(network_peers)"
-  render "${SERVE[@]}" --show-only templates/api/networkpolicy.yaml --set nats.enabled=false --set nats.external.url=nats://nats
+  render "${SERVE[@]}" --show-only templates/api/networkpolicy.yaml --set nats.enabled=false \
+    --set nats.external.url=nats://nats.messaging.svc --set nats.auth.existingSecret=nats-keys
   expect_line '          port: 4222'
 }
 

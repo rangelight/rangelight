@@ -1,6 +1,7 @@
 //! The relay's config (ADR 0049 §6), loaded by `rl-config` from `configs/relay.default.toml`.
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use rl_config::{ConfigError, SecretRef};
 use rl_domain::subject;
@@ -15,8 +16,10 @@ pub struct Config {
     pub listen: SocketAddr,
     /// The Postgres URL, in a secret.
     pub database_url: SecretRef,
-    /// The NATS server.
+    /// The NATS server: `tls://`, or `nats://` inside the cluster (`rl_nats::check_url`).
     pub nats_url: String,
+    /// The relay's projected token for NATS (audience `rangelight-nats`), read at every connect.
+    pub nats_token_file: PathBuf,
     /// The org's subject token.
     pub org: String,
     /// The runner sessions go to.
@@ -40,6 +43,7 @@ impl Config {
         for token in [&self.org, &self.runner] {
             subject::token(token).map_err(|e| ConfigError(e.to_string()))?;
         }
+        rl_nats::check_url(&self.nats_url).map_err(|e| ConfigError(e.to_string()))?;
         if !matches!(self.stream_replicas, 1..=5) {
             return Err(ConfigError("stream_replicas must be 1 to 5".into()));
         }
@@ -74,6 +78,14 @@ mod tests {
             ..defaults()
         };
         assert!(bad_runner.validate().is_err());
+        let plain_remote = Config {
+            nats_url: "nats://nats.example.com:4222".into(),
+            ..defaults()
+        };
+        assert!(
+            plain_remote.validate().is_err(),
+            "a token never travels in clear text"
+        );
         let bad_replicas = Config {
             stream_replicas: 0,
             ..defaults()

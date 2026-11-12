@@ -80,6 +80,15 @@ Postgres, so a client that reads after the stream opens misses nothing. A viewer
 1024 events behind (the api's NATS subscription capacity); past that, events are dropped and its
 stream ends with `ABORTED`, the same reconnect path as any gap.
 
+**Who may use which subject** (ADR 0021 amendment): every client signs in through the api's auth callout and gets
+exactly its own subjects, listed once in `rl_domain::subject` and pinned by `test/nats-permissions.json`. A
+runner consumes only `rl.<org>.runner.<runner>.desired.*`, through its durable `runner-<runner>` on
+`rl-<org>-desired`, and publishes only its own `.status`; the relay owns the desired stream and publishes
+desired state and session events; the api owns `rl-<org>-status` (durable `api`), follows session events and
+bridges terminals; a lane subscribes only to its own `rl.<org>.pty.<session>.in` and publishes only its own
+`.out`. Each client's replies come under its own inbox prefix, `_INBOX_<id>` (`api`, `relay`,
+`runner-<runner>`).
+
 The control plane is the source of truth: the runner ignores a `SessionDesired.generation` older than
 the one it has seen. `credential_refs` carries references, never secret values (ADR 0004). The profile
 is read from the approved base branch, never the session branch (ADR 0041). Control plane N accepts
@@ -93,9 +102,9 @@ The api serves the WebSocket at `GET /v1alpha1/sessions/<session>/terminal` with
 
 | Message | Direction | NATS |
 |---|---|---|
-| `{"type": "input", "data": <base64>}` | browser → api | `pty.<session>.in` |
-| `{"type": "output", "data": <base64>}` | api → browser | `pty.<session>.out` |
-| `{"type": "resize", "cols": n, "rows": n}` | browser → api | `pty.<session>.in` |
+| `{"type": "input", "data": <base64>}` | browser → api | `rl.<org>.pty.<session>.in` |
+| `{"type": "output", "data": <base64>}` | api → browser | `rl.<org>.pty.<session>.out` |
+| `{"type": "resize", "cols": n, "rows": n}` | browser → api | `rl.<org>.pty.<session>.in` |
 
 The api closes the socket with code 1008 on a frame that doesn't validate. A client that doesn't
 offer the subprotocol is refused.

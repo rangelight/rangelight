@@ -107,3 +107,10 @@ The model's Bash runs as the same user, in the same container, as the agent runn
 ## Amendment (2026-11-06)
 
 - **The org's own CI also gates the lane** (ADR 0054): a lane is `ready` only when Rangelight's checks and every required `externalChecks` entry succeed. A post-merge verification reuses the receipt when the merge tree equals the verified head's tree.
+
+## Amendment (2026-11-12, RAN-43: the lane's terminal identity)
+
+- **The agent container holds one NATS identity: its terminal's** (a projected token, audience `rangelight-nats`).
+  It may only subscribe to `rl.<org>.pty.<session>.in` and publish `rl.<org>.pty.<session>.out` (ADR 0021
+  amendment): the terminal the pty user already has, so the model gains nothing from reading it. §5 still holds
+  for everything else: the session's broader identity (its inbox, its events) lives in `rld` when `rld` comes.

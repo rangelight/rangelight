@@ -26,8 +26,11 @@ lane_ephemeral_storage = "12Gi"
 # debug, info, warn or error.
 log_level = "info"
 # The control plane's NATS server (ADR 0021): the runner takes sessions from it and reports their
-# status to it. Lanes keep running while it is unreachable.
+# status to it. Lanes keep running while it is unreachable. tls://, or nats:// to a Service in this
+# cluster: the runner's token travels to it, so a remote runner needs tls://.
 nats_url = "nats://rangelight-nats.rangelight-system.svc:4222"
+# The runner's projected token for NATS (audience rangelight-nats), read again at every connect.
+nats_token_file = "/var/run/secrets/rangelight/nats/token"
 # The runner protocol's subject tokens: rl.<org>.runner.<runner_id>.desired and .status.
 org = "default"
 runner_id = "default"

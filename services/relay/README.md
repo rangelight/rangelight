@@ -17,7 +17,14 @@ An event this relay can't decode (a newer release's change, mid rolling deploy) 
 (`outbox.failed_at`, logged as an error); only that session's later events wait, the rest keep
 flowing. Other failures end the round, and rounds back off from 0.5s, doubling, up to 30s. The relay creates the stream `rl-<org>-desired`, or updates it to its
 config: one message per subject and no age limit, so it holds each session's latest desired state
-(a cold one is the tombstone), with `stream_replicas` replicas.
+(a cold one is the tombstone), with `stream_replicas` replicas. At every start it puts back each session's last
+published desired state from Postgres wherever the stream lost it (a wiped volume, the move into the `RL`
+account when NATS sign-in came, a reseed cut short): each only onto its session's empty subject, never over
+what's there (`Relay::reseed`). Then the outbox carries on with what's newer.
+
+It signs in to NATS as the relay (ADR 0021 amendment, `rl-nats`): its projected token, `nats_token_file`, read
+at every connect, and replies under `_INBOX_relay`. It may only publish desired state and session events and own
+its stream.
 
 Config: `configs/relay.default.toml`, then `/etc/rangelight/relay.toml`, then
 `RANGELIGHT_RELAY_*`. `database_url` is a secret reference. `GET /healthz` on `listen` (8080) answers 200 once

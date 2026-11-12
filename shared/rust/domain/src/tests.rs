@@ -376,3 +376,37 @@ fn a_member_is_the_lowercased_login_or_nothing() {
         );
     }
 }
+
+/// Every identity's permissions are exactly the ones `test/nats-permissions.json` pins, which the
+/// runner's Go protocol tests run under too.
+#[test]
+fn nats_permissions_are_the_pinned_ones() {
+    let pinned: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../test/nats-permissions.json")).unwrap();
+    let org = pinned["org"].as_str().unwrap();
+    let runner = pinned["runner_id"].as_str().unwrap();
+    let session = SessionId(pinned["session"].as_str().unwrap().parse().unwrap());
+    let json = |p: subject::Permissions| serde_json::json!({"publish": p.publish, "subscribe": p.subscribe});
+    assert_eq!(json(subject::api(org)), pinned["api"]);
+    assert_eq!(json(subject::relay(org)), pinned["relay"]);
+    assert_eq!(json(subject::runner(org, runner)), pinned["runner"]);
+    assert_eq!(json(subject::lane(org, session)), pinned["lane"]);
+}
+
+/// RAN-43 review 8: no identity may publish to `$SYS`, so none can answer the server's sign-in
+/// requests on `$SYS.REQ.USER.AUTH` (config mode doesn't verify who signed a callout's request,
+/// only who answers it). A subject that can reach `$SYS` starts with it, or with a wildcard.
+#[test]
+fn no_identity_may_publish_to_sys() {
+    let pinned: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../test/nats-permissions.json")).unwrap();
+    for identity in ["api", "relay", "runner", "lane"] {
+        for subject in pinned[identity]["publish"].as_array().unwrap() {
+            let first = subject.as_str().unwrap().split('.').next().unwrap();
+            assert!(
+                !matches!(first, "$SYS" | "*" | ">"),
+                "{identity} may publish {subject}"
+            );
+        }
+    }
+}

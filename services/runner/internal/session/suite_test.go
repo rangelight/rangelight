@@ -34,6 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	"github.com/rangelight/rangelight/services/runner/internal/config"
 )
 
 // The envtest suite: a real API server and etcd, the chart's Session CRD, a stand-in for Cilium's
@@ -51,7 +53,7 @@ const (
 	runnerToken       = "the-runner-test-token"
 	chart             = "../../../../deployments/helm/rangelight"
 	testImage         = "ghcr.io/rangelight/agent:test@sha256:1111111111111111111111111111111111111111111111111111111111111111"
-	org               = "test"
+	org               = "acme"
 	runnerID          = "r1"
 )
 
@@ -202,7 +204,11 @@ func startRunner(ctx context.Context, cfg *rest.Config) error {
 	if mgr, err = NewManager(runnerConfig(cfg), runnerNS); err != nil {
 		return err
 	}
-	report, err := AddProtocol(mgr, broker.URL, runnerNS, org, runnerID)
+	natsTokenFile := filepath.Join(mirror.Root, "nats-token")
+	if err := os.WriteFile(natsTokenFile, []byte(natsToken), 0o600); err != nil {
+		return fmt.Errorf("token: %w", err)
+	}
+	report, err := AddProtocol(mgr, config.Config{NATSURL: broker.URL, NATSTokenFile: natsTokenFile, Namespace: runnerNS, Org: org, RunnerID: runnerID})
 	if err != nil {
 		return err
 	}

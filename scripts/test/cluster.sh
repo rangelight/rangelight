@@ -159,7 +159,7 @@ test_smoke_fails_without_rangelight_system() {
   expect_no_call ' apply '
 }
 
-# --- RAN-33 AC4: up installs the chart, smoke proves Postgres and JetStream ----------
+# --- RAN-33 AC4: up installs the chart, smoke proves Postgres, and that NATS refuses anonymous clients (RAN-43) ----
 
 test_up_installs_the_chart_twice_into_rangelight_system() {
   run up RANGELIGHT_KUBE_CONTEXT=dev
@@ -265,7 +265,7 @@ test_smoke_runs_psql_and_jetstream_from_restricted_pods() {
   expect_status 0
   expect_out "PASS  namespace rangelight-system exists"
   expect_out "PASS  psql 'select 1' with the Secret rangelight-pg-app"
-  expect_out "PASS  JetStream publish and consume on nats://rangelight-nats.rangelight-system.svc:4222"
+  expect_out "PASS  NATS refuses an anonymous client on nats://rangelight-nats.rangelight-system.svc:4222"
   [[ "$(grep -c '^kind: "Pod"$' "${DIR}/applied")" -eq 2 ]] || fail "smoke did not create two pods"
   grep -qF -e "command: [\"sh\", \"-c\", \"[ \$(psql \$POSTGRES_URL -tAc 'select 1') = 1 ]\"]" "${DIR}/applied" ||
     fail "the psql pod does not run select 1"
@@ -282,7 +282,9 @@ test_smoke_runs_psql_and_jetstream_from_restricted_pods() {
     fail "a smoke pod without /tmp mounted"
   [[ "$(grep -xF -A1 -e '    - name: "tmp"' "${DIR}/applied" | grep -cxF -e '      emptyDir: {}')" -eq 2 ]] ||
     fail "a smoke pod whose /tmp is not an emptyDir"
-  grep -qF -e 'command: ["sh", "-c", "set -e; trap ' "${DIR}/applied" || fail "the nats script does not stop at the first failing step"
+  # shellcheck disable=SC2016 # the pod's own shell expands it
+  grep -qF -e 'command: ["sh", "-c", "out=$(nats pub rl.smoke ok 2>&1) && { echo an anonymous client was let in' "${DIR}/applied" ||
+    fail "the nats pod does not expect an anonymous client to be refused"
   grep -qE -e '^--context dev -n rangelight-system delete pod rl-smoke-psql-[0-9a-f]+ rl-smoke-nats-[0-9a-f]+ ' "${DIR}/calls" ||
     fail "smoke did not delete its pods"
 }
@@ -291,7 +293,7 @@ test_smoke_fails_when_a_pod_fails() {
   sed -i -e '/ get namespace /d' -e "s/printf 'Succeeded'/printf 'Failed'/" "${DIR}/bin/kubectl"
   run smoke RANGELIGHT_KUBE_CONTEXT=dev
   expect_status 1
-  expect_out "FAIL  JetStream publish and consume"
+  expect_out "FAIL  NATS refuses an anonymous client"
   expect_out "nats: error: no responders"
 }
 

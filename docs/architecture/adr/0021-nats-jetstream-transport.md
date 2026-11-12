@@ -55,3 +55,37 @@
 ## Amendment (2026-11-06)
 
 - **A lane's NATS credentials live in the `rld` sidecar**, not the agent container, so the model can't read them (ADR 0045 §5).
+
+## Amendment (2026-11-12, RAN-43: every client has its own identity)
+
+- **The api is NATS's auth callout** (`authorization.auth_callout`), instead of decentralised JWT/nkey credentials
+  per runner. Every client except the callout's own connection signs in with its projected ServiceAccount token
+  (audience `rangelight-nats`, one hour). The api checks it against the issuer's keys (JWKS over HTTPS, the
+  ADR 0018 amendment: signature, audience, expiry), maps it to one identity, and answers with a user JWT signed by
+  the callout issuer's nkey: account `RL`, valid until the token expires or for one hour, whichever is sooner.
+  Clients read their token file again at every connect, so neither the kubelet's rotation nor the JWT's expiry
+  ends a long connection.
+- **Identities:** the api and the relay by their ServiceAccounts in `rangelight-system`; a runner by its
+  ServiceAccount in its own cluster (one issuer per cluster, one runner per issuer); a lane by its token's pod
+  (`agent`) and its `rl-` namespace, which must be a live session's at the runner sessions run at, reported
+  Starting or Running by that runner. The runner never adopts a lane namespace it didn't create for that Session
+  (the namespace carries the Session's UID; it fails the session instead, before reporting Starting), so nobody can
+  make one in advance and take its lane's identity. A closed session's lane is refused, and so is a second
+  connection of the same lane, subscribed or not. Everything else is refused. A connection already open when its
+  session closes keeps its user JWT until it expires (an hour at most); the lane's pod goes with its namespace.
+- **No identity may publish to `$SYS`.** In config mode the server doesn't sign its sign-in requests, so this is
+  what keeps anyone but the server from asking the callout, or answering in its place.
+- **Exact permissions,** one list per identity in `rl_domain::subject`, pinned by `test/nats-permissions.json`
+  (the runner's Go tests run under it). Each holds the JetStream API it really calls, consumers only in the
+  filtered `CONSUMER.CREATE.<stream>.<durable>.<filter>` form, and its own inbox prefix `_INBOX_<id>`, so no client
+  reads another's replies or pulled messages. A lane may only subscribe to `rl.<org>.pty.<session>.in` and publish
+  `rl.<org>.pty.<session>.out`, with one subscription and 128 KiB messages, and holds that token in the agent
+  container (ADR 0045 amendment); the 2026-11-06 amendment still holds for the session's broader identity. NATS
+  has no per-user publish rate limit: the api limits what it relays.
+- **The bundled server:** config-mode accounts `RL` (JetStream) and `SYS`, `max_payload` 128 KiB, an account
+  connection limit, and the callout's own static nkey user with only the callout's subjects
+  (`deployments/helm/rangelight/files/nats/auth.conf`). A hook Job makes the keys once. No operator, no account
+  server, no new image or service. **Your own server:** operator mode, with `nsc edit authcallout` on one account;
+  the api's code is the same.
+- **Not yet:** xkey encryption of the callout's requests. Add it when they leave the cluster (the hosted profile).
+- **Revisit if:** a hosted leaf-node profile needs offline verification (operator mode).

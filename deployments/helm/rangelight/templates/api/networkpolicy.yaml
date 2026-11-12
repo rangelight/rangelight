@@ -1,8 +1,8 @@
 {{- if .Values.api.enabled }}
 ---
 # Only the ingress controller (ingress.from) reaches the api, on 8080. It calls out to the cluster's DNS, Postgres,
-# NATS, bundled Dex's issuer through the ingress controller, and HTTPS outside the cluster (Linear, your own
-# OIDC provider).
+# NATS, bundled Dex's issuer through the ingress controller, HTTPS outside the cluster (Linear, your own OIDC
+# provider), and the API server.
 apiVersion: "networking.k8s.io/v1"
 kind: "NetworkPolicy"
 metadata:
@@ -40,4 +40,21 @@ spec:
     {{- end }}
     {{- end }}
     {{- include "rangelight.httpsEgress" . | nindent 4 }}
+    {{- if not (.Capabilities.APIVersions.Has "cilium.io/v2") }}
+    {{- if not .Values.nats.auth.apiServerCidrs }}
+    {{- fail "nats.auth.apiServerCidrs is required without Cilium: the API server's addresses (the NATS auth callout reads the cluster's token signing keys there)" }}
+    {{- end }}
+    # The API server, for the cluster's token signing keys (the NATS auth callout), at nats.auth.apiServerCidrs.
+    # With Cilium, templates/api/ciliumnetworkpolicy.yaml names it instead.
+    - to:
+        {{- range .Values.nats.auth.apiServerCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: "TCP"
+          port: 443
+        - protocol: "TCP"
+          port: 6443
+    {{- end }}
 {{- end }}

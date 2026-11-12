@@ -151,3 +151,27 @@ resources:
     {{- end }}
     memory: {{ .limits.memory | quote }}
 {{- end -}}
+
+{{/* The api's NATS seeds as <name>#<key>, one per line: the callout issuer's and the auth user's, from the keys Job's
+Secret or nats.auth.existingSecret, and in operator mode (nats.auth.laneAccount is a public key) LANE's signing key. */}}
+{{- define "rangelight.natsSeeds" -}}
+{{- $secret := .Values.nats.auth.existingSecret | default "rangelight-api-nats" -}}
+{{ $secret }}#issuer-seed
+{{ $secret }}#auth-user-seed
+{{- if ne .Values.nats.auth.laneAccount "LANE" }}
+{{ $secret }}#lane-issuer-seed
+{{- end }}
+{{- end -}}
+
+{{/* The volume "nats-token": the workload's projected ServiceAccount token for NATS (audience rangelight-nats), which
+the api's auth callout maps to its identity. The kubelet renews it before its hour is up; clients read it at each
+connect. Mounted at /var/run/secrets/rangelight/nats. */}}
+{{- define "rangelight.natsTokenVolume" -}}
+- name: "nats-token"
+  projected:
+    sources:
+      - serviceAccountToken:
+          audience: "rangelight-nats"
+          expirationSeconds: 3600
+          path: "token"
+{{- end -}}

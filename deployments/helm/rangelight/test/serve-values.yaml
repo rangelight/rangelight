@@ -14,3 +14,8 @@ web:
 relay:
   enabled: true
   image: "ghcr.io/rangelight/relay:test@sha256:5555555555555555555555555555555555555555555555555555555555555555"
+# The API server's address for the api's NetworkPolicy (no Cilium in a plain render).
+nats:
+  auth:
+    apiServerCidrs:
+      - "10.0.0.5/32"

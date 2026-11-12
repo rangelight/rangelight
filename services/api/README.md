@@ -51,6 +51,15 @@ The control plane's front door (ADR 0031, ADR 0033):
   keeps unique, never user-editable (OIDC Core warns against keying on `preferred_username`).
 - **Who may sign in** is the provider's decision: Dex lets in the members of `dex.github.org`; your
   own provider must restrict who can get a token for this client, or anyone it knows gets in.
+- **NATS's auth callout** (ADR 0021 amendment, `src/nats_auth/`). Every NATS client, the api's own
+  connections included, signs in with its projected ServiceAccount token. On `$SYS.REQ.USER.AUTH` (queue group
+  `rangelight-api`, so replicas share it) the api verifies the token against its issuer's JWKS
+  (`token.rs`: RS256 or ES256, audience `rangelight-nats`, expiry; keys cached, fetched again for an unknown
+  `kid` at most every 10 s), maps it to one identity (`identity.rs`: the api and the relay in
+  `rangelight-system`, a runner by its ServiceAccount, a lane by its `agent` pod in the `rl-` namespace of a live session its
+  runner reported Starting or Running, one connection each, its sign-ins one at a time: `lane.rs`), and answers with a user JWT signed by the issuer nkey (`jwt.rs`) holding exactly that identity's
+  subjects and limits (`permissions.rs`), for at most an hour. Anything else gets a refusal with a reason; the
+  token never reaches a log. Its own connection signs in with the `auth_user` nkey seed (or `.creds` file).
 - **HTTP/1.1 only** (Connect and the coming terminal WebSocket need nothing else). A client gets 10
   seconds to send a request's headers, from connecting and between requests on a kept-alive
   connection; a connection that sends nothing is closed.
@@ -59,9 +68,11 @@ The control plane's front door (ADR 0031, ADR 0033):
 
 Config: `configs/api.default.toml`, then `/etc/rangelight/api.toml`, then `RANGELIGHT_API_*`.
 `linear_team`, `public_url` (`https://<host>[:<port>]`), `oidc_issuer` (https), `repo` and `member` have no
-default; `linear_url` must be https; `upstream` is empty (no pull requests kept) or a GitHub repo URL. Secrets are references: `database_url`, `linear_api_key` and `oidc_client_secret` name
-mounted Secret files (`secret://<name>#<key>` → `/var/run/rangelight/secrets/<name>/<key>`). The
-Linear key is read at each poll and never logged.
+default; `linear_url` must be https; `upstream` is empty (no pull requests kept) or a GitHub repo URL;
+`nats_url` is `tls://` or `nats://` to a Service in the cluster (the token travels there). Secrets are references:
+`database_url`, `linear_api_key`, `oidc_client_secret`, `nats_auth.issuer_seed` and `nats_auth.auth_user` name
+mounted Secret files (`secret://<name>#<key>` → `/var/run/rangelight/secrets/<name>/<key>`). The Linear key is read
+at each poll and never logged.
 
 Not here yet: authorisation (Cedar): every signed-in member sees every session.
 
@@ -71,6 +82,8 @@ scripts/test/services.sh run cargo nextest run -p api         # just these tests
 docker build -f build/package/docker/api/Dockerfile .         # the image
 ```
 
-Code: `src/lib.rs` (intake and link rounds, server), `src/sessions.rs` (handlers), `src/auth.rs` (sign-in; `src/auth/recheck.rs`, long-lived responses),
-`src/status.rs` (runner status), `src/config.rs`, `src/main.rs` (wiring). Tests: `tests/api.rs`, end to end through a
-Linear stub, the relay and a real Connect client; `tests/auth.rs`, sign-in through the test Dex.
+Code: `src/lib.rs` (intake and link rounds, server), `src/sessions.rs` (handlers), `src/auth.rs` (sign-in;
+`src/auth/recheck.rs`, long-lived responses), `src/status.rs` (runner status), `src/nats_auth/` (the NATS auth
+callout), `src/config.rs`, `src/main.rs` (wiring). Tests: `tests/api.rs`, end to end through a Linear stub, the relay
+and a real Connect client; `tests/auth.rs`, sign-in through the test Dex; `tests/nats_auth/`, every identity's
+permissions on a nats-server running the chart's `files/nats/auth.conf`.

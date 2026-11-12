@@ -13,9 +13,16 @@ export const SESSION = "019a3f4e-7c21-7d10-9a3b-2f5e6c7d8a90";
 export const TOKEN = "fake-lane-token";
 export const git = createGit(childEnv());
 
-/** Runs git synchronously in a test; resolves to trimmed stdout. */
+/**
+ * Runs git synchronously in a test; resolves to trimmed stdout. Never signs, whatever the
+ * developer's git config says: a test's commits are throwaway.
+ */
 export function sh(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd, env: { ...childEnv(), GIT_TERMINAL_PROMPT: "0" } })
+  const unsigned = ["-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"];
+  return execFileSync("git", [...unsigned, ...args], {
+    cwd,
+    env: { ...childEnv(), GIT_TERMINAL_PROMPT: "0" },
+  })
     .toString()
     .trim();
 }

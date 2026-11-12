@@ -7,6 +7,7 @@
 
 pub mod auth;
 pub mod config;
+pub mod nats_auth;
 mod sessions;
 pub mod status;
 
@@ -26,6 +27,10 @@ use tracing::Instrument;
 
 pub use auth::Auth;
 pub use sessions::{SessionApi, viewers_client};
+
+use config::Config;
+use nats_auth::{Callout, CalloutError, Settings, Verifier};
+use rl_config::SecretRef;
 
 /// The pause between two intake polls.
 const POLL: Duration = Duration::from_secs(30);
@@ -180,6 +185,53 @@ async fn every_poll<F: Future<Output = ()>>(
             return;
         }
     }
+}
+
+/// The api's own NATS clients, each signed in as the api: `reports` consumes the runners'
+/// status, `viewers` follows sessions for the Workbench (`viewers_client`).
+#[derive(Debug, Clone)]
+pub struct Nats {
+    /// For the status consumer.
+    pub reports: async_nats::Client,
+    /// For the session streams.
+    pub viewers: async_nats::Client,
+}
+
+/// Starts the NATS auth callout, which answers until `cancel`, then signs the api's own clients
+/// in through it: every NATS client but the callout's own connection signs in there.
+///
+/// # Errors
+/// [`CalloutError`] when a secret, a key or NATS fails.
+pub async fn connect_nats(
+    config: &Config,
+    store: Store,
+    cancel: CancellationToken,
+) -> Result<(Nats, tokio::task::JoinHandle<()>), CalloutError> {
+    let auth = &config.nats_auth;
+    let callout_nats = Callout::connect(&config.nats_url, &auth.auth_user.read()?).await?;
+    let settings = Settings {
+        org: config.org.clone(),
+        sessions_runner: config.runner.clone(),
+        account: auth.account.clone(),
+        lane_account: auth.lane_account.clone(),
+        issuer_seed: auth.issuer_seed.read()?,
+        lane_issuer_seed: auth
+            .lane_issuer_seed
+            .as_ref()
+            .map(SecretRef::read)
+            .transpose()?,
+    };
+    let verifier = Verifier::new(auth.issuers.clone())?;
+    let callout = Callout::new(callout_nats, store, verifier, settings)?;
+    let requests = callout.listen().await?;
+    let task = tokio::spawn(std::sync::Arc::new(callout).serve(requests, cancel));
+    let options = || rl_nats::options(config.nats_token_file.clone(), "api");
+    let nats = |e: async_nats::ConnectError| CalloutError::Nats(e.to_string());
+    let reports = options().connect(&config.nats_url).await.map_err(nats)?;
+    let viewers = viewers_client(&config.nats_url, options())
+        .await
+        .map_err(nats)?;
+    Ok((Nats { reports, viewers }, task))
 }
 
 /// Serves sign-in and, behind it, the session and auth APIs (Connect, and gRPC-Web) over HTTP/1.1

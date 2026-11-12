@@ -8,9 +8,14 @@ log = "info"
 listen = "0.0.0.0:8080"
 # The Postgres URL, as a secret reference: the mounted Secret file holds the whole URL.
 database_url = "secret://postgres#url"
-nats_url = "nats://nats:4222"
+# NATS (ADR 0021): tls://, or nats:// to a Service in this cluster, since the api's token travels to it.
+nats_url = "nats://rangelight-nats.rangelight-system.svc:4222"
+# The api's projected token for NATS (audience rangelight-nats), read again at every connect.
+nats_token_file = "/var/run/secrets/rangelight/nats/token"
 # The org's NATS subject token (ADR 0021): subjects are rl.<org>.…
 org = "default"
+# The runner every session runs at, until admission places sessions (ADR 0018): the relay's `runner`.
+runner = "default"
 linear_url = "https://api.linear.app/graphql"
 # The Linear API key, as a secret reference, read at each poll.
 linear_api_key = "secret://linear#api-key"
@@ -36,3 +41,27 @@ upstream = ""
 # `extra_ca_file`, unset by default: a PEM bundle of CA certificates the api's HTTPS (the issuer,
 # Linear) trusts beside the platform's roots, for an issuer behind your own CA. A file that holds no
 # certificate, or one that doesn't parse, stops the api at start.
+
+# The api is NATS's auth callout (ADR 0021 amendment): it verifies each client's projected token and
+# answers with a user JWT holding that identity's exact permissions.
+[nats_auth]
+# The callout issuer's nkey seed, which signs the user JWTs; its public key is auth_callout.issuer.
+issuer_seed = "secret://rangelight-api-nats#issuer-seed"
+# The api's own sign-in as the callout's auth user: an nkey seed, or a .creds file in operator mode.
+auth_user = "secret://rangelight-api-nats#auth-user-seed"
+# The accounts the user JWTs are for: RL (the control plane, the runners) and LANE (the lanes, which the
+# server limits to one subscription and 128 KiB each). In operator mode, their public keys, and
+# lane_issuer_seed names LANE's signing key.
+account = "RL"
+lane_account = "LANE"
+
+# The token issuers clients sign in with: this cluster's, fetched with the api's own token over the
+# cluster's CA. `control_plane`: the api and the relay run here. Each cluster has one runner.
+[[nats_auth.issuers]]
+url = "https://kubernetes.default.svc.cluster.local"
+jwks_url = "https://kubernetes.default.svc/openid/v1/jwks"
+jwks_token_file = "/var/run/secrets/rangelight/kubernetes/token"
+jwks_ca_file = "/var/run/secrets/rangelight/kubernetes/ca.crt"
+control_plane = true
+runner = "default"
+runner_service_account = "rangelight-runner:runner"

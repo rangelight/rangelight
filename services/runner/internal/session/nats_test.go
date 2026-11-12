@@ -14,8 +14,54 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+// The tokens the test server signs in: the tests' control plane (everything), and the runner, with
+// exactly the permissions the api's auth callout gives runnerID (test/nats-permissions.json).
+const (
+	adminToken = "the-control-plane-test-token"
+	natsToken  = "the-runner-nats-test-token"
+)
+
+// tokenAuth signs clients in by token, as the api's auth callout does by ServiceAccount.
+type tokenAuth struct{ runner *natsserver.Permissions }
+
+func (a tokenAuth) Check(c natsserver.ClientAuthentication) bool {
+	switch c.GetOpts().Token {
+	case adminToken:
+		c.RegisterUser(&natsserver.User{Username: "control-plane"})
+	case natsToken:
+		c.RegisterUser(&natsserver.User{Username: "runner-" + runnerID, Permissions: a.runner})
+	default:
+		return false
+	}
+	return true
+}
+
+// runnerPermissions are the runner's pinned permissions, for org and runnerID.
+func runnerPermissions() (*natsserver.Permissions, error) {
+	raw, err := os.ReadFile("../../../../test/nats-permissions.json")
+	if err != nil {
+		return nil, fmt.Errorf("permissions: %w", err)
+	}
+	var pinned struct {
+		Org    string
+		Runner string                                `json:"runner_id"`
+		Entry  struct{ Publish, Subscribe []string } `json:"runner"`
+	}
+	if err := json.Unmarshal(raw, &pinned); err != nil {
+		return nil, fmt.Errorf("permissions: %w", err)
+	}
+	if pinned.Org != org || pinned.Runner != runnerID {
+		return nil, fmt.Errorf("permissions are pinned for %s/%s, the tests run as %s/%s", pinned.Org, pinned.Runner, org, runnerID)
+	}
+	return &natsserver.Permissions{
+		Publish:   &natsserver.SubjectPermission{Allow: pinned.Entry.Publish},
+		Subscribe: &natsserver.SubjectPermission{Allow: pinned.Entry.Subscribe},
+	}, nil
+}
+
 // testNATS is a real nats-server with JetStream on a fixed local port, so it can be stopped and
-// started again (an outage) at the same URL, with its streams kept on disk.
+// started again (an outage) at the same URL, with its streams kept on disk. The runner signs in
+// with exactly its own permissions, so every protocol test proves they are enough.
 type testNATS struct {
 	URL    string
 	dir    string
@@ -32,7 +78,12 @@ func newTestNATS() (*testNATS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nats: %w", err)
 	}
-	n := &testNATS{dir: dir, terms: map[uint64]bool{}, opts: natsserver.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: dir, NoSigs: true, NoLog: true}}
+	perms, err := runnerPermissions()
+	if err != nil {
+		return nil, err
+	}
+	n := &testNATS{dir: dir, terms: map[uint64]bool{}, opts: natsserver.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: dir,
+		NoSigs: true, NoLog: true, CustomClientAuthentication: tokenAuth{runner: perms}}}
 	if err := n.Start(); err != nil {
 		return nil, err
 	}
@@ -45,7 +96,7 @@ func newTestNATS() (*testNATS, error) {
 
 // listen records every message a desired consumer terminates.
 func (n *testNATS) listen() error {
-	nc, err := nats.Connect(n.URL, nats.MaxReconnects(-1), nats.ReconnectWait(100*time.Millisecond))
+	nc, err := nats.Connect(n.URL, nats.Token(adminToken), nats.MaxReconnects(-1), nats.ReconnectWait(100*time.Millisecond))
 	if err != nil {
 		return fmt.Errorf("nats: %w", err)
 	}
@@ -115,7 +166,7 @@ func (n *testNATS) streams() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	for _, cfg := range []jetstream.StreamConfig{
-		{Name: "rl-" + org + "-desired", Subjects: []string{DesiredSubject(org, "*", "*")}, MaxMsgsPerSubject: 1, Duplicates: 2 * time.Minute},
+		{Name: DesiredStream(org), Subjects: []string{DesiredSubject(org, "*", "*")}, MaxMsgsPerSubject: 1, Duplicates: 2 * time.Minute},
 		{Name: "rl-" + org + "-status", Subjects: []string{StatusSubject(org, "*")}, Duplicates: 2 * time.Minute},
 	} {
 		if _, err := js.CreateStream(ctx, cfg); err != nil {
@@ -127,7 +178,7 @@ func (n *testNATS) streams() error {
 
 // jetstream is a client of the server, as the control plane.
 func (n *testNATS) jetstream() (jetstream.JetStream, *nats.Conn, error) {
-	nc, err := nats.Connect(n.URL)
+	nc, err := nats.Connect(n.URL, nats.Token(adminToken))
 	if err != nil {
 		return nil, nil, fmt.Errorf("nats: %w", err)
 	}

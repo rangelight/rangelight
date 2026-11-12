@@ -39,7 +39,8 @@ test_relay_settings_are_its_config_keys() {
     grep -qE "^    pub ${key}: " "${CHART}/../../../services/relay/src/config.rs" || fail "RANGELIGHT_RELAY_${key^^} isn't a relay config key"
   done
   render "${SERVE[@]}" --show-only templates/relay/deployment.yaml --set postgres.enabled=false \
-    --set postgres.external.secretRef.name=pg-api --set nats.enabled=false --set nats.external.url=tls://nats.example.com:4222
+    --set postgres.external.secretRef.name=pg-api --set nats.enabled=false --set nats.external.url=tls://nats.example.com:4222 \
+    --set nats.auth.existingSecret=nats-keys
   expect_line '              value: "secret://pg-api#uri"'
   expect_line '              value: "tls://nats.example.com:4222"'
 }

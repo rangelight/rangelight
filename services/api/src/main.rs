@@ -1,11 +1,9 @@
-//! The api binary: loads config, starts telemetry, migrates, wires Postgres, NATS, Linear and
-//! OIDC, and runs the intake and link loops, the status consumer and the server until SIGTERM or
-//! Ctrl-C.
+//! The api binary: loads config, starts telemetry, migrates, starts the NATS auth callout, wires
+//! Postgres, NATS, Linear and OIDC, and runs the intake and link loops, the status consumer and the
+//! server until SIGTERM or Ctrl-C.
 
 use anyhow::Context;
-use api::{
-    Auth, SessionApi, config::Config, intake_loop, link_loop, serve, status, viewers_client,
-};
+use api::{Auth, SessionApi, config::Config, connect_nats, intake_loop, link_loop, serve, status};
 use rl_store::Store;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
@@ -20,10 +18,8 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("postgres")?;
     store.migrate().await?;
-    let nats = async_nats::connect(&config.nats_url)
-        .await
-        .context("nats")?;
-    let viewers = viewers_client(&config.nats_url).await.context("nats")?;
+    let cancel = CancellationToken::new();
+    let (nats, callout) = connect_nats(&config, store.clone(), cancel.clone()).await?;
     let linear = config.linear(&roots)?;
     let provider = rl_auth::Provider::new(
         config.oidc_issuer.clone(),
@@ -37,7 +33,6 @@ async fn main() -> anyhow::Result<()> {
     let auth = Auth::new(store.clone(), provider, &config.public_url, recheck);
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
 
-    let cancel = CancellationToken::new();
     let mut terminate = signal(SignalKind::terminate())?;
     let stop = cancel.clone();
     tokio::spawn(async move {
@@ -56,21 +51,23 @@ async fn main() -> anyhow::Result<()> {
     ));
     let reports = tokio::spawn(status::consume(
         status::Recorder::new(store.clone(), upstream),
-        nats.clone(),
+        nats.reports,
         config.org.clone(),
         config.stream_replicas,
         cancel.clone(),
     ));
     tracing::info!(listen = %config.listen, "api started");
-    serve(
-        listener,
-        SessionApi::new(store, viewers, config.org, auth.clone(), cancel.clone()),
-        auth,
-        cancel,
-    )
-    .await;
+    let api = SessionApi::new(
+        store,
+        nats.viewers,
+        config.org,
+        auth.clone(),
+        cancel.clone(),
+    );
+    serve(listener, api, auth, cancel).await;
     intake.await?;
     links.await?;
     reports.await?;
+    callout.await?;
     Ok(())
 }

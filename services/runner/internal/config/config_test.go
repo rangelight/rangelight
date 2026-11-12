@@ -23,7 +23,8 @@ func TestLoadLayers(t *testing.T) {
 		MirrorTokenFile: "/var/run/secrets/rangelight/git-mirror/token", Workers: 8, AgentImage: image,
 		LaneWorkspaceSize: "10Gi", LaneTmpSize: "1Gi", LaneEphemeralStorage: "12Gi", LogLevel: "warn",
 		DNSNamespace: "kube-system", DNSPodLabel: "k8s-app=coredns",
-		NATSURL: "nats://rangelight-nats.rangelight-system.svc:4222", Org: "default", RunnerID: "default",
+		NATSURL: "nats://rangelight-nats.rangelight-system.svc:4222", NATSTokenFile: "/var/run/secrets/rangelight/nats/token",
+		Org: "default", RunnerID: "default",
 	}
 	if c != want {
 		t.Errorf("got %+v, want %+v", c, want)
@@ -70,6 +71,9 @@ func TestLoadRefuses(t *testing.T) {
 		{"a negative ephemeral storage", "", "RANGELIGHT_RUNNER_LANE_EPHEMERAL_STORAGE=-1Gi", "lane_ephemeral_storage"},
 		{"a NATS URL with credentials", "", "RANGELIGHT_RUNNER_NATS_URL=nats://u:p@nats:4222", "nats_url"},
 		{"a NATS URL that isn't NATS", "", "RANGELIGHT_RUNNER_NATS_URL=http://nats:4222", "nats_url"},
+		{"a remote NATS in clear text", "", "RANGELIGHT_RUNNER_NATS_URL=nats://nats.example.com:4222", "nats_url"},
+		{"a NATS URL with a path", "", "RANGELIGHT_RUNNER_NATS_URL=tls://nats.example.com:4222/x", "nats_url"},
+		{"a relative NATS token file", "", "RANGELIGHT_RUNNER_NATS_TOKEN_FILE=token", "nats_token_file"},
 		{"an org that widens a subject", "", "RANGELIGHT_RUNNER_ORG=a.>", "org"},
 		{"an empty runner id", "", "RANGELIGHT_RUNNER_RUNNER_ID=", "runner_id"},
 		{"a runner id with a space", "", "RANGELIGHT_RUNNER_RUNNER_ID=a b", "runner_id"},
@@ -85,5 +89,13 @@ func TestLoadRefuses(t *testing.T) {
 				t.Errorf("error %v, want one naming %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// A remote runner reaches the control plane's NATS over TLS: its token never travels in clear text.
+func TestARemoteRunnerUsesTLS(t *testing.T) {
+	env := []string{"RANGELIGHT_RUNNER_AGENT_IMAGE=" + image, "RANGELIGHT_RUNNER_NATS_URL=tls://nats.example.com:4222"}
+	if _, err := load(filepath.Join(t.TempDir(), "absent.toml"), env); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -50,7 +50,12 @@ the `default` ServiceAccount. The tests run the runner as that ServiceAccount, u
 `k8s-app=coredns`).
 
 Config: `configs/runner.default.toml`, then `/etc/rangelight/runner.toml`, then `RANGELIGHT_RUNNER_*`.
-`nats_url`, `org` and `runner_id` name the runner protocol's server and subjects.
+`nats_url`, `org` and `runner_id` name the runner protocol's server and subjects; the desired stream is
+`rl-<org>-desired`, by name. The runner signs in as itself (`internal/natsconn`, ADR 0021 amendment): its
+projected token (`nats_token_file`, audience `rangelight-nats`) is read at every connect, and its replies come
+under `_INBOX_runner-<runner_id>`, so it may consume only its own sessions and report only its own status.
+`nats_url` is `tls://`, or `nats://` to a Service in the same cluster: a remote runner needs TLS. Each lane's agent
+container gets a projected token of its own for NATS, which lets it reach only its own terminal.
 It sets the lane's disk sizes and `workers` (Sessions reconciled at once; a profile read is a
 depth-1 clone on the runner's `/tmp` for up to 30 seconds, so `/tmp` holds up to `workers` of them).
 Code: `main.go` (wiring), `internal/config/`, `internal/session/` (`protocol.go`, `desired.go`,

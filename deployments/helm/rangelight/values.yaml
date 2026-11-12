@@ -109,9 +109,31 @@ nats:
   enabled: true
   # Used only when nats.enabled is false.
   external:
-    # The NATS URL the api, the relay and the runner connect to (nats:// or tls://; port 4222 if none). Required when
-    # nats.enabled is false.
+    # The NATS URL the api, the relay and the runner connect to (port 4222 if none). Required when nats.enabled is
+    # false. Each sends its ServiceAccount token there: tls://, or nats:// only to a Service in this cluster
+    # (<name>.<namespace>.svc).
     url: ""
+  # Who may connect (ADR 0021 amendment): every client signs in through the api's auth callout with its own projected
+  # ServiceAccount token and gets exactly its own subjects. Rangelight's keys, not the upstream chart's.
+  auth:
+    # A Secret you create instead of the keys Job (GitOps, `helm template`): keys issuer-seed and auth-user-seed (the
+    # api's), and, for the bundled server, issuer and auth-user (their public keys). Required when nats.enabled is
+    # false. Empty: a pre-install/pre-upgrade Job creates rangelight-api-nats and rangelight-nats-auth once.
+    existingSecret: ""
+    # The keys Job's image (nk, curl and jq), by tag and digest.
+    keysImage: "docker.io/natsio/nats-box:0.20.2@sha256:5162fca0f56ebe6f78e612e1ded143ce978e088393476033020e6251358dba6f"
+    # This cluster's ServiceAccount token issuer, as its tokens name it:
+    # kubectl get --raw /.well-known/openid-configuration (the "issuer" field). k3s, RKE2 and kubeadm use this default.
+    issuer: "https://kubernetes.default.svc.cluster.local"
+    # The accounts the api's user JWTs are for: RL (the control plane and the runners) and LANE (the lanes, limited
+    # by the server to one subscription and 128 KiB each). With your own server in operator mode, their public keys;
+    # existingSecret then also holds lane-issuer-seed, LANE's signing key.
+    account: "RL"
+    laneAccount: "LANE"
+    # Without Cilium: the API server's addresses, which the api reads the token signing keys from (port 443 or 6443).
+    # Required then; with Cilium the api reaches the API server by its identity and this is unused. Find them with
+    # kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes, for example ["10.0.0.5/32"].
+    apiServerCidrs: []
   # The upstream chart's settings (https://github.com/nats-io/k8s/tree/main/helm/charts/nats).
   # The server's name, and so its Service: the api connects to nats://rangelight-nats.rangelight-system.svc:4222.
   fullnameOverride: "rangelight-nats"
@@ -125,6 +147,10 @@ nats:
         pvc:
           # Size of the JetStream volume.
           size: "10Gi"
+    # files/nats/auth.conf, mounted from the ConfigMap rangelight-nats-auth-config: the accounts, the auth callout
+    # and max_payload.
+    merge:
+      00$include: "../nats-auth/auth.conf"
   # Restarts the server when its config changes, instead of a reloader sidecar.
   podTemplate:
     configChecksumAnnotation: true
@@ -137,9 +163,39 @@ nats:
           fsGroup: 1000
           seccompProfile:
             type: "RuntimeDefault"
+    # auth.conf at /etc/nats-auth. A changed auth.conf reaches the server at its next restart (see the README's
+    # upgrade notes).
+    patch:
+      - op: "add"
+        path: "/spec/volumes/-"
+        value:
+          name: "auth"
+          configMap:
+            name: "rangelight-nats-auth-config"
   container:
     image:
       fullImageName: "docker.io/library/nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde"
+    # auth.conf's public keys, from the keys Job's Secret or nats.auth.existingSecret.
+    env:
+      RL_NATS_ISSUER:
+        valueFrom:
+          secretKeyRef:
+            name:
+              $tplYaml: "{{ .Values.auth.existingSecret | default \"rangelight-nats-auth\" | quote }}"
+            key: "issuer"
+      RL_NATS_AUTH_USER:
+        valueFrom:
+          secretKeyRef:
+            name:
+              $tplYaml: "{{ .Values.auth.existingSecret | default \"rangelight-nats-auth\" | quote }}"
+            key: "auth-user"
+    patch:
+      - op: "add"
+        path: "/volumeMounts/-"
+        value:
+          name: "auth"
+          mountPath: "/etc/nats-auth"
+          readOnly: true
     # Resources of the NATS server.
     resources:
       requests:

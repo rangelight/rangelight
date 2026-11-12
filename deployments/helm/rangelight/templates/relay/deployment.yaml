@@ -23,6 +23,8 @@ spec:
       labels:
         {{- include "rangelight.labels" (dict "ctx" $ "name" "relay" "component" "control-plane") | nindent 8 }}
     spec:
+      # Its NATS identity (the auth callout maps it); no API token.
+      serviceAccountName: "rangelight-relay"
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -70,6 +72,10 @@ spec:
             - name: "secrets"
               mountPath: "/var/run/rangelight/secrets"
               readOnly: true
+            - name: "nats-token"
+              mountPath: "/var/run/secrets/rangelight/nats"
+              readOnly: true
       volumes:
         {{- include "rangelight.secretsVolume" (list (include "rangelight.databaseRef" .)) | nindent 8 }}
+        {{- include "rangelight.natsTokenVolume" . | nindent 8 }}
 {{- end }}

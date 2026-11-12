@@ -38,6 +38,47 @@ pub struct Unsent {
     pub member: String,
 }
 
+/// A row of `unsent.sql` or `last_sent_desired.sql`.
+struct Row {
+    outbox_id: i64,
+    event_id: uuid::Uuid,
+    session_id: uuid::Uuid,
+    seq: i64,
+    payload: Vec<u8>,
+    at: time::OffsetDateTime,
+    namespace: String,
+    ticket_key: String,
+    title: String,
+    description: String,
+    criteria: Vec<String>,
+    repo: String,
+    base_ref: String,
+    member: String,
+}
+
+impl TryFrom<Row> for Unsent {
+    type Error = StoreError;
+
+    fn try_from(row: Row) -> Result<Unsent, StoreError> {
+        Ok(Unsent {
+            outbox_id: row.outbox_id,
+            event: EventId(row.event_id),
+            session: SessionId(row.session_id),
+            seq: to_u64(row.seq, "seq")?,
+            payload: row.payload,
+            at: SystemTime::from(row.at),
+            namespace: row.namespace,
+            ticket_key: row.ticket_key,
+            title: row.title,
+            description: row.description,
+            criteria: row.criteria,
+            repo: row.repo,
+            base_ref: row.base_ref,
+            member: row.member,
+        })
+    }
+}
+
 pub(crate) async fn insert(
     tx: &mut Transaction<'_, Postgres>,
     event: EventId,
@@ -54,28 +95,29 @@ impl Store {
     /// # Errors
     /// [`StoreError::Db`].
     pub async fn unsent(&self, limit: u16) -> Result<Vec<Unsent>, StoreError> {
-        let rows = sqlx::query_file!("../../../db/queries/outbox/unsent.sql", i64::from(limit))
+        sqlx::query_file_as!(
+            Row,
+            "../../../db/queries/outbox/unsent.sql",
+            i64::from(limit)
+        )
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(Unsent::try_from)
+        .collect()
+    }
+
+    /// Each session's last published desired state, to put back into a desired stream that lost
+    /// its messages.
+    ///
+    /// # Errors
+    /// [`StoreError::Db`].
+    pub async fn last_sent_desired(&self) -> Result<Vec<Unsent>, StoreError> {
+        sqlx::query_file_as!(Row, "../../../db/queries/outbox/last_sent_desired.sql")
             .fetch_all(&self.pool)
-            .await?;
-        rows.into_iter()
-            .map(|row| {
-                Ok(Unsent {
-                    outbox_id: row.outbox_id,
-                    event: EventId(row.event_id),
-                    session: SessionId(row.session_id),
-                    seq: to_u64(row.seq, "seq")?,
-                    payload: row.payload,
-                    at: SystemTime::from(row.at),
-                    namespace: row.namespace,
-                    ticket_key: row.ticket_key,
-                    title: row.title,
-                    description: row.description,
-                    criteria: row.criteria,
-                    repo: row.repo,
-                    base_ref: row.base_ref,
-                    member: row.member,
-                })
-            })
+            .await?
+            .into_iter()
+            .map(Unsent::try_from)
             .collect()
     }
 

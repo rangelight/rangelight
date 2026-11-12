@@ -7,7 +7,7 @@ Every dependency is bundled and swappable for your own (ADR 0009). `values.yaml`
 | Component | Bundled (default) | Your own |
 | --- | --- | --- |
 | Postgres | The CloudNativePG operator (chart `cloudnative-pg`) and one cluster `rangelight-pg`: database `api`, owner `rl_api` | `postgres.enabled=false`, `postgres.external.secretRef` |
-| NATS | One NATS server (chart `nats`) with JetStream on a PVC from the default StorageClass | `nats.enabled=false`, `nats.external.url` |
+| NATS | One NATS server (chart `nats`) with JetStream on a PVC from the default StorageClass; every client signs in with its own identity (see NATS sign-in) | `nats.enabled=false`, `nats.external.url`, `nats.auth.existingSecret` |
 | Git mirror | Off by default: `gitMirror.enabled=true` with `gitMirror.image` (by digest) and `gitMirror.repos` runs the mirror (`services/git-mirror/`) on a PVC | — |
 | Sign-in (OIDC) | Dex (chart `dex`): GitHub, limited to the members of `dex.github.org` | `dex.enabled=false`, `oidc.issuer`, `oidc.clientSecretRef`, `oidc.memberClaim` |
 
@@ -39,7 +39,7 @@ The `Session` CRD (`files/crds/session.yaml`) installs and upgrades with the run
 
 ```sh
 RANGELIGHT_KUBE_CONTEXT=<context> RANGELIGHT_VALUES=<your values.yaml> scripts/cluster.sh up   # two passes, see below
-RANGELIGHT_KUBE_CONTEXT=<context> scripts/cluster.sh smoke   # psql and a JetStream round trip
+RANGELIGHT_KUBE_CONTEXT=<context> scripts/cluster.sh smoke   # psql, and NATS refuses an anonymous client
 ```
 
 By hand, run the same command twice:
@@ -71,6 +71,62 @@ the relay gets the database's the same way. No secret is ever an environment val
   others (see Sign-in).
 - `RANGELIGHT_API_REPO`, `_BASE_REF`, `_MEMBER`, `_STREAM_REPLICAS` from `api.repo` (required), `api.baseRef`,
   `api.member` (required) and `api.streamReplicas`: where the sessions work, and for whom.
+- `/etc/rangelight/api.toml` (the ConfigMap `rangelight-api-file`): the NATS auth callout's `[nats_auth]`, with
+  this cluster's issuer (`nats.auth.issuer`), the runner's ServiceAccount, the accounts, and its seeds as
+  references to `rangelight-api-nats` (or `nats.auth.existingSecret`). Its ServiceAccount `rangelight-api` holds
+  only `system:service-account-issuer-discovery`; the pod mounts its NATS token and, to fetch the cluster's
+  signing keys, a token for the API server and the cluster CA.
+
+## NATS sign-in
+
+Every NATS client signs in as itself (ADR 0021 amendment). The api, the relay, the runner and each lane present
+their projected ServiceAccount token (audience `rangelight-nats`, an hour, mounted at
+`/var/run/secrets/rangelight/nats/token` and read again at every connect). The api is the server's auth
+callout: it checks the token against this cluster's issuer (`nats.auth.issuer`, keys from
+`https://kubernetes.default.svc/openid/v1/jwks`), maps it to one identity and answers with a user JWT holding only
+that identity's subjects (`test/nats-permissions.json`) for at most an hour. Anything else is refused, anonymous
+clients included. Find your cluster's issuer with `kubectl get --raw /.well-known/openid-configuration`.
+
+- **Keys.** A `pre-install`/`pre-upgrade` hook Job (`files/nats/keys.sh`, nats-box) creates them once:
+  `rangelight-api-nats` (the callout issuer's seed and the api's auth-user seed, mounted by the api) and
+  `rangelight-nats-auth` (their public keys, read by the server). Neither is in values, and uninstall keeps both.
+  With GitOps or `helm template`, create one Secret yourself and name it in `nats.auth.existingSecret`: keys
+  `issuer-seed` (`nk -gen account`), `auth-user-seed` (`nk -gen user`), and for the bundled server `issuer` and
+  `auth-user`, their public keys (`nk -inkey <seed file> -pubout`). The Job doesn't run then.
+- **Rotation.** Delete both Secrets, upgrade (the Job makes new keys), then restart NATS and the api:
+  `kubectl -n rangelight-system delete secret rangelight-api-nats rangelight-nats-auth`, `helm upgrade …`,
+  `kubectl -n rangelight-system rollout restart statefulset rangelight-nats deployment rangelight-api`. Clients
+  sign in again on their own. ServiceAccount tokens rotate by themselves: the kubelet renews them.
+- **Your own NATS** (`nats.enabled=false`) runs in operator mode, the callout on account RL and the lanes in an
+  account of their own (`files/nats/auth.conf` is the same layout in config mode). With `nsc`:
+  1. `nsc add account RL`, `nsc edit account RL --js-enable 1 --sk generate`: that signing key's seed is
+     `issuer-seed`. `nsc add account LANE`, `nsc edit account LANE --conns 1024 --subscriptions 1 --payload 131072
+     --sk generate`: its seed is `lane-issuer-seed`.
+  2. The terminals between them: `nsc add export --account RL --subject 'rl.*.pty.*.in'` and
+     `nsc add import --account LANE --src-account RL --remote-subject 'rl.*.pty.*.in'`; the same from LANE to RL
+     for `rl.*.pty.*.out`.
+  3. The lane check: `nsc add export --account SYS --service --subject '$SYS.REQ.ACCOUNT.<LANE>.CONNZ'` and
+     `nsc add import --account RL --service --src-account SYS --remote-subject '$SYS.REQ.ACCOUNT.<LANE>.CONNZ'`,
+     where `<LANE>` is LANE's public key.
+  4. The api's own user: `nsc add user -a RL rangelight-api --allow-sub '$SYS.REQ.USER.AUTH,_INBOX_callout.>'
+     --allow-pub '$SYS.REQ.ACCOUNT.<LANE>.CONNZ' --allow-pub-response`; its `.creds` file is `auth-user-seed`.
+  5. `nsc edit authcallout --account RL --auth-user <that user's public key> --allowed-account <LANE>`, then
+     `nsc push -A`. Set the server's `max_payload` to 131072.
+  6. Values: `nats.external.url` (`tls://`, or `nats://` to a Service in this cluster), `nats.auth.account` and
+     `nats.auth.laneAccount` (the two public keys), and `nats.auth.existingSecret` holding `issuer-seed`,
+     `lane-issuer-seed` and `auth-user-seed`.
+- **Upgrading from before sign-in** moves JetStream out of NATS's global account into `RL`. The old streams stay
+  on the volume, unused. At every start the relay puts back each session's last published desired state from
+  Postgres wherever the desired stream lacks it, before it publishes anything newer, so runners lose nothing.
+  Status reports the api hadn't recorded yet are lost; each runner reports again at a session's next phase
+  change. A changed `auth.conf` reaches the server at its next restart: `kubectl -n rangelight-system rollout
+  restart statefulset rangelight-nats`.
+- **Close every live session before upgrading to this version.** The runner now marks each lane namespace with
+  its Session's UID (`rangelight.dev/session-uid`) and never adopts a namespace without that mark, so nobody can
+  make one in advance and take over its lane. Namespaces from earlier versions lack it: after the upgrade their
+  sessions fail with `namespace_taken`, and the runner leaves those namespaces, and their pods, in place. Close
+  the sessions first (their namespaces go with them), or afterwards delete the leftover namespaces by hand:
+  `kubectl get namespaces -l rangelight.dev/lane=true`.
 
 ## Sign-in
 
@@ -133,7 +189,11 @@ controller); it calls out only to the cluster DNS (`clusterDns`, shared with the
 HTTPS outside `clusterCidrs` (the cluster's pod and service CIDRs, k3s's and RKE2's by default). The api takes
 connections on 8080 only from `ingress.from`; it calls out to the cluster DNS, Postgres, NATS, `ingress.from`
 on `ingress.from.httpsPort` (bundled Dex's issuer, `<publicUrl>/dex`) and HTTPS outside `clusterCidrs` (Linear,
-your own OIDC provider, on 443 and on the port of `oidc.issuer` if it names one). The relay takes no connections and calls out to the cluster DNS, Postgres and NATS only. The
+your own OIDC provider, on 443 and on the port of `oidc.issuer` if it names one), and the API server on 443 and
+6443, for the cluster's token signing keys: with Cilium by its `kube-apiserver` entity (a CiliumNetworkPolicy),
+without it only at `nats.auth.apiServerCidrs`, which you then set (`kubectl get endpointslices -n default -l
+kubernetes.io/service-name=kubernetes`). The relay
+takes no connections and calls out to the cluster DNS, Postgres and NATS only. The
 Workbench takes connections on 8080 only from `ingress.from` and calls out to nothing, DNS included. With your
 own Postgres or NATS, the api and the relay may reach port 5432, or the port of `nats.external.url`, at any
 address.
@@ -144,4 +204,4 @@ address.
   `helm dependency update deployments/helm/rangelight`.
 - Images are pinned by tag and digest. Never bump the Postgres major version in place.
 - `scripts/check.sh deploy` runs `helm lint`, kubeconform on both modes, the YAML style on our templates'
-  output, and the render tests `test/{template,git-mirror,runner,dex,api,relay,web,ingress}.sh`.
+  output, and the render tests `test/{template,git-mirror,runner,dex,api,relay,web,ingress,nats}.sh`.

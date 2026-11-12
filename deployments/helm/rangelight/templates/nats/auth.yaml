@@ -1,0 +1,16 @@
+{{- if .Values.nats.enabled }}
+---
+# Who may connect to the bundled NATS server (files/nats/auth.conf, ADR 0021 amendment): the api's auth callout
+# signs every client in. The server includes it from /etc/nats-auth; its public keys come from the Secret
+# rangelight-nats-auth (or nats.auth.existingSecret).
+apiVersion: "v1"
+kind: "ConfigMap"
+metadata:
+  name: "rangelight-nats-auth-config"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "nats" "component" "messaging") | nindent 4 }}
+data:
+  auth.conf: |
+    {{- regexReplaceAll "(?m)^ +$" (.Files.Get "files/nats/auth.conf" | nindent 4) "" }}
+{{- end }}

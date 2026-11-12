@@ -18,6 +18,7 @@ buffa-types.workspace = true
 rl-chain.workspace = true
 rl-config.workspace = true
 rl-domain.workspace = true
+rl-nats.workspace = true
 rl-proto.workspace = true
 rl-store.workspace = true
 rl-telemetry.workspace = true

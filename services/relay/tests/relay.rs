@@ -45,7 +45,7 @@ async fn relay(store: &Store, org: &str) -> Relay {
 /// Everything in the org's stream, as one consumer sees it.
 async fn consume(org: &str) -> Vec<jetstream::Message> {
     let stream = jetstream::new(rl_testkit::nats().await)
-        .get_stream(format!("rl-{org}-desired"))
+        .get_stream(subject::desired_stream(org))
         .await
         .unwrap();
     let consumer = stream
@@ -170,6 +170,136 @@ async fn state_changes_go_out_in_order_and_fan_out() {
     }
 }
 
+/// RAN-43: a desired stream that lost its messages (a wiped volume, or the move into the RL account)
+/// gets each session's last published desired state back from Postgres, tombstones included,
+/// before anything newer; what wasn't sent yet follows from the outbox, in order.
+#[tokio::test]
+async fn an_empty_desired_stream_is_reseeded_from_postgres() {
+    let (store, org) = (rl_testkit::store("relay::reseed").await, org());
+    let tickets = FakeTickets(vec![ticket(1, &[INTAKE_LABEL]), ticket(2, &[INTAKE_LABEL])]);
+    let commands = intake(&tickets, &rl_testkit::workspace(), &SystemClock, &UuidV7)
+        .await
+        .unwrap();
+    for command in &commands {
+        assert!(store.create_session(command).await.unwrap());
+    }
+    let (one, two) = (commands[0].id, commands[1].id);
+    let closed = change_state(one, State::Cold, &SystemClock, &UuidV7);
+    store.change_state(&closed).await.unwrap();
+    assert_eq!(relay(&store, &org).await.run_once().await.unwrap(), 3);
+    let unsent = change_state(two, State::Warm, &SystemClock, &UuidV7);
+    store.change_state(&unsent).await.unwrap();
+
+    jetstream::new(rl_testkit::nats().await)
+        .delete_stream(subject::desired_stream(&org))
+        .await
+        .unwrap();
+    let restarted = relay(&store, &org).await;
+    let mut kept: Vec<_> = consume(&org).await.iter().map(desired).collect();
+    kept.sort_by(|a, b| a.2.cmp(&b.2));
+    assert_eq!(
+        kept,
+        [
+            (2, DesiredState::DESIRED_STATE_COLD, "rl-ran-1".to_owned()),
+            (1, DesiredState::DESIRED_STATE_HOT, "rl-ran-2".to_owned()),
+        ],
+        "the last published state of each, the tombstone included"
+    );
+    assert_eq!(restarted.run_once().await.unwrap(), 1);
+    let mut kept: Vec<_> = consume(&org).await.iter().map(desired).collect();
+    kept.sort_by(|a, b| a.2.cmp(&b.2));
+    assert_eq!(
+        kept[1],
+        (2, DesiredState::DESIRED_STATE_WARM, "rl-ran-2".to_owned())
+    );
+}
+
+/// RAN-43 review 2: a reseed cut short (the stream holds only some sessions) is finished by the
+/// next start, and never replaces what a subject already holds, even an older state than
+/// Postgres's (here a newer one, published after the reseed began).
+#[tokio::test]
+async fn a_reseed_cut_short_is_finished_at_the_next_start_and_never_overwrites() {
+    let (store, org) = (rl_testkit::store("relay::reseed_partial").await, org());
+    let tickets = FakeTickets(vec![ticket(1, &[INTAKE_LABEL]), ticket(2, &[INTAKE_LABEL])]);
+    let commands = intake(&tickets, &rl_testkit::workspace(), &SystemClock, &UuidV7)
+        .await
+        .unwrap();
+    for command in &commands {
+        assert!(store.create_session(command).await.unwrap());
+    }
+    let first = relay(&store, &org).await;
+    assert_eq!(first.run_once().await.unwrap(), 2);
+    let kept = consume(&org).await;
+    let one = kept
+        .iter()
+        .find(|m| desired(m).2 == "rl-ran-1")
+        .unwrap()
+        .clone();
+
+    // The stream lost everything; a reseed put back session 1 only, as a later state, then stopped.
+    let nats = jetstream::new(rl_testkit::nats().await);
+    let stream = nats
+        .get_stream(subject::desired_stream(&org))
+        .await
+        .unwrap();
+    stream.purge().await.unwrap();
+    let mut newer = Envelope::decode_from_slice(&one.payload).unwrap();
+    if let Some(Body::Desired(desired)) = &mut newer.body {
+        desired.generation = 99;
+    }
+    let ack = nats
+        .publish(one.subject.clone(), newer.encode_to_vec().into())
+        .await
+        .unwrap();
+    ack.await.unwrap();
+
+    let restarted = relay(&store, &org).await;
+    assert_eq!(
+        restarted.reseed().await.unwrap(),
+        0,
+        "nothing left to put back"
+    );
+    let mut kept: Vec<_> = consume(&org).await.iter().map(desired).collect();
+    kept.sort_by(|a, b| a.2.cmp(&b.2));
+    assert_eq!(
+        kept,
+        [
+            (99, DesiredState::DESIRED_STATE_HOT, "rl-ran-1".to_owned()),
+            (1, DesiredState::DESIRED_STATE_HOT, "rl-ran-2".to_owned()),
+        ],
+        "session 2 put back, session 1's state kept"
+    );
+}
+
+/// RAN-43 review 2: a session whose last desired state can't be decoded is skipped by the reseed,
+/// which puts back every other session.
+#[tokio::test]
+async fn a_reseed_skips_an_undecodable_row_and_puts_back_the_rest() {
+    let database = rl_testkit::Database::new("relay::reseed_poison").await;
+    let (store, org) = (database.store().await, org());
+    let tickets = FakeTickets(vec![ticket(1, &[INTAKE_LABEL]), ticket(2, &[INTAKE_LABEL])]);
+    for command in intake(&tickets, &rl_testkit::workspace(), &SystemClock, &UuidV7)
+        .await
+        .unwrap()
+    {
+        assert!(store.create_session(&command).await.unwrap());
+    }
+    assert_eq!(relay(&store, &org).await.run_once().await.unwrap(), 2);
+    database.execute(include_str!("reseed_poison.sql")).await;
+
+    let stream = jetstream::new(rl_testkit::nats().await)
+        .get_stream(subject::desired_stream(&org))
+        .await
+        .unwrap();
+    stream.purge().await.unwrap();
+    let restarted = relay(&store, &org).await;
+    let mut kept: Vec<_> = consume(&org).await.iter().map(desired).collect();
+    kept.sort_by(|a, b| a.2.cmp(&b.2));
+    let namespaces: Vec<_> = kept.iter().map(|k| k.2.as_str()).collect();
+    assert_eq!(namespaces, ["rl-ran-1", "rl-ran-2"], "the rest put back");
+    assert_eq!(restarted.reseed().await.unwrap(), 0);
+}
+
 /// Review 1: an undecodable row is set aside and only its session waits; others keep flowing.
 #[tokio::test]
 async fn an_undecodable_event_holds_back_only_its_own_session() {
@@ -206,7 +336,7 @@ async fn the_desired_stream_keeps_one_message_per_session() {
     let (store, org) = (rl_testkit::store("relay::table").await, org());
     relay(&store, &org).await;
     let config = jetstream::new(rl_testkit::nats().await)
-        .get_stream(format!("rl-{org}-desired"))
+        .get_stream(subject::desired_stream(&org))
         .await
         .unwrap()
         .cached_info()

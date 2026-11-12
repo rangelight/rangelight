@@ -310,3 +310,38 @@ async fn the_token_file_is_read_at_every_connect() {
     }
     assert!(back, "back with the rotated token");
 }
+
+/// RAN-79: the api's first NATS connect at start, the callout's, waits while NATS is away and
+/// connects within one retry pause once it is back (its other clients use the same
+/// `rl_nats::connect`). A refused sign-in still fails at once.
+#[tokio::test]
+async fn ran79_the_api_waits_for_nats_at_start_but_not_for_a_bad_key() {
+    let mut nats = AuthNats::start().await;
+    nats.stop();
+    let (url, seed) = (nats.url.clone(), nats.auth_user_seed.clone());
+    let connect = tokio::spawn(async move { Callout::connect(&url, &seed.into()).await });
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(
+        !connect.is_finished(),
+        "the api gave up while NATS was away"
+    );
+    nats.start_again().await;
+    let client = tokio::time::timeout(rl_nats::MAX_RETRY + Duration::from_secs(2), connect)
+        .await
+        .expect("connected within one retry pause")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        client.connection_state(),
+        async_nats::connection::State::Connected
+    );
+
+    let stranger = nkeys::KeyPair::new_user().seed().unwrap();
+    let refused = tokio::time::timeout(
+        Duration::from_secs(10),
+        Callout::connect(&nats.url, &stranger.into()),
+    )
+    .await
+    .expect("a refused sign-in isn't retried");
+    assert!(refused.is_err());
+}

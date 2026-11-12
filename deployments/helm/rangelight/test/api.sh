@@ -22,8 +22,8 @@ test_api_pod_is_restricted_pinned_with_one_replica() {
   expect_line "          image: \"ghcr.io/rangelight/api:test@sha256:$(printf '4%.0s' {1..64})\""
   expect_line '                name: "rangelight-api"'
   expect_line '              path: "/healthz"'
-  [[ "$(grep -A6 -e '^          startupProbe:$' <<<"${OUT}" | grep -cxE -e ' +(path: "/healthz"|periodSeconds: 2|failureThreshold: 60)')" -eq 3 ]] ||
-    fail "no startupProbe on /healthz every 2s, 60 times"
+  [[ "$(grep -A6 -e '^          startupProbe:$' <<<"${OUT}" | grep -cxE -e ' +(path: "/healthz"|periodSeconds: 2|failureThreshold: 900)')" -eq 3 ]] ||
+    fail "no startupProbe on /healthz every 2s, for 30 minutes (it waits for NATS)"
   expect_line '              containerPort: 8080'
   expect_line '      targetPort: "http"'
 }

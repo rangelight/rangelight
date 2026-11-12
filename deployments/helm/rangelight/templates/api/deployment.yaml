@@ -48,13 +48,16 @@ spec:
           ports:
             - name: "http"
               containerPort: 8080
-          # Up to 2 minutes to start (Postgres, NATS, migrations) before liveness counts.
+          # /healthz answers once the api has started (Postgres, migrations, NATS). It waits for NATS while
+          # NATS is away (RAN-79), so start may take up to 30 minutes before liveness counts (longer than
+          # Kubernetes' 10-minute back-off reset; a start that hangs elsewhere is cut there); checked every
+          # 2 s, so it is Ready within 2 s of starting. A failed start (config, credentials, Postgres) exits.
           startupProbe:
             httpGet:
               path: "/healthz"
               port: "http"
             periodSeconds: 2
-            failureThreshold: 60
+            failureThreshold: 900
           readinessProbe:
             httpGet:
               path: "/healthz"

@@ -1,5 +1,5 @@
 //! The relay against real Postgres and a real NATS server.
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::time::Duration;
 
@@ -360,4 +360,46 @@ async fn the_desired_stream_keeps_one_message_per_session() {
             vec![format!("rl.{org}.runner.*.desired.*")]
         )
     );
+}
+
+/// RAN-79: the relay's start (`main`: `rl_nats::connect`, then `Relay::new`) waits while NATS is
+/// away and finishes within one retry pause once it is back, so its /healthz answers.
+#[tokio::test]
+async fn the_relay_waits_for_nats_at_start() {
+    let store = rl_testkit::store("relay::waits_for_nats").await;
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let url = format!("nats://127.0.0.1:{port}");
+    let dir = tempfile::tempdir().unwrap();
+    let token = dir.path().join("token");
+    std::fs::write(&token, "a token").unwrap();
+    let starting = tokio::spawn({
+        let (store, url) = (store.clone(), url.clone());
+        async move {
+            let nats = rl_nats::connect(|| rl_nats::options(token.clone(), "relay"), &url)
+                .await
+                .unwrap();
+            Relay::new(store, nats, "waits".into(), "r1".into(), 1)
+                .await
+                .unwrap()
+        }
+    });
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(
+        !starting.is_finished(),
+        "the relay gave up while NATS was away"
+    );
+    let mut server = std::process::Command::new("nats-server")
+        .args(["-a", "127.0.0.1", "-p", &port.to_string(), "-js", "-sd"])
+        .arg(dir.path().join("js"))
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .expect("nats-server: run the tests via scripts/test/services.sh");
+    let started = tokio::time::timeout(rl_nats::MAX_RETRY + Duration::from_secs(2), starting).await;
+    let _ = server.kill();
+    let _ = server.wait();
+    started.expect("started within one retry pause").unwrap();
 }

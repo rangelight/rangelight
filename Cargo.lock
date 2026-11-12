@@ -2619,6 +2619,7 @@ dependencies = [
  "rl-telemetry",
  "rl-testkit",
  "serde",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -2763,6 +2764,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

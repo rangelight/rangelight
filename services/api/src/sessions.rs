@@ -40,12 +40,9 @@ const VIEWER_CAPACITY: usize = 1024;
 /// NATS's, when it can't connect.
 pub async fn viewers_client(
     url: &str,
-    options: async_nats::ConnectOptions,
+    options: impl Fn() -> async_nats::ConnectOptions,
 ) -> Result<async_nats::Client, async_nats::ConnectError> {
-    options
-        .subscription_capacity(VIEWER_CAPACITY)
-        .connect(url)
-        .await
+    rl_nats::connect(|| options().subscription_capacity(VIEWER_CAPACITY), url).await
 }
 
 /// How many messages a lane terminal's output may queue in the api: past it, output is dropped
@@ -60,12 +57,9 @@ const TERMINAL_CAPACITY: usize = 64;
 /// NATS's, when it can't connect.
 pub async fn terminals_client(
     url: &str,
-    options: async_nats::ConnectOptions,
+    options: impl Fn() -> async_nats::ConnectOptions,
 ) -> Result<async_nats::Client, async_nats::ConnectError> {
-    options
-        .subscription_capacity(TERMINAL_CAPACITY)
-        .connect(url)
-        .await
+    rl_nats::connect(|| options().subscription_capacity(TERMINAL_CAPACITY), url).await
 }
 
 /// The session API: reads from Postgres, streams from NATS fan-out.

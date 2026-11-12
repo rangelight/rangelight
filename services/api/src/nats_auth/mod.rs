@@ -97,21 +97,29 @@ pub struct Callout {
 
 impl Callout {
     /// Connects to `url` as the callout's auth user, with `credential`: an nkey seed, or a
-    /// `.creds` file (a user JWT and its seed, operator mode).
+    /// `.creds` file (a user JWT and its seed, operator mode). Waits while NATS can't be reached
+    /// ([`rl_nats::connect`]).
     ///
     /// # Errors
     /// [`CalloutError::Credential`] or [`CalloutError::Nats`].
     pub async fn connect(url: &str, credential: &SecretString) -> Result<Client, CalloutError> {
         let credential = credential.expose_secret();
-        let options = if credential.contains("BEGIN NATS USER JWT") {
-            ConnectOptions::with_credentials(credential).map_err(|_| CalloutError::Credential)?
-        } else {
-            ConnectOptions::with_nkey(credential.trim().to_owned())
+        let creds = credential.contains("BEGIN NATS USER JWT");
+        if creds && ConnectOptions::with_credentials(credential).is_err() {
+            return Err(CalloutError::Credential);
+        }
+        let options = || {
+            // A .creds file that parsed above parses again: it is the same text.
+            let options = if creds {
+                ConnectOptions::with_credentials(credential).unwrap_or_default()
+            } else {
+                ConnectOptions::with_nkey(credential.trim().to_owned())
+            };
+            options
+                .custom_inbox_prefix(subject::inbox(INBOX))
+                .name("rangelight-api auth callout")
         };
-        options
-            .custom_inbox_prefix(subject::inbox(INBOX))
-            .name("rangelight-api auth callout")
-            .connect(url)
+        rl_nats::connect(options, url)
             .await
             .map_err(|e| CalloutError::Nats(e.to_string()))
     }

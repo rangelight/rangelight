@@ -21,8 +21,8 @@ test_relay_pod_is_restricted_pinned_single_writer() {
   expect_line '    type: "Recreate"'
   expect_line "          image: \"ghcr.io/rangelight/relay:test@sha256:$(printf '5%.0s' {1..64})\""
   expect_line '              path: "/healthz"'
-  [[ "$(grep -A6 -e '^          startupProbe:$' <<<"${OUT}" | grep -cxE -e ' +(path: "/healthz"|periodSeconds: 2|failureThreshold: 60)')" -eq 3 ]] ||
-    fail "no startupProbe on /healthz every 2s, 60 times"
+  [[ "$(grep -A6 -e '^          startupProbe:$' <<<"${OUT}" | grep -cxE -e ' +(path: "/healthz"|periodSeconds: 2|failureThreshold: 900)')" -eq 3 ]] ||
+    fail "no startupProbe on /healthz every 2s, for 30 minutes (it waits for NATS)"
 }
 
 # The relay's config keys (configs/relay.default.toml), with the database a mounted Secret file.

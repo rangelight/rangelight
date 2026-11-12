@@ -46,7 +46,27 @@ pub struct AuthNats {
     /// The api's auth-user seed (`auth-user-seed`).
     pub auth_user_seed: String,
     server: Child,
-    _dir: tempfile::TempDir,
+    /// The public keys the config names: the callout issuer's and the auth user's.
+    keys: (String, String),
+    dir: tempfile::TempDir,
+}
+
+/// Writes the server's config, listening on `listen`, and starts it.
+fn spawn_server(dir: &std::path::Path, listen: &str, (issuer, auth_user): (&str, &str)) -> Child {
+    let conf = format!(
+        "listen: \"{listen}\"\nports_file_dir: \"{dir}\"\njetstream {{ store_dir: \"{dir}/js\" }}\ninclude \"auth.conf\"\n",
+        dir = dir.display(),
+    );
+    std::fs::write(dir.join("nats.conf"), conf).unwrap();
+    Command::new("nats-server")
+        .arg("-c")
+        .arg(dir.join("nats.conf"))
+        .env("RL_NATS_ISSUER", issuer)
+        .env("RL_NATS_AUTH_USER", auth_user)
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .expect("nats-server: run the tests via scripts/test/services.sh")
 }
 
 impl AuthNats {
@@ -56,20 +76,8 @@ impl AuthNats {
         let issuer = nkeys::KeyPair::new_account();
         let auth_user = nkeys::KeyPair::new_user();
         std::fs::write(dir.path().join("auth.conf"), auth_conf()).unwrap();
-        let conf = format!(
-            "listen: \"127.0.0.1:-1\"\nports_file_dir: \"{dir}\"\njetstream {{ store_dir: \"{dir}/js\" }}\ninclude \"auth.conf\"\n",
-            dir = dir.path().display(),
-        );
-        std::fs::write(dir.path().join("nats.conf"), conf).unwrap();
-        let server = Command::new("nats-server")
-            .arg("-c")
-            .arg(dir.path().join("nats.conf"))
-            .env("RL_NATS_ISSUER", issuer.public_key())
-            .env("RL_NATS_AUTH_USER", auth_user.public_key())
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .expect("nats-server: run the tests via scripts/test/services.sh");
+        let keys = (issuer.public_key(), auth_user.public_key());
+        let server = spawn_server(dir.path(), "127.0.0.1:-1", (&keys.0, &keys.1));
         let ports = dir
             .path()
             .join(format!("nats-server_{}.ports", server.id()));
@@ -88,8 +96,28 @@ impl AuthNats {
             issuer_seed: issuer.seed().unwrap(),
             auth_user_seed: auth_user.seed().unwrap(),
             server,
-            _dir: dir,
+            keys,
+            dir,
         }
+    }
+
+    /// Stops the server, as an outage would; [`AuthNats::start_again`] brings it back.
+    pub fn stop(&mut self) {
+        let _ = self.server.kill();
+        let _ = self.server.wait();
+    }
+
+    /// Starts the server again on the same port, with the same keys and config, and waits for it.
+    pub async fn start_again(&mut self) {
+        let listen = self.url.trim_start_matches("nats://").to_owned();
+        self.server = spawn_server(self.dir.path(), &listen, (&self.keys.0, &self.keys.1));
+        for _ in 0..300 {
+            if tokio::net::TcpStream::connect(&listen).await.is_ok() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("nats-server didn't start again on {listen}");
     }
 }
 

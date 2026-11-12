@@ -46,13 +46,15 @@ spec:
             - name: "http"
               containerPort: 8080
           # /healthz answers once the relay has started (Postgres, NATS and the desired-state stream set up) and
-          # while it lives. Up to 2 minutes to start before liveness counts.
+          # while it lives. It waits for NATS while NATS is away (RAN-79), so start may take up to 30 minutes
+          # before liveness counts (longer than Kubernetes' 10-minute back-off reset; a start that hangs
+          # elsewhere is cut there); checked every 2 s. A failed start (config, credentials, Postgres) exits.
           startupProbe:
             httpGet:
               path: "/healthz"
               port: "http"
             periodSeconds: 2
-            failureThreshold: 60
+            failureThreshold: 900
           readinessProbe:
             httpGet:
               path: "/healthz"

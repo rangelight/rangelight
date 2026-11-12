@@ -1,6 +1,6 @@
 ---
-# The api's settings (configs/api.default.toml, ADR 0049 §6), as RANGELIGHT_API_<KEY>: connection, sign-in, Linear
-# and sessions. Secrets as references, never values.
+# The api's settings (configs/api.default.toml, ADR 0049 §6), as RANGELIGHT_API_<KEY>: connection, sign-in, Linear,
+# sessions and the extra CA bundle. Secrets as references, never values.
 apiVersion: "v1"
 kind: "ConfigMap"
 metadata:
@@ -20,6 +20,11 @@ data:
   RANGELIGHT_API_OIDC_CLIENT_ID: {{ .Values.oidc.clientId | quote }}
   RANGELIGHT_API_OIDC_MEMBER_CLAIM: {{ .Values.oidc.memberClaim | quote }}
   RANGELIGHT_API_OIDC_CLIENT_SECRET: {{ printf "secret://%s#%s" .Values.oidc.clientSecretRef.name .Values.oidc.clientSecretRef.key | quote }}
+  {{- with .Values.tls.extraCaSecretRef }}
+  {{- if .name }}
+  RANGELIGHT_API_EXTRA_CA_FILE: {{ printf "/var/run/rangelight/secrets/%s/%s" .name .key | quote }}
+  {{- end }}
+  {{- end }}
   {{- with .Values.linear }}
   {{- if .team }}
   RANGELIGHT_API_LINEAR_TEAM: {{ .team | quote }}

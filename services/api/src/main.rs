@@ -1,15 +1,9 @@
-//! The api binary: loads config, starts telemetry, migrates, wires Postgres, NATS, Linear and the
-//! OIDC provider, and runs the intake loop, the status consumer and the server until SIGTERM or
-//! Ctrl-C.
+//! The api binary: loads config, starts telemetry, migrates, wires Postgres, NATS, Linear and
+//! OIDC, and runs the intake loop, the status consumer and the server until SIGTERM or Ctrl-C.
 
 use anyhow::Context;
-use api::config::Config;
-use std::time::Duration;
-
-use api::{Auth, SessionApi, intake_loop, serve, status, viewers_client};
+use api::{Auth, SessionApi, config::Config, intake_loop, serve, status, viewers_client};
 use rl_store::Store;
-use rl_tickets_linear::Linear;
-use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 
@@ -18,6 +12,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::load()?;
     rl_telemetry::init(&config.log)?;
     let workspace = config.workspace()?;
+    let roots = config.extra_roots()?;
     let store = Store::connect(&config.database_url.read()?)
         .await
         .context("postgres")?;
@@ -26,19 +21,18 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("nats")?;
     let viewers = viewers_client(&config.nats_url).await.context("nats")?;
-    let linear = Linear::new(config.linear_url, config.linear_team, config.linear_api_key)?;
+    let linear = config.linear(&roots)?;
     let provider = rl_auth::Provider::new(
-        config.oidc_issuer,
-        config.oidc_client_id,
-        config.oidc_client_secret,
-        config.public_url.join("/auth/callback")?,
-        config.oidc_member_claim,
+        config.oidc_issuer.clone(),
+        config.registration()?,
+        config.oidc_member_claim.clone(),
+        &roots,
     )?;
     // The client secret keys the sign-in cookie: a weak one stops the api here.
     provider.check_secret()?;
-    let recheck = Duration::from_secs(config.login_recheck_seconds);
+    let recheck = std::time::Duration::from_secs(config.login_recheck_seconds);
     let auth = Auth::new(store.clone(), provider, &config.public_url, recheck);
-    let listener = TcpListener::bind(config.listen).await?;
+    let listener = tokio::net::TcpListener::bind(config.listen).await?;
 
     let cancel = CancellationToken::new();
     let mut terminate = signal(SignalKind::terminate())?;
@@ -50,7 +44,6 @@ async fn main() -> anyhow::Result<()> {
         }
         stop.cancel();
     });
-
     let intake = tokio::spawn(intake_loop(
         store.clone(),
         linear,

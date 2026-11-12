@@ -1,10 +1,14 @@
 //! The api's config (ADR 0049 §6), loaded by `rl-config` from `configs/api.default.toml`.
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
-use rl_auth::Url;
+use rl_auth::{Registration, Url};
 use rl_config::{ConfigError, SecretRef};
 use rl_domain::{Workspace, subject};
+use rl_tickets_linear::Linear;
+use rustls::pki_types::CertificateDer;
+use rustls::pki_types::pem::PemObject;
 use serde::Deserialize;
 
 /// What the api is configured with.
@@ -48,6 +52,9 @@ pub struct Config {
     pub base_ref: String,
     /// Whose Claude home the team's lanes mount.
     pub member: String,
+    /// A PEM bundle of CA certificates the api's HTTPS (the issuer, Linear) trusts beside the
+    /// platform's roots: for an issuer or a Linear proxy behind your own CA.
+    pub extra_ca_file: Option<PathBuf>,
 }
 
 impl Config {
@@ -72,6 +79,65 @@ impl Config {
             self.member.clone(),
         )
         .map_err(|e| ConfigError(e.to_string()))
+    }
+
+    /// The Linear source for `linear_team`, trusting `extra_roots` beside the platform's roots.
+    ///
+    /// # Errors
+    /// [`rl_app::TicketError::Unavailable`] if its HTTP client can't be built.
+    pub fn linear(
+        &self,
+        extra_roots: &[CertificateDer<'static>],
+    ) -> Result<Linear, rl_app::TicketError> {
+        Linear::new(
+            self.linear_url.clone(),
+            self.linear_team.clone(),
+            self.linear_api_key.clone(),
+            extra_roots,
+        )
+    }
+
+    /// The api's registration at the issuer, coming back to `<public_url>/auth/callback`.
+    ///
+    /// # Errors
+    /// [`ConfigError`] if `public_url` can't take that path.
+    pub fn registration(&self) -> Result<Registration, ConfigError> {
+        Ok(Registration {
+            client_id: self.oidc_client_id.clone(),
+            client_secret: self.oidc_client_secret.clone(),
+            redirect: self
+                .public_url
+                .join("/auth/callback")
+                .map_err(|e| ConfigError(format!("public_url: {e}")))?,
+        })
+    }
+
+    /// Every certificate in `extra_ca_file`, read once for all the api's HTTPS clients; none
+    /// when it is unset.
+    ///
+    /// # Errors
+    /// [`ConfigError`] naming the file when it can't be read, holds no certificate, or holds one
+    /// that doesn't parse: never a silent fallback to the platform's roots alone.
+    pub fn extra_roots(&self) -> Result<Vec<CertificateDer<'static>>, ConfigError> {
+        let Some(file) = &self.extra_ca_file else {
+            return Ok(Vec::new());
+        };
+        let bad = |why: &dyn std::fmt::Display| {
+            ConfigError(format!("extra_ca_file {}: {why}", file.display()))
+        };
+        let ders = CertificateDer::pem_file_iter(file)
+            .map_err(|e| bad(&e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| bad(&e))?;
+        if ders.is_empty() {
+            return Err(bad(&"no PEM certificate in it"));
+        }
+        // The check the TLS client makes of a root, made here so a bad one names the file.
+        let mut store = rustls::RootCertStore::empty();
+        for der in &ders {
+            store.add(der.clone()).map_err(|e| bad(&e))?;
+        }
+        Ok(ders)
     }
 
     fn validate(self) -> Result<Config, ConfigError> {
@@ -224,6 +290,45 @@ member = \"ariel\"
         ] {
             assert!(bad.validate().is_err());
         }
+    }
+
+    fn roots_from(pem: &str) -> Result<Vec<CertificateDer<'static>>, ConfigError> {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut file, pem.as_bytes()).unwrap();
+        Config {
+            extra_ca_file: Some(file.path().to_owned()),
+            ..defaults()
+        }
+        .extra_roots()
+    }
+
+    #[tokio::test]
+    async fn the_extra_ca_file_is_every_certificate_in_it() {
+        assert!(defaults().extra_roots().unwrap().is_empty(), "unset: none");
+        let ca = rl_testkit::HttpsStub::start(|_| String::new())
+            .await
+            .ca_pem
+            .clone();
+        assert_eq!(roots_from(&[ca.as_str(), &ca].concat()).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn an_extra_ca_file_that_doesnt_parse_stops_the_api() {
+        for pem in [
+            "",
+            "not a certificate",
+            "-----BEGIN CERTIFICATE-----\n!!!!\n-----END CERTIFICATE-----\n",
+            "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n",
+        ] {
+            let error = roots_from(pem).unwrap_err().to_string();
+            assert!(error.contains("extra_ca_file /"), "{pem:?}: {error}");
+        }
+        let missing = Config {
+            extra_ca_file: Some("/nonexistent/ca.crt".into()),
+            ..defaults()
+        };
+        let error = missing.extra_roots().unwrap_err().to_string();
+        assert!(error.contains("/nonexistent/ca.crt"), "{error}");
     }
 
     #[test]

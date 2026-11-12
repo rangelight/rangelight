@@ -45,6 +45,24 @@ test_api_mounts_exactly_its_three_secret_keys() {
   expect_line '                      path: "rangelight-linear/key"'
 }
 
+# RAN-54: your own CA bundle, mounted like the other Secret refs and named in the config; nothing by default.
+test_api_trusts_an_extra_ca_bundle_only_when_set() {
+  local files
+  render "${SERVE[@]}" --show-only templates/api/configmap.yaml
+  expect_ok
+  expect_no_match 'EXTRA_CA'
+  render "${SERVE[@]}" --show-only templates/api/configmap.yaml --set tls.extraCaSecretRef.name=corp-ca
+  expect_line '  RANGELIGHT_API_EXTRA_CA_FILE: "/var/run/rangelight/secrets/corp-ca/ca.crt"'
+  render "${SERVE[@]}" --show-only templates/api/deployment.yaml --set tls.extraCaSecretRef.name=corp-ca \
+    --set tls.extraCaSecretRef.key=bundle.pem
+  expect_ok
+  files="$(grep -E '^ +path: "[^/]+/[^/]+"$' <<<"${OUT}" | tr -d ' "' | sed 's/^path://' | paste -sd' ')"
+  [[ "${files}" == "rangelight-pg-app/uri rangelight-oidc/client-secret rangelight-linear/api-key corp-ca/bundle.pem" ]] ||
+    fail "the api mounts: ${files}"
+  render "${SERVE[@]}" --set tls.extraCaSecretRef.name=Corp_CA
+  expect_refused "/tls/extraCaSecretRef/name"
+}
+
 test_api_config_names_linear_and_rolls_the_pod() {
   local before
   render "${SERVE[@]}" --show-only templates/api/configmap.yaml

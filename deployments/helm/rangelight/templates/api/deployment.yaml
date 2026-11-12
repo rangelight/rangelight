@@ -5,6 +5,11 @@
 {{- $oidc := printf "%s#%s" .Values.oidc.clientSecretRef.name .Values.oidc.clientSecretRef.key }}
 {{- $linear := printf "%s#%s" .Values.linear.apiKeySecretRef.name .Values.linear.apiKeySecretRef.key }}
 {{- $refs := list (include "rangelight.databaseRef" .) $oidc $linear }}
+{{- with .Values.tls.extraCaSecretRef }}
+{{- if .name }}
+{{- $refs = append $refs (printf "%s#%s" .name .key) }}
+{{- end }}
+{{- end }}
 apiVersion: "apps/v1"
 kind: "Deployment"
 metadata:

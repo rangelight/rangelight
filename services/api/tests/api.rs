@@ -48,6 +48,16 @@ async fn intake(store: &Store, source: &impl rl_app::TicketSource) -> usize {
     .unwrap()
 }
 
+fn linear(stub: &LinearStub, key: &tempfile::NamedTempFile) -> Linear {
+    Linear::new(
+        stub.url.clone(),
+        "RAN".into(),
+        SecretRef::file(key.path()),
+        &[],
+    )
+    .unwrap()
+}
+
 fn key_file() -> tempfile::NamedTempFile {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "{KEY}").unwrap();
@@ -62,7 +72,7 @@ async fn linear_intake_creates_one_session_per_labelled_issue() {
     let key = key_file();
     let issues = vec![ticket(1, &[INTAKE_LABEL]), ticket(2, &["bug"])];
     let stub = LinearStub::start(Reply::Tickets(issues)).await;
-    let linear = Linear::new(stub.url.clone(), "RAN".into(), SecretRef::file(key.path())).unwrap();
+    let linear = linear(&stub, &key);
 
     assert_eq!(intake(&store, &linear).await, 1);
     assert_eq!(intake(&store, &linear).await, 0, "re-poll");
@@ -98,7 +108,7 @@ async fn list_and_watch_with_a_real_client() {
     let (store, org) = (rl_testkit::store("api::watch").await, org());
     let stub = LinearStub::start(Reply::Tickets(vec![ticket(7, &[INTAKE_LABEL])])).await;
     let key = key_file();
-    let linear = Linear::new(stub.url.clone(), "RAN".into(), SecretRef::file(key.path())).unwrap();
+    let linear = linear(&stub, &key);
     intake(&store, &linear).await;
     let (_served, client) = served(&store, &org).await;
 

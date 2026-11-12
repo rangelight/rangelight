@@ -1,6 +1,6 @@
 //! What `rl-auth` does with a provider that misbehaves, against a raw HTTP stub: answers over
 //! 1 MiB are refused before parsing, and discovery is fetched once however many ask at once
-//! (security review hardening).
+//! (security review hardening). And one behind a throwaway CA, over HTTPS.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;
@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rl_auth::{AuthError, Provider, Url};
 use rl_config::SecretRef;
+use rl_testkit::HttpsStub;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -46,12 +47,22 @@ async fn stub(body: fn(&str) -> String, with_length: bool, count: Arc<AtomicUsiz
 }
 
 fn provider(issuer: &Url) -> Provider {
+    with_roots(issuer, &[])
+}
+
+fn with_roots(
+    issuer: &Url,
+    extra_roots: &[rustls::pki_types::CertificateDer<'static>],
+) -> Provider {
     Provider::new(
         issuer.clone(),
-        "rangelight-api".into(),
-        SecretRef::file("/nonexistent"),
-        issuer.join("/auth/callback").unwrap(),
+        rl_auth::Registration {
+            client_id: "rangelight-api".into(),
+            client_secret: SecretRef::file("/nonexistent"),
+            redirect: issuer.join("/auth/callback").unwrap(),
+        },
         "preferred_username".into(),
+        extra_roots,
     )
     .unwrap()
 }
@@ -65,6 +76,19 @@ fn discovery(issuer: &str) -> String {
 
 fn huge(_: &str) -> String {
     format!(r#"{{"pad":"{}"}}"#, "x".repeat((1 << 20) + 1))
+}
+
+/// RAN-54: an issuer behind your own CA is refused until its CA is among the extra roots.
+#[tokio::test]
+async fn an_issuer_behind_your_own_ca_needs_the_extra_root() {
+    let stub = HttpsStub::start(|url| discovery(&format!("{url}/dex"))).await;
+    let issuer = Url::parse(&format!("{}/dex", stub.url)).unwrap();
+    let error = provider(&issuer).start().await.unwrap_err();
+    assert!(matches!(error, AuthError::Unavailable(_)), "{error}");
+    with_roots(&issuer, std::slice::from_ref(&stub.ca))
+        .start()
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

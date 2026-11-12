@@ -365,10 +365,13 @@ async fn a_tampered_or_foreign_sign_in_cookie_is_refused() {
     write!(secret, "another-client-secret-of-32-bytes-or-more").unwrap();
     let foreign = Provider::new(
         rl_testkit::dex().issuer,
-        "rangelight-api".into(),
-        SecretRef::file(secret.path()),
-        rl_testkit::dex().redirect,
+        rl_auth::Registration {
+            client_id: "rangelight-api".into(),
+            client_secret: SecretRef::file(secret.path()),
+            redirect: rl_testkit::dex().redirect,
+        },
         "preferred_username".into(),
+        &[],
     )
     .unwrap();
     let started = Started {
@@ -422,10 +425,13 @@ fn dex_provider() -> Provider {
     let dex = rl_testkit::dex();
     Provider::new(
         dex.issuer,
-        "rangelight-api".into(),
-        dex.secret,
-        dex.redirect,
+        rl_auth::Registration {
+            client_id: "rangelight-api".into(),
+            client_secret: dex.secret,
+            redirect: dex.redirect,
+        },
         "preferred_username".into(),
+        &[],
     )
     .unwrap()
 }

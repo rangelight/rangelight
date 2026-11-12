@@ -3,7 +3,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "publicUrl", "clusterDns", "clusterCidrs", "ingress", "oidc", "dex", "postgres", "nats", "gitMirror", "runner", "linear", "api",
+    "publicUrl", "clusterDns", "clusterCidrs", "ingress", "oidc", "tls", "dex", "postgres", "nats", "gitMirror", "runner", "linear", "api",
     "relay", "web"
   ],
   "properties": {
@@ -79,6 +79,21 @@
           "additionalProperties": false,
           "required": ["name", "key"],
           "properties": { "name": { "$ref": "#/$defs/dnsName" }, "key": { "$ref": "#/$defs/secretKey" } }
+        }
+      }
+    },
+    "tls": {
+      "description": "The api's HTTPS trust beside the platform's roots.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extraCaSecretRef"],
+      "properties": {
+        "extraCaSecretRef": {
+          "description": "The Secret in rangelight-system, and its key, holding a PEM bundle of extra CA certificates; empty name: none.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "key"],
+          "properties": { "name": { "anyOf": [{ "const": "" }, { "$ref": "#/$defs/dnsName" }] }, "key": { "$ref": "#/$defs/secretKey" } }
         }
       }
     },

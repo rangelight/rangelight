@@ -15,10 +15,13 @@ fn provider(secret: &str) -> (Provider, tempfile::NamedTempFile) {
     let url = Url::parse("https://rangelight.test/dex").unwrap();
     let provider = Provider::new(
         url.clone(),
-        "rangelight-api".into(),
-        SecretRef::file(file.path()),
-        url.join("/auth/callback").unwrap(),
+        rl_auth::Registration {
+            client_id: "rangelight-api".into(),
+            client_secret: SecretRef::file(file.path()),
+            redirect: url.join("/auth/callback").unwrap(),
+        },
         "preferred_username".into(),
+        &[],
     )
     .unwrap();
     (provider, file)

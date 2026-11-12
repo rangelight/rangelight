@@ -15,10 +15,13 @@ fn provider(dex: &Dex, client: &str, secret: SecretRef) -> Provider {
 fn with_claim(dex: &Dex, client: &str, secret: SecretRef, member_claim: &str) -> Provider {
     Provider::new(
         dex.issuer.clone(),
-        client.into(),
-        secret,
-        dex.redirect.clone(),
+        rl_auth::Registration {
+            client_id: client.into(),
+            client_secret: secret,
+            redirect: dex.redirect.clone(),
+        },
         member_claim.into(),
+        &[],
     )
     .unwrap()
 }

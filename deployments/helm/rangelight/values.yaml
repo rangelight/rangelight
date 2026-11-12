@@ -65,6 +65,17 @@ oidc:
     name: "rangelight-oidc"
     key: "client-secret"
 
+# The api's HTTPS trust: the platform's roots, plus your own CA when the issuer or Linear is served from your own PKI.
+tls:
+  # The Secret in rangelight-system, and its key, holding a PEM bundle of CA certificates the api trusts beside the
+  # platform's roots; you create it. Needed when the issuer (bundled Dex at <publicUrl>/dex, so whatever certificate
+  # serves publicUrl, or oidc.issuer) or Linear (through a proxy) presents a certificate from your own CA; without it
+  # the api refuses that certificate and sign-in answers 503. Empty name: the platform's roots only. A bundle without a
+  # certificate, or with one that doesn't parse, stops the api at start.
+  extraCaSecretRef:
+    name: ""
+    key: "ca.crt"
+
 # Postgres, the source of truth (ADR 0021, 0031). Bundled: a CloudNativePG cluster "rangelight-pg" with the
 # database "api" owned by the role "rl_api"; its credentials exist only in the Secret CloudNativePG generates
 # ("rangelight-pg-app"). External: your own Postgres, through a Secret you create.

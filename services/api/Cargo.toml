@@ -27,6 +27,7 @@ rl-proto.workspace = true
 rl-store.workspace = true
 rl-telemetry.workspace = true
 rl-tickets-linear.workspace = true
+rustls.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 sha2.workspace = true

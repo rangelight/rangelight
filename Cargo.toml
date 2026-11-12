@@ -47,6 +47,8 @@ hyper-util = { version = "0.1.21", features = ["service", "tokio"] }
 # OIDC with our own reqwest (below) as its HTTP client, so no second reqwest or TLS stack.
 openidconnect = { version = "4.1.0", default-features = false }
 proptest = "1.9.0"
+# Throwaway CAs and certificates for the TLS tests (rl-testkit only).
+rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
 # TLS by rustls with ring, the provider async-nats already uses (aws-lc-sys isn't Apache-2.0 compatible).
 # AEAD, HKDF and randomness for the sealed sign-in cookie: the crypto rustls already uses.
 ring = "0.17.14"
@@ -63,6 +65,8 @@ tempfile = "3.23.0"
 thiserror = "2.0.21"
 time = "0.3.44"
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "time", "signal", "io-util", "sync"] }
+# The TLS test server (rl-testkit only), on the rustls reqwest already uses.
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
 tokio-util = { version = "0.7.20", features = ["rt"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter"] }

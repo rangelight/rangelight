@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use rl_app::{TicketError, TicketSource};
 use rl_config::SecretRef;
 use rl_domain::INTAKE_LABEL;
-use rl_testkit::{LinearStub, Reply, ticket, ticket_source_contract};
+use rl_testkit::{HttpsStub, LinearStub, Reply, ticket, ticket_source_contract};
 use rl_tickets_linear::Linear;
 
 const KEY: &str = "lin_api_TESTKEY0123456789abcdef";
@@ -19,7 +19,13 @@ fn key_file() -> tempfile::NamedTempFile {
 }
 
 fn linear(stub: &LinearStub, key: &tempfile::NamedTempFile) -> Linear {
-    Linear::new(stub.url.clone(), "RAN".into(), SecretRef::file(key.path())).unwrap()
+    Linear::new(
+        stub.url.clone(),
+        "RAN".into(),
+        SecretRef::file(key.path()),
+        &[],
+    )
+    .unwrap()
 }
 
 #[tokio::test]
@@ -31,7 +37,7 @@ async fn passes_the_ticket_source_contract() {
         async move {
             let stub = LinearStub::start(Reply::Tickets(tickets)).await;
             let source =
-                Linear::new(stub.url.clone(), "RAN".into(), SecretRef::file(path)).unwrap();
+                Linear::new(stub.url.clone(), "RAN".into(), SecretRef::file(path), &[]).unwrap();
             stubs.lock().unwrap().push(stub);
             source
         }
@@ -71,6 +77,35 @@ async fn refused_key_is_unauthorized_and_other_failures_are_unavailable() {
     ));
 }
 
+/// RAN-54: Linear behind your own CA (a proxy) is refused until its CA is among the extra roots.
+#[tokio::test]
+async fn linear_behind_your_own_ca_needs_the_extra_root() {
+    let stub = HttpsStub::start(|_| {
+        r#"{"data":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"#
+            .to_owned()
+    })
+    .await;
+    let key = key_file();
+    let source = |roots: &[rustls::pki_types::CertificateDer<'static>]| {
+        Linear::new(
+            format!("{}/graphql", stub.url),
+            "RAN".into(),
+            SecretRef::file(key.path()),
+            roots,
+        )
+        .unwrap()
+    };
+    let error = source(&[]).tickets().await.unwrap_err();
+    assert!(matches!(error, TicketError::Unavailable(_)), "{error:?}");
+    assert_eq!(
+        source(std::slice::from_ref(&stub.ca))
+            .tickets()
+            .await
+            .unwrap(),
+        []
+    );
+}
+
 #[tokio::test]
 async fn a_missing_key_file_is_a_credential_error() {
     let stub = LinearStub::start(Reply::Tickets(vec![])).await;
@@ -78,6 +113,7 @@ async fn a_missing_key_file_is_a_credential_error() {
         stub.url.clone(),
         "RAN".into(),
         SecretRef::file("/nonexistent/key"),
+        &[],
     )
     .unwrap();
     assert!(matches!(
@@ -125,6 +161,7 @@ async fn linear_key_never_reaches_logs_or_errors() {
         "https://127.0.0.1:9/graphql".into(),
         "RAN".into(),
         SecretRef::file(key.path()),
+        &[],
     )
     .unwrap();
     let error = unreachable.tickets().await.unwrap_err();

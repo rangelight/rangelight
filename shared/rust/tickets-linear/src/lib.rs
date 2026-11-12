@@ -13,6 +13,7 @@ use reqwest::header::{AUTHORIZATION, HeaderValue};
 use rl_app::{TicketError, TicketSource};
 use rl_config::SecretRef;
 use rl_domain::{INTAKE_LABEL, Ticket, Tracker};
+use rustls::pki_types::CertificateDer;
 use secrecy::ExposeSecret;
 use serde::Deserialize;
 use serde_json::json;
@@ -49,15 +50,27 @@ pub struct Linear {
 
 impl Linear {
     /// A source for the team with key `team` (for example `RAN`), at `url` (normally
-    /// [`API_URL`]), authenticating with the key in `api_key`. Each request times out after 10s.
+    /// [`API_URL`]), authenticating with the key in `api_key`. HTTPS trusts the platform's roots
+    /// and `extra_roots`. Each request times out after 10s.
     ///
     /// # Errors
     /// [`TicketError::Unavailable`] if the HTTP client can't be built.
-    pub fn new(url: String, team: String, api_key: SecretRef) -> Result<Linear, TicketError> {
+    pub fn new(
+        url: String,
+        team: String,
+        api_key: SecretRef,
+        extra_roots: &[CertificateDer<'static>],
+    ) -> Result<Linear, TicketError> {
         // reqwest's TLS needs a process-wide rustls provider; an Err means one is installed.
         let _ = rustls::crypto::ring::default_provider().install_default();
+        let extra_roots = extra_roots
+            .iter()
+            .map(|der| reqwest::Certificate::from_der(der))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| TicketError::Unavailable(e.to_string()))?;
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
+            .tls_certs_merge(extra_roots)
             .build()
             .map_err(|e| TicketError::Unavailable(e.to_string()))?;
         Ok(Linear {

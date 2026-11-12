@@ -521,7 +521,11 @@ async fn a_watch_ends_when_its_login_is_gone() {
                 session_id: uuid::Uuid::now_v7().to_string(),
                 ..Default::default()
             };
-            client.watch_session(request).await.unwrap()
+            let mut watch = client.watch_session(request).await.unwrap();
+            // Its first message says it is open (RAN-72); the recheck comes after.
+            let first = tokio::time::timeout(Duration::from_secs(5), watch.message()).await;
+            assert!(first.unwrap().unwrap().is_some(), "open");
+            watch
         }
     };
 

@@ -5,7 +5,8 @@ import { EventSchema, SessionSchema } from "@gen/proto/rangelight/session/v1alph
 import { expect, test, vi } from "vitest";
 
 vi.mock("./client", () => ({ sessions: {} }));
-const { applyEvent, describe, endOf } = await import("./live");
+const { applyEvent, describe, endOf, follow } = await import("./live");
+const client = await import("./client");
 
 const session = create(SessionSchema, { id: "s1", state: DesiredState.HOT, generation: 3n });
 const warm = (seq: bigint, sessionId = "s1") =>
@@ -120,4 +121,33 @@ test("ABORTED means events were missed; other errors stop the watch", () => {
   expect(describe(new ConnectError("store_unavailable", Code.Unavailable))).toBe(
     "Unavailable: store_unavailable",
   );
+});
+
+/** A WatchSession that sends `messages`, calling onHeader first when `headers`. */
+function watching(headers: boolean, messages: { event?: ReturnType<typeof warm> }[]) {
+  Object.assign(client.sessions, {
+    watchSession: async function* (_: unknown, o: { onHeader: () => void }) {
+      if (headers) o.onHeader();
+      await Promise.resolve();
+      yield* messages;
+    },
+  });
+}
+
+test("RAN-72 a watch opens on its first message when no headers come first, and only once", async () => {
+  for (const headers of [false, true]) {
+    watching(headers, [{}, { event: warm(4n) }, {}]);
+    let opens = 0;
+    const events: bigint[] = [];
+    await follow(
+      "s1",
+      {
+        open: () => (opens += 1),
+        event: (e) => events.push(e.seq),
+      },
+      new AbortController().signal,
+    );
+    expect(opens, `headers: ${String(headers)}`).toBe(1);
+    expect(events, "empty messages are no events").toEqual([4n]);
+  }
 });

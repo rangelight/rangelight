@@ -33,6 +33,19 @@ use tokio_util::sync::CancellationToken;
 
 const KEY: &str = "lin_api_APITESTKEY9876543210";
 
+/// Takes a `WatchSession`'s first message, within 5s: empty, it says the watch is open, before
+/// anything is committed (RAN-72 AC1).
+macro_rules! opened {
+    ($watch:expr) => {
+        let first = tokio::time::timeout(Duration::from_secs(5), $watch.message())
+            .await
+            .expect("open at once, before any event")
+            .unwrap()
+            .unwrap();
+        assert!(first.to_owned_message().event.is_unset(), "no event in it");
+    };
+}
+
 fn org() -> String {
     format!("t{}", uuid::Uuid::now_v7().simple())
 }
@@ -138,6 +151,7 @@ async fn list_and_watch_with_a_real_client() {
         ..Default::default()
     };
     let mut watch = client.watch_session(request).await.unwrap();
+    opened!(watch);
     let id = SessionId(uuid::Uuid::parse_str(&session.id).unwrap());
     let warm = change_state(id, State::Warm, &SystemClock, &UuidV7);
     store.change_state(&warm).await.unwrap();
@@ -386,6 +400,7 @@ async fn watch_ends_with_an_error_on_a_seq_gap() {
         ..Default::default()
     };
     let mut watch = client.watch_session(request).await.unwrap();
+    opened!(watch);
     let nats = rl_testkit::nats().await;
     for seq in [1, 3] {
         let event = Event {
@@ -595,6 +610,7 @@ async fn a_status_becomes_exactly_one_chained_event() {
         ..Default::default()
     };
     let mut watch = client.watch_session(request).await.unwrap();
+    opened!(watch);
 
     let message_id = uuid::Uuid::now_v7();
     let payload = status(&id.0.to_string(), message_id, "");

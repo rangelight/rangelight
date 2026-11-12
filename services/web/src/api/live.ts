@@ -47,18 +47,27 @@ export function followAll(
   }, signal);
 }
 
-/** One session's events as they commit. `on.open` runs when the api has subscribed (its response
- * headers arrived): a read of the session after that can't miss an event. */
+/** One session's events as they commit. `on.open` runs once, when the api has subscribed: on its
+ * response headers or its first message, whichever comes first (a proxy may hold the headers
+ * until then; the api sends an empty message at once). A read of the session after that can't
+ * miss an event. Empty messages (that one, and the keepalives) are otherwise ignored. */
 export function follow(
   sessionId: string,
   on: { open: () => void; event: (e: Event) => void },
   signal: AbortSignal,
 ): Promise<Ended> {
+  let opened = false;
+  const open = (): void => {
+    if (opened) return;
+    opened = true;
+    on.open();
+  };
   return until(async () => {
     for await (const { event } of sessions.watchSession(
       { sessionId },
-      { signal, onHeader: on.open },
+      { signal, onHeader: open },
     )) {
+      open();
       if (event) on.event(event);
     }
   }, signal);

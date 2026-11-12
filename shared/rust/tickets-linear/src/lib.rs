@@ -1,6 +1,6 @@
 //! The Linear adapter for `TicketSource` (ADR 0049 §2.2): lists a team's open issues labelled
-//! `rangelight` through Linear's GraphQL API, 50 per page, and attaches a lane's pull request to
-//! its issue.
+//! `rangelight` through Linear's GraphQL API, 50 per page, attaches a lane's pull request to its
+//! issue, and comments on an issue intake skips.
 //!
 //! The API key is read from its secret file at each poll and sent only in the `Authorization`
 //! header. It is never logged, and errors never carry it or a response body.
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use reqwest::header::{AUTHORIZATION, HeaderValue};
-use rl_app::{TicketError, TicketSource};
+use rl_app::{Listing, Skipped, TicketError, TicketSource};
 use rl_config::SecretRef;
 use rl_domain::{INTAKE_LABEL, Ticket, Tracker};
 use rustls::pki_types::CertificateDer;
@@ -41,6 +41,15 @@ const QUERY: &str = "query Intake($team: String!, $label: String!, $first: Int!,
 // attachmentCreate is idempotent by URL per issue: a second one updates the first.
 const LINK: &str = "mutation Link($issue: String!, $url: String!, $title: String!) {
   attachmentCreate(input: { issueId: $issue, url: $url, title: $title }) { success }
+}";
+
+const COMMENT: &str = "mutation Comment($issue: String!, $body: String!) {
+  commentCreate(input: { issueId: $issue, body: $body }) { success }
+}";
+
+// Team labels and workspace labels (no team) both apply to the team's issues.
+const LABELS: &str = "query Labels($label: String!) {
+  issueLabels(first: 250, filter: { name: { eq: $label } }) { nodes { team { key } } }
 }";
 
 /// A Linear team's issues as a [`TicketSource`].
@@ -87,6 +96,23 @@ impl Linear {
             api_key,
             warned: Arc::default(),
         })
+    }
+
+    /// Whether the team has [`INTAKE_LABEL`], its own or the workspace's: without it no issue
+    /// is ever listed.
+    ///
+    /// # Errors
+    /// The [`TicketError`] of the request.
+    pub async fn has_intake_label(&self) -> Result<bool, TicketError> {
+        let data: Option<Labels> = self
+            .graphql(LABELS, json!({ "label": INTAKE_LABEL }))
+            .await?;
+        let labels = data.ok_or_else(|| TicketError::Malformed("no data in the answer".into()))?;
+        Ok(labels
+            .issue_labels
+            .nodes
+            .iter()
+            .any(|label| label.team.as_ref().is_none_or(|team| team.key == self.team)))
     }
 
     async fn page(&self, after: Option<&str>) -> Result<Issues, TicketError> {
@@ -142,25 +168,25 @@ impl Linear {
 }
 
 impl TicketSource for Linear {
-    async fn tickets(&self) -> Result<Vec<Ticket>, TicketError> {
-        let mut tickets = Vec::new();
+    async fn tickets(&self) -> Result<Listing, TicketError> {
+        let mut listing = Listing::default();
         let mut after: Option<String> = None;
         for _ in 0..MAX_PAGES {
             let issues = self.page(after.as_deref()).await?;
-            tickets.extend(
-                issues
-                    .nodes
-                    .into_iter()
-                    .filter_map(|node| self.usable(node)),
-            );
+            for node in issues.nodes {
+                match self.usable(node) {
+                    Ok(ticket) => listing.tickets.push(ticket),
+                    Err(skipped) => listing.skipped.push(skipped),
+                }
+            }
             match (issues.page_info.has_next_page, issues.page_info.end_cursor) {
                 (true, Some(cursor)) => after = Some(cursor),
                 (true, None) => {
                     return Err(TicketError::Malformed("next page without a cursor".into()));
                 }
                 (false, _) => {
-                    tracing::debug!(team = %self.team, count = tickets.len(), "listed Linear issues");
-                    return Ok(tickets);
+                    tracing::debug!(team = %self.team, count = listing.tickets.len(), skipped = listing.skipped.len(), "listed Linear issues");
+                    return Ok(listing);
                 }
             }
         }
@@ -190,19 +216,35 @@ impl TicketSource for Linear {
             "Linear didn't attach the pull request".into(),
         ))
     }
+
+    async fn comment(&self, ticket_id: &str, body: &str) -> Result<(), TicketError> {
+        let variables = json!({ "issue": ticket_id, "body": body });
+        let data: Option<Commented> = self.graphql(COMMENT, variables).await?;
+        if data
+            .and_then(|data| data.comment_create)
+            .is_some_and(|created| created.success)
+        {
+            return Ok(());
+        }
+        // As for a link: Linear answered and said no; its text stays out.
+        Err(TicketError::Refused(
+            "Linear didn't post the comment".into(),
+        ))
+    }
 }
 
 impl Linear {
     /// The node as a ticket. One issue Rangelight can't use (it breaks the ticket rule, say, no
     /// acceptance criteria) is skipped, never sent to a runner, and not fatal: the team's other
     /// issues still get sessions. It is logged the first time only.
-    fn usable(&self, node: Node) -> Option<Ticket> {
+    fn usable(&self, node: Node) -> Result<Ticket, Skipped> {
+        let description = node.description.unwrap_or_default();
         let ticket = Ticket::new(
             Tracker::Linear,
             node.id.clone(),
             node.identifier,
-            node.title,
-            node.description.unwrap_or_default(),
+            node.title.clone(),
+            description.clone(),
         )
         // A URL that isn't a Linear page drops the link, never the ticket.
         .map(|ticket| ticket.clone().with_url(node.url).unwrap_or(ticket));
@@ -214,7 +256,9 @@ impl Linear {
         {
             tracing::warn!(issue = %node.id, %error, "skipped a Linear issue");
         }
-        ticket.ok()
+        ticket.map_err(|reason| {
+            Skipped::new(Tracker::Linear, node.id, &node.title, &description, reason)
+        })
     }
 }
 
@@ -251,6 +295,35 @@ struct Node {
     description: Option<String>,
     /// The issue's page.
     url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Commented {
+    /// Null next to a GraphQL error.
+    comment_create: Option<Success>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Labels {
+    issue_labels: LabelNodes,
+}
+
+#[derive(Deserialize)]
+struct LabelNodes {
+    nodes: Vec<Label>,
+}
+
+#[derive(Deserialize)]
+struct Label {
+    /// Null for a workspace label.
+    team: Option<Team>,
+}
+
+#[derive(Deserialize)]
+struct Team {
+    key: String,
 }
 
 #[derive(Deserialize)]

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- Commenting on the skip of ticket ($1, $2) at version $3 failed at $4: tried then, and refused for\n-- good when $5. A no-op if the ticket was edited since.\nUPDATE ticket_skips SET\n  tried_at = $4::timestamptz,\n  refused_at = CASE WHEN $5::boolean THEN $4::timestamptz END\nWHERE tracker = $1 AND ticket_id = $2 AND version = $3\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "84a9406348fd26b6fdcf3e96a50101d64e4971129a9de6a8822564f41f32462b"
+}

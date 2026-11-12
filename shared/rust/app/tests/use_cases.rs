@@ -19,7 +19,8 @@ async fn intake_creates_one_command_per_listed_ticket() {
         &SeqIds::default(),
     )
     .await
-    .unwrap();
+    .unwrap()
+    .sessions;
     assert_eq!(commands.len(), 1);
     assert_eq!(commands[0].ticket.id(), "issue-1");
     assert_eq!(commands[0].at, SystemTime::UNIX_EPOCH);

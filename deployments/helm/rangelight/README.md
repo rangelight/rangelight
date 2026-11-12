@@ -35,7 +35,10 @@ The `Session` CRD (`files/crds/session.yaml`) installs and upgrades with the run
   `openssl rand -base64 48`. Dex registers the api as the client `rangelight-api` with it, and the api reads
   it and derives the sign-in cookie's key from it; the api refuses to start with a shorter one.
 - With the api: the Secret named by `linear.apiKeySecretRef` (key `api-key` by default) holding a Linear API key
-  that reads `linear.team`'s issues.
+  that reads `linear.team`'s issues and comments on them. In Linear, create the label `rangelight` (on the team
+  or the workspace): a ticket with it gets a lane. The api warns at start when the team has no such label, and
+  comments once on a labelled ticket it skips, saying why (most often: no acceptance criteria, written as `AC1`
+  lines or as a numbered list under an "Acceptance criteria" heading).
 
 ```sh
 RANGELIGHT_KUBE_CONTEXT=<context> RANGELIGHT_VALUES=<your values.yaml> scripts/cluster.sh up   # two passes, see below

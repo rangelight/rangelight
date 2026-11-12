@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- The tracker $1 lists exactly tickets $2 as skipped now: every other skip of it is gone, the\n-- tickets now valid (never to hear they were skipped) and those closed or unlabelled alike.\nDELETE FROM ticket_skips WHERE tracker = $1 AND NOT (ticket_id = ANY($2::text[]))\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7831f8e33f69de2daf84a998f2001f006071c04f679f7e595251a74378b478db"
+}

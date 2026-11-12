@@ -7,7 +7,12 @@ The control plane's front door (ADR 0031, ADR 0033):
   `member`). Session, first event and outbox row are written in one transaction; the
   `UNIQUE (tracker, ticket_id)` constraint makes a re-poll a no-op. An issue that breaks the ticket
   rule (`api/jsonschema/ticket.v1alpha1.schema.json`: its criteria are the description's `AC<n>`
-  lines), or a command that fails, is logged and skipped; the round goes on.
+  lines and the numbered items under an "Acceptance criteria" heading), or a command that fails, is
+  logged and skipped; the round goes on. A skipped issue is recorded in `ticket_skips` with a hash of its
+  title, description and reason, and the link round comments on it once per hash, saying why
+  (RAN-64): a reply or a status change is no new version. A Linear failure is retried next round; an
+  issue no longer listed as skipped (fixed, closed or unlabelled) loses its skip, so a fixed one
+  never hears it was skipped. At start the api warns when the team has no `rangelight` label.
 - **Runner status.** A durable JetStream consumer (`api`, stream `rl-<org>-status`, which it
   creates) of every runner's `rl.<org>.runner.<runner>.status`. Each `SessionStatus` appends one
   `session.phase_changed` event and sets the session's phase in one transaction, and is acked only
@@ -94,7 +99,7 @@ scripts/test/services.sh run cargo nextest run -p api         # just these tests
 docker build -f build/package/docker/api/Dockerfile .         # the image
 ```
 
-Code: `src/lib.rs` (intake and link rounds, server), `src/sessions.rs` (handlers; `src/sessions/terminal.rs`, the
+Code: `src/lib.rs` (server, NATS start), `src/intake.rs` (intake, link and comment rounds, label check), `src/sessions.rs` (handlers; `src/sessions/terminal.rs`, the
 terminal), `src/auth.rs` (sign-in; `src/auth/recheck.rs`, long-lived responses), `src/status.rs` (runner status),
 `src/nats_auth/` (the NATS auth callout), `src/config.rs`, `src/main.rs` (wiring). Tests: `tests/api.rs`, end to end
 through a Linear stub, the relay and a real Connect client; `tests/auth.rs`, sign-in through the test Dex;

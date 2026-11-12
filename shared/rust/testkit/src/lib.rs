@@ -17,7 +17,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
-use rl_app::{Clock, IdGen, TicketError, TicketSource};
+use rl_app::{Clock, IdGen, Listing, TicketError, TicketSource};
 use rl_domain::{INTAKE_LABEL, Ticket, Tracker, Workspace};
 use sqlx::Postgres;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
@@ -58,19 +58,30 @@ impl Seed {
 pub struct FakeTickets(pub Vec<Seed>);
 
 impl TicketSource for FakeTickets {
-    fn tickets(&self) -> impl Future<Output = Result<Vec<Ticket>, TicketError>> + Send {
+    fn tickets(&self) -> impl Future<Output = Result<Listing, TicketError>> + Send {
         let labelled = self
             .0
             .iter()
             .filter(|seed| seed.labelled())
             .map(|seed| seed.ticket.clone());
-        std::future::ready(Ok(labelled.collect()))
+        std::future::ready(Ok(Listing {
+            tickets: labelled.collect(),
+            skipped: Vec::new(),
+        }))
     }
 
     fn link_pull_request(
         &self,
         _ticket_id: &str,
         _url: &str,
+    ) -> impl Future<Output = Result<(), TicketError>> + Send {
+        std::future::ready(Ok(()))
+    }
+
+    fn comment(
+        &self,
+        _ticket_id: &str,
+        _body: &str,
     ) -> impl Future<Output = Result<(), TicketError>> + Send {
         std::future::ready(Ok(()))
     }
@@ -121,7 +132,8 @@ pub fn ticket(n: u32, labels: &[&str]) -> Seed {
 
 /// The contract every [`TicketSource`] passes (ADR 0049 §2.2). `make` builds a source over
 /// exactly the given seeds. A source lists every ticket carrying [`INTAKE_LABEL`] once, across as
-/// many pages as it takes, and no other; and links a pull request to a ticket, again and again.
+/// many pages as it takes, and no other, skipping none of these valid ones; and links a pull
+/// request to a ticket, and comments on one, again and again.
 pub async fn ticket_source_contract<S, F, Fut>(make: F)
 where
     S: TicketSource,
@@ -129,7 +141,7 @@ where
     Fut: Future<Output = S>,
 {
     assert!(
-        make(Vec::new()).await.tickets().await.unwrap().is_empty(),
+        make(Vec::new()).await.tickets().await.unwrap() == Listing::default(),
         "an empty source lists nothing"
     );
 
@@ -142,7 +154,9 @@ where
             }
         })
         .collect();
-    let mut listed = make(seeds.clone()).await.tickets().await.unwrap();
+    let listing = make(seeds.clone()).await.tickets().await.unwrap();
+    assert_eq!(listing.skipped, [], "a valid ticket is never skipped");
+    let mut listed = listing.tickets;
     listed.sort_by(|a, b| a.id().cmp(b.id()));
     let mut expected: Vec<Ticket> = seeds
         .into_iter()
@@ -159,6 +173,10 @@ where
     for _ in 0..2 {
         source
             .link_pull_request("issue-1", "https://github.com/acme/shop/pull/7")
+            .await
+            .unwrap();
+        source
+            .comment("issue-1", "Rangelight says hi")
             .await
             .unwrap();
     }

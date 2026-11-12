@@ -8,12 +8,13 @@ use std::io::Write;
 use std::time::Duration;
 
 use api::status::Recorder;
-use api::{intake_once, link_once};
+use api::{comment_once, intake_once, link_once};
 use async_nats::jetstream::message::PublishMessage;
 use buffa::Message;
 use connectrpc::ErrorCode;
 use connectrpc::client::HttpClient;
 use relay::Relay;
+use rl_app::Listing;
 use rl_app::{SystemClock, UuidV7, change_state};
 use rl_config::SecretRef;
 use rl_domain::{INTAKE_LABEL, SessionId, State, Ticket, Tracker, Upstream};
@@ -415,7 +416,7 @@ async fn watch_ends_with_an_error_on_a_seq_gap() {
 struct Hangs;
 
 impl rl_app::TicketSource for Hangs {
-    fn tickets(&self) -> impl Future<Output = Result<Vec<Ticket>, rl_app::TicketError>> + Send {
+    fn tickets(&self) -> impl Future<Output = Result<Listing, rl_app::TicketError>> + Send {
         std::future::pending()
     }
 
@@ -423,6 +424,14 @@ impl rl_app::TicketSource for Hangs {
         &self,
         _ticket_id: &str,
         _url: &str,
+    ) -> impl Future<Output = Result<(), rl_app::TicketError>> + Send {
+        std::future::pending()
+    }
+
+    fn comment(
+        &self,
+        _ticket_id: &str,
+        _body: &str,
     ) -> impl Future<Output = Result<(), rl_app::TicketError>> + Send {
         std::future::pending()
     }
@@ -778,7 +787,7 @@ async fn a_refused_link_is_never_tried_again() {
 struct LinksHang(FakeTickets);
 
 impl rl_app::TicketSource for LinksHang {
-    fn tickets(&self) -> impl Future<Output = Result<Vec<Ticket>, rl_app::TicketError>> + Send {
+    fn tickets(&self) -> impl Future<Output = Result<Listing, rl_app::TicketError>> + Send {
         self.0.tickets()
     }
 
@@ -786,6 +795,14 @@ impl rl_app::TicketSource for LinksHang {
         &self,
         _ticket_id: &str,
         _url: &str,
+    ) -> impl Future<Output = Result<(), rl_app::TicketError>> + Send {
+        std::future::pending()
+    }
+
+    fn comment(
+        &self,
+        _ticket_id: &str,
+        _body: &str,
     ) -> impl Future<Output = Result<(), rl_app::TicketError>> + Send {
         std::future::pending()
     }
@@ -823,4 +840,165 @@ async fn a_hanging_link_doesnt_hold_up_intake() {
             .expect("the loop stopped")
             .unwrap();
     }
+}
+
+/// An issue node as Linear lists it, `RAN-<n>`; `updated` is its updatedAt, which a reply, a status
+/// change or a comment bumps.
+fn issue(n: u32, description: &str, updated: &str) -> serde_json::Value {
+    serde_json::json!({ "id": format!("issue-{n}"), "identifier": format!("RAN-{n}"), "title": "t", "description": description, "url": format!("https://linear.app/example/issue/RAN-{n}"), "updatedAt": updated })
+}
+
+/// The comments a stub was asked to post: each one's variables.
+fn comments(stub: &LinearStub) -> Vec<serde_json::Value> {
+    stub.requests()
+        .into_iter()
+        .filter(|r| r.body["query"].as_str().unwrap().contains("commentCreate"))
+        .map(|r| r.body["variables"].clone())
+        .collect()
+}
+
+/// Two intake rounds and two comment rounds against `stub`.
+async fn poll_twice(store: &Store, stub: &LinearStub, key: &tempfile::NamedTempFile) {
+    for _ in 0..2 {
+        intake(store, &linear(stub, key)).await;
+        comment_once(store, &linear(stub, key), &SystemClock)
+            .await
+            .unwrap();
+    }
+}
+
+/// RAN-64 AC2 and AC4, and review 1: a labelled ticket intake skips gets one comment saying why per
+/// distinct content, ever: never per poll, nor for a reply, a status change or the comment itself;
+/// a Linear failure is retried later and never stops intake.
+#[tokio::test]
+async fn a_skipped_ticket_is_told_why_once() {
+    let store = rl_testkit::store("api::skip_comment").await;
+    let key = key_file();
+    let unlisted = "1. a list, but under no Acceptance heading";
+    let issues = |description: &str, updated: &str| {
+        Reply::Issues(vec![
+            issue(6401, description, updated),
+            issue(6402, "## Acceptance criteria\n1. it works", "t0"),
+        ])
+    };
+
+    // Linear is down for comments: intake still creates the valid ticket's session.
+    let listing = LinearStub::start(issues(unlisted, "t0")).await;
+    assert_eq!(intake(&store, &linear(&listing, &key)).await, 1);
+    let down = LinearStub::start(Reply::Status(502)).await;
+    assert_eq!(
+        comment_once(&store, &linear(&down, &key), &SystemClock)
+            .await
+            .unwrap(),
+        0
+    );
+
+    // Back up: one comment, saying why; more polls and rounds add none.
+    poll_twice(&store, &listing, &key).await;
+    let posted = comments(&listing);
+    assert_eq!(posted.len(), 1, "{posted:?}");
+    assert_eq!(posted[0]["issue"], "issue-6401");
+    assert_eq!(
+        posted[0]["body"],
+        "Rangelight skipped this ticket: no acceptance criteria found (or too many, or one too \
+         long). Add a numbered list under an 'Acceptance criteria' heading, or lines that start \
+         with AC1, AC2, …"
+    );
+
+    // The same content after a reply, a status change or the comment's own bump: nothing.
+    let touched = LinearStub::start(issues(unlisted, "t1")).await;
+    poll_twice(&store, &touched, &key).await;
+    assert_eq!(comments(&touched), Vec::<serde_json::Value>::new());
+
+    // An edit to the description that still breaks the rule: one more comment.
+    let edited = LinearStub::start(issues("still no criteria", "t2")).await;
+    poll_twice(&store, &edited, &key).await;
+    assert_eq!(comments(&edited).len(), 1);
+}
+
+/// RAN-64 review 2: a ticket fixed while its skip comment was still to post gets a lane and never
+/// hears it was skipped; its skip is gone.
+#[tokio::test]
+async fn a_ticket_fixed_before_its_comment_never_hears_it_was_skipped() {
+    let store = rl_testkit::store("api::skip_fixed").await;
+    let key = key_file();
+    let broken = LinearStub::start(Reply::Issues(vec![issue(6403, "no criteria", "t0")])).await;
+    assert_eq!(intake(&store, &linear(&broken, &key)).await, 0);
+    let down = LinearStub::start(Reply::Status(502)).await;
+    comment_once(&store, &linear(&down, &key), &SystemClock)
+        .await
+        .unwrap();
+    assert_eq!(store.uncommented_skips(10).await.unwrap().len(), 1);
+
+    let fixed = LinearStub::start(Reply::Issues(vec![issue(
+        6403,
+        "**Acceptance criteria**\n1. it works",
+        "t1",
+    )]))
+    .await;
+    assert_eq!(intake(&store, &linear(&fixed, &key)).await, 1, "a lane");
+    poll_twice(&store, &fixed, &key).await;
+    assert_eq!(comments(&fixed), Vec::<serde_json::Value>::new());
+    assert_eq!(store.uncommented_skips(10).await.unwrap(), []);
+}
+
+/// RAN-64 re-review: a skipped ticket that is closed or unlabelled (no longer listed) loses its
+/// skip, so the table keeps only the tickets skipped now, and no comment lands on it.
+#[tokio::test]
+async fn a_closed_ticket_loses_its_skip() {
+    let store = rl_testkit::store("api::skip_closed").await;
+    let key = key_file();
+    let valid = || issue(6405, "## Acceptance criteria\n1. it works", "t0");
+    let both = LinearStub::start(Reply::Issues(vec![
+        issue(6404, "no criteria", "t0"),
+        valid(),
+    ]))
+    .await;
+    intake(&store, &linear(&both, &key)).await;
+    assert_eq!(store.uncommented_skips(10).await.unwrap().len(), 1);
+
+    let closed = LinearStub::start(Reply::Issues(vec![valid()])).await;
+    poll_twice(&store, &closed, &key).await;
+    assert_eq!(store.uncommented_skips(10).await.unwrap(), []);
+    assert_eq!(comments(&closed), Vec::<serde_json::Value>::new());
+}
+
+/// Captured log lines.
+#[derive(Clone, Default)]
+struct Logs(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl Write for Logs {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// RAN-64 AC3 and AC4: at start, a Linear team without the intake label is one clear warning; one
+/// with it, none.
+#[tokio::test]
+async fn a_missing_intake_label_warns_at_start() {
+    let key = key_file();
+    let labels = |team: &str| serde_json::json!({ "data": { "issueLabels": { "nodes": [{ "team": { "key": team } }] } } });
+    let logs = Logs::default();
+    let writer = logs.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let theirs = LinearStub::start(Reply::Answer(labels("OPS"))).await;
+    api::check_intake_label(linear(&theirs, &key)).await;
+    let ours = LinearStub::start(Reply::Answer(labels("RAN"))).await;
+    api::check_intake_label(linear(&ours, &key)).await;
+    let logs = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+    assert_eq!(logs.matches("WARN").count(), 1, "{logs}");
+    assert!(
+        logs.contains("the Linear team has no such label") && logs.contains("label=\"rangelight\""),
+        "{logs}"
+    );
 }

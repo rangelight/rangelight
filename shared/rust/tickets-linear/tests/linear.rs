@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use rl_app::{TicketError, TicketSource};
 use rl_config::SecretRef;
-use rl_domain::INTAKE_LABEL;
+use rl_domain::{DomainError, INTAKE_LABEL};
 use rl_testkit::{HttpsStub, LinearStub, Reply, ticket, ticket_source_contract};
 use rl_tickets_linear::Linear;
 
@@ -102,7 +102,7 @@ async fn linear_behind_your_own_ca_needs_the_extra_root() {
             .tickets()
             .await
             .unwrap(),
-        []
+        rl_app::Listing::default()
     );
 }
 
@@ -221,16 +221,36 @@ async fn an_invalid_issue_is_skipped_not_fatal() {
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
     let source = linear(&stub, &key);
-    source.tickets().await.unwrap();
-    let tickets = source.tickets().await.unwrap();
+    let first = source.tickets().await.unwrap();
+    let listing = source.tickets().await.unwrap();
     let warnings = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
     assert_eq!(
         warnings.matches("skipped a Linear issue").count(),
         3,
         "each unusable issue is warned about once, over two polls: {warnings}"
     );
-    let ids: Vec<_> = tickets.iter().map(|t| t.id().to_owned()).collect();
+    let ids: Vec<_> = listing.tickets.iter().map(|t| t.id().to_owned()).collect();
     assert_eq!(ids, ["issue-1", "issue-3"]);
+    let skipped: Vec<_> = listing
+        .skipped
+        .iter()
+        .map(|s| (s.ticket_id.as_str(), s.reason.clone()))
+        .collect();
+    assert_eq!(
+        skipped,
+        [
+            ("issue-2", DomainError::InvalidTicket("key")),
+            ("issue-4", DomainError::InvalidTicket("criteria")),
+            ("issue-5", DomainError::InvalidTicket("criteria")),
+        ],
+        "each skip says which ticket, and why"
+    );
+    // Its version is its content's hash: the same each poll, and each ticket's own.
+    assert_eq!(first.skipped, listing.skipped);
+    let versions: std::collections::HashSet<_> =
+        listing.skipped.iter().map(|s| s.version.as_str()).collect();
+    assert_eq!(versions.len(), 3);
+    assert!(versions.iter().all(|v| v.len() == 64), "{versions:?}");
 }
 
 /// RAN-56 review M1: Linear saying no (a GraphQL error, say the issue is gone) is a refusal, never
@@ -270,7 +290,62 @@ async fn a_url_that_isnt_linear_drops_the_link_not_the_ticket() {
     } } });
     let stub = LinearStub::start(Reply::Answer(answer)).await;
     let key = key_file();
-    let tickets = linear(&stub, &key).tickets().await.unwrap();
+    let tickets = linear(&stub, &key).tickets().await.unwrap().tickets;
     let urls: Vec<_> = tickets.iter().map(|t| t.url().to_owned()).collect();
     assert_eq!(urls, ["", "https://linear.app/example/issue/RAN-1"]);
+}
+
+/// RAN-64 AC3: the team has the intake label when it or the workspace (a label with no team) has
+/// it; another team's label doesn't count.
+#[tokio::test]
+async fn the_intake_label_is_the_teams_or_the_workspaces() {
+    let key = key_file();
+    let labels = |teams: &[serde_json::Value]| {
+        let nodes: Vec<_> = teams
+            .iter()
+            .map(|team| serde_json::json!({ "team": team }))
+            .collect();
+        serde_json::json!({ "data": { "issueLabels": { "nodes": nodes } } })
+    };
+    let ours = serde_json::json!({ "key": "RAN" });
+    let theirs = serde_json::json!({ "key": "OPS" });
+    for (teams, has) in [
+        (vec![ours], true),
+        (vec![serde_json::Value::Null], true),
+        (vec![theirs], false),
+        (vec![], false),
+    ] {
+        let stub = LinearStub::start(Reply::Answer(labels(&teams))).await;
+        assert_eq!(
+            linear(&stub, &key).has_intake_label().await.unwrap(),
+            has,
+            "{teams:?}"
+        );
+        assert_eq!(stub.requests()[0].body["variables"]["label"], INTAKE_LABEL);
+    }
+}
+
+/// RAN-64 AC2: a comment is posted with its body; Linear saying no is a refusal; a 5xx is worth
+/// retrying.
+#[tokio::test]
+async fn a_comment_is_posted_refused_or_unavailable() {
+    let key = key_file();
+    let posted = serde_json::json!({ "data": { "commentCreate": { "success": true } } });
+    let stub = LinearStub::start(Reply::Answer(posted)).await;
+    linear(&stub, &key).comment("issue-1", "why").await.unwrap();
+    let variables = &stub.requests()[0].body["variables"];
+    assert_eq!(
+        (variables["issue"].as_str(), variables["body"].as_str()),
+        (Some("issue-1"), Some("why"))
+    );
+    let gone = serde_json::json!({ "data": null, "errors": [{ "message": "Entity not found" }] });
+    let refusing = LinearStub::start(Reply::Answer(gone)).await;
+    let error = linear(&refusing, &key).comment("issue-1", "why").await;
+    assert!(matches!(error, Err(TicketError::Refused(_))), "{error:?}");
+    let down = LinearStub::start(Reply::Status(502)).await;
+    let error = linear(&down, &key).comment("issue-1", "why").await;
+    assert!(
+        matches!(error, Err(TicketError::Unavailable(_))),
+        "{error:?}"
+    );
 }

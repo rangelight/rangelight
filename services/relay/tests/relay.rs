@@ -25,6 +25,7 @@ async fn session(store: &Store) -> NewSession {
     let command = intake(&source, &rl_testkit::workspace(), &SystemClock, &UuidV7)
         .await
         .unwrap()
+        .sessions
         .remove(0);
     assert!(store.create_session(&command).await.unwrap());
     command
@@ -181,7 +182,8 @@ async fn an_empty_desired_stream_is_reseeded_from_postgres() {
     let tickets = FakeTickets(vec![ticket(1, &[INTAKE_LABEL]), ticket(2, &[INTAKE_LABEL])]);
     let commands = intake(&tickets, &rl_testkit::workspace(), &SystemClock, &UuidV7)
         .await
-        .unwrap();
+        .unwrap()
+        .sessions;
     for command in &commands {
         assert!(store.create_session(command).await.unwrap());
     }
@@ -225,7 +227,8 @@ async fn a_reseed_cut_short_is_finished_at_the_next_start_and_never_overwrites()
     let tickets = FakeTickets(vec![ticket(1, &[INTAKE_LABEL]), ticket(2, &[INTAKE_LABEL])]);
     let commands = intake(&tickets, &rl_testkit::workspace(), &SystemClock, &UuidV7)
         .await
-        .unwrap();
+        .unwrap()
+        .sessions;
     for command in &commands {
         assert!(store.create_session(command).await.unwrap());
     }
@@ -283,6 +286,7 @@ async fn a_reseed_skips_an_undecodable_row_and_puts_back_the_rest() {
     for command in intake(&tickets, &rl_testkit::workspace(), &SystemClock, &UuidV7)
         .await
         .unwrap()
+        .sessions
     {
         assert!(store.create_session(&command).await.unwrap());
     }

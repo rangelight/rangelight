@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- The skips still to comment on: neither commented nor refused, the least recently tried first\n-- (never tried before all).\nSELECT tracker, ticket_id, version, body\nFROM ticket_skips\nWHERE commented_at IS NULL AND refused_at IS NULL\nORDER BY tried_at NULLS FIRST, tracker, ticket_id\nLIMIT $1\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tracker",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ticket_skips",
+            "name": "tracker"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "ticket_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ticket_skips",
+            "name": "ticket_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "version",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ticket_skips",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "body",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ticket_skips",
+            "name": "body"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4eb25aaf232f1d1b9a021e83880a397f8cf6e7d8f22b3f76e2f37e4243bda6ca"
+}

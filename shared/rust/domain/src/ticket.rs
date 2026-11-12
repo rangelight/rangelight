@@ -173,37 +173,140 @@ pub(crate) fn check(
     Ok(())
 }
 
-/// The acceptance criteria written in a description: each line that starts with `AC<n>`, after
-/// an optional list marker (`-`, `*`, `+`) and an optional bold `**AC<n>**`, plus the indented
-/// lines that follow it, joined by spaces. A blank or unindented line ends a criterion.
+/// The acceptance criteria written in a description, in order: each line that starts with
+/// `AC<n>`, and each unindented numbered item (`1.` or `1)`; an indented one is a nested list)
+/// under an "Acceptance" or "Acceptance criteria" heading: `#` of any level, or a line wholly in
+/// bold. A list marker (`-`, `*`, `+`) and a bold `**AC<n>**` before the text are dropped; a bold
+/// line that is a numbered or AC item is that item. The indented lines that follow a criterion are
+/// part of it, joined by spaces; a blank or unindented line ends it, and the next heading (`#` or a
+/// bold line that is no item, say `**Out of scope**`) ends the section. Lines inside a code fence (three backticks or tildes) are no part of anything.
 #[must_use]
 pub(crate) fn criteria(description: &str) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
-    let mut open = false;
+    let (mut open, mut section, mut fence) = (false, false, None);
     for line in description.lines() {
         let text = line.trim();
-        let item = text
-            .strip_prefix(['-', '*', '+'])
-            .map_or(text, str::trim_start);
-        let (item, bold) = item.strip_prefix("**").map_or((item, false), |i| (i, true));
-        let starts = item
-            .strip_prefix("AC")
-            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()));
-        if starts {
-            found.push(if bold {
-                item.replacen("**", "", 1)
-            } else {
-                item.to_owned()
-            });
-            open = true;
-        } else if open && !text.is_empty() && line.starts_with(char::is_whitespace) {
-            if let Some(last) = found.last_mut() {
-                last.push(' ');
-                last.push_str(text);
-            }
-        } else {
+        if fenced(text, &mut fence) {
             open = false;
+            continue;
+        }
+        let indented = line.starts_with(char::is_whitespace);
+        match Line::of(text) {
+            Line::Heading(title) => {
+                section = acceptance(title);
+                open = false;
+            }
+            Line::Item { text, ac, numbered } if ac || (numbered && section && !indented) => {
+                found.push(text);
+                open = true;
+            }
+            _ if open && !text.is_empty() && indented => {
+                if let Some(last) = found.last_mut() {
+                    last.push(' ');
+                    last.push_str(text);
+                }
+            }
+            Line::Item { .. } => open = false,
         }
     }
     found
+}
+
+/// Whether `text` is a code fence's line, its opening and closing ones included; `fence` is the
+/// open fence's marker.
+fn fenced(text: &str, fence: &mut Option<&'static str>) -> bool {
+    if let Some(marker) = *fence {
+        if text.starts_with(marker) {
+            *fence = None;
+        }
+        return true;
+    }
+    *fence = ["```", "~~~"]
+        .into_iter()
+        .find(|marker| text.starts_with(marker));
+    fence.is_some()
+}
+
+/// Whether a heading's title is "Acceptance" or "Acceptance criteria", in any case, with an
+/// optional colon.
+fn acceptance(title: &str) -> bool {
+    matches!(
+        title.trim_end_matches(':').trim().to_lowercase().as_str(),
+        "acceptance" | "acceptance criteria"
+    )
+}
+
+/// One line of a description, as [`criteria`] reads it.
+enum Line<'a> {
+    /// A heading, with its title.
+    Heading(&'a str),
+    /// Anything else: its text without a list marker or a leading bold, whether it starts with
+    /// `AC<n>`, and whether it is a numbered item.
+    Item {
+        text: String,
+        ac: bool,
+        numbered: bool,
+    },
+}
+
+impl Line<'_> {
+    fn of(text: &str) -> Line<'_> {
+        if let Some(title) = heading(text) {
+            return Line::Heading(title);
+        }
+        // A line wholly in bold is an item when its text is one (`**1. first**`, `**AC1 …**`), and
+        // else a heading (`**Acceptance criteria**`, `**Out of scope**`).
+        if let Some(inner) = bold(text) {
+            return match Line::of(inner) {
+                item @ (Line::Item { ac: true, .. } | Line::Item { numbered: true, .. }) => item,
+                _ => Line::Heading(inner),
+            };
+        }
+        let (item, numbered) = list_item(text);
+        let (item, bold) = item.strip_prefix("**").map_or((item, false), |i| (i, true));
+        let ac = item
+            .strip_prefix("AC")
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()));
+        let text = if bold {
+            item.replacen("**", "", 1)
+        } else {
+            item.to_owned()
+        };
+        Line::Item { text, ac, numbered }
+    }
+}
+
+/// A list item's text without its marker, and whether the list is numbered; any other line as it is.
+fn list_item(text: &str) -> (&str, bool) {
+    let digits = text.len() - text.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    if (1..=9).contains(&digits)
+        && let Some(rest) = text[digits..].strip_prefix(['.', ')'])
+        && rest.starts_with(char::is_whitespace)
+    {
+        return (rest.trim_start(), true);
+    }
+    // `**` opens bold, not a `*` list.
+    if text.starts_with("**") {
+        return (text, false);
+    }
+    (
+        text.strip_prefix(['-', '*', '+'])
+            .map_or(text, str::trim_start),
+        false,
+    )
+}
+
+/// A `#` heading's title, at any level.
+fn heading(text: &str) -> Option<&str> {
+    let rest = text.strip_prefix('#')?.trim_start_matches('#');
+    (rest.is_empty() || rest.starts_with(char::is_whitespace)).then(|| rest.trim())
+}
+
+/// The text of a line wholly in bold: `**text**`, or `**text:**` as `text:`.
+fn bold(text: &str) -> Option<&str> {
+    let inner = text.strip_prefix("**")?;
+    let inner = inner
+        .strip_suffix("**")
+        .or_else(|| inner.strip_suffix("**:"))?;
+    (!inner.is_empty() && !inner.contains("**")).then_some(inner)
 }

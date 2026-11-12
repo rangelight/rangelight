@@ -83,8 +83,10 @@ pub fn retry_pause(failures: u32) -> Duration {
 /// Connects to `url` with the options `options` makes, trying again while NATS can't be reached
 /// (DNS, I/O, a timeout): every failed try is logged, with [`retry_pause`] between tries. Any other
 /// error (a refused sign-in, a bad URL, a failed TLS handshake or certificate) is returned at once. Once connected, the client
-/// reconnects by itself. async-nats' own `retry_on_initial_connect` isn't used: it returns before
-/// the connection is up and retries a refused sign-in forever.
+/// reconnects by itself, to `url` only: the servers NATS advertises (INFO's `connect_urls`) are
+/// ignored, since only `url` was checked ([`check_url`]) and the token goes wherever it dials
+/// (RAN-80). async-nats' own `retry_on_initial_connect` isn't used: it returns before the
+/// connection is up and retries a refused sign-in forever.
 ///
 /// # Errors
 /// The first [`ConnectError`] that isn't NATS being unreachable.
@@ -94,7 +96,7 @@ pub async fn connect(
 ) -> Result<Client, ConnectError> {
     let mut failures = 0;
     loop {
-        match options().connect(url).await {
+        match options().ignore_discovered_servers().connect(url).await {
             Ok(client) => return Ok(client),
             Err(error) if unreachable(&error) => {
                 let pause = retry_pause(failures);
@@ -220,6 +222,49 @@ mod tests {
             refused.err()
         );
         assert!(signed_in.is_ok());
+    }
+
+    /// RAN-80: a server that advertises another address (INFO `connect_urls`) and then drops the
+    /// client never gets it dialed: the client reconnects to the configured server only.
+    #[tokio::test]
+    async fn a_reconnect_never_dials_an_advertised_server() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let configured = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let advertised = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let elsewhere = advertised.local_addr().unwrap();
+        let dialed = tokio::spawn(async move { advertised.accept().await.is_ok() });
+        let url = format!("nats://{}", configured.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let info = format!(
+                "INFO {{\"server_id\":\"fake\",\"version\":\"2.15.2\",\"max_payload\":1048576,\"connect_urls\":[\"{elsewhere}\"]}}\r\n"
+            );
+            // Three connections from the client: each is dropped once it is up.
+            for _ in 0..3 {
+                let (mut socket, _) = configured.accept().await.unwrap();
+                socket.write_all(info.as_bytes()).await.unwrap();
+                let mut seen = Vec::new();
+                let mut buffer = [0u8; 1024];
+                while !String::from_utf8_lossy(&seen).contains("PING") {
+                    let n = socket.read(&mut buffer).await.unwrap();
+                    assert!(n > 0, "the client hung up");
+                    seen.extend_from_slice(&buffer[..n]);
+                }
+                socket.write_all(b"PONG\r\n").await.unwrap();
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        });
+        let client = connect(ConnectOptions::new, &url).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(20), server)
+            .await
+            .expect("the client reconnected to the configured server, again and again")
+            .unwrap();
+        assert!(
+            !dialed.is_finished(),
+            "the client dialed the advertised server"
+        );
+        dialed.abort();
+        drop(client);
     }
 
     /// RAN-79 review: a failed TLS handshake (here, a server that answers TLS with bytes that

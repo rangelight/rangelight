@@ -108,6 +108,9 @@ function connectionOptions(o: TerminalOptions): ConnectionOptions {
     maxReconnectAttempts: -1,
     // By default two refused sign-ins in a row stop the client for good.
     ignoreAuthErrorAbort: true,
+    // Only the configured URL is ever dialed: the token goes wherever the client connects, never to
+    // an address the server advertises in INFO's connect_urls (RAN-80).
+    ignoreClusterUpdates: true,
   };
 }
 

@@ -159,3 +159,50 @@ test("terminal: RAN-63 an event from before a refused first sign-in is sent once
   expect(got).toEqual(['{"type":"ask"}']);
   await watcher.close();
 }, 30_000);
+
+test("terminal: RAN-80 a reconnect never dials an address the server advertises", async () => {
+  let dialed = 0;
+  const advertised = createServer((socket) => {
+    dialed += 1;
+    socket.destroy();
+  });
+  await new Promise<void>((resolve) => advertised.listen(0, "127.0.0.1", resolve));
+  const elsewhere = advertised.address();
+  if (typeof elsewhere !== "object" || !elsewhere) throw new Error("no address");
+  const info = `INFO ${JSON.stringify({
+    server_id: "fake",
+    version: "2.15.2",
+    max_payload: 1048576,
+    connect_urls: [`127.0.0.1:${String(elsewhere.port)}`],
+  })}\r\n`;
+  // Each connection from the lane is dropped once it is up.
+  let served = 0;
+  const configured = createServer((socket) => {
+    socket.write(info);
+    socket.on("data", (data) => {
+      if (!data.toString().includes("PING")) return;
+      socket.write("PONG\r\n");
+      served += 1;
+      setTimeout(() => socket.destroy(), 200);
+    });
+  });
+  await new Promise<void>((resolve) => configured.listen(0, "127.0.0.1", resolve));
+  const here = configured.address();
+  if (typeof here !== "object" || !here) throw new Error("no address");
+  const tokenFile = join(mkdtempSync(join(tmpdir(), "rl-agent-sign-in-")), "token");
+  writeFileSync(tokenFile, "t\n");
+  terminal = startTerminal({
+    natsUrl: `nats://127.0.0.1:${String(here.port)}`,
+    natsTokenFile: tokenFile,
+    org: ORG,
+    sessionId: SESSION,
+    pty: { write: () => undefined, resize: () => Promise.resolve() },
+    log: () => undefined,
+  });
+  await untilAsync(() => Promise.resolve(served >= 3), 20_000);
+  expect(dialed).toBe(0);
+  await terminal.close();
+  terminal = undefined;
+  configured.close();
+  advertised.close();
+}, 30_000);

@@ -43,6 +43,7 @@ type Session struct {
 	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	TicketUrl      string                 `protobuf:"bytes,12,opt,name=ticket_url,json=ticketUrl,proto3" json:"ticket_url,omitempty"`                  // the ticket in its tracker, https; empty for sessions from before it was recorded
 	PullRequestUrl string                 `protobuf:"bytes,13,opt,name=pull_request_url,json=pullRequestUrl,proto3" json:"pull_request_url,omitempty"` // the lane's PR on GitHub; empty until the runner reports one
+	Question       string                 `protobuf:"bytes,14,opt,name=question,proto3" json:"question,omitempty"`                                     // waiting for you: the lane's open ask; empty when it isn't waiting
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -164,6 +165,13 @@ func (x *Session) GetTicketUrl() string {
 func (x *Session) GetPullRequestUrl() string {
 	if x != nil {
 		return x.PullRequestUrl
+	}
+	return ""
+}
+
+func (x *Session) GetQuestion() string {
+	if x != nil {
+		return x.Question
 	}
 	return ""
 }
@@ -674,6 +682,7 @@ type Change struct {
 	//	*Change_Created
 	//	*Change_StateChanged
 	//	*Change_PhaseChanged
+	//	*Change_AgentEvent
 	Kind          isChange_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -743,6 +752,15 @@ func (x *Change) GetPhaseChanged() *PhaseChanged {
 	return nil
 }
 
+func (x *Change) GetAgentEvent() *AgentEvent {
+	if x != nil {
+		if x, ok := x.Kind.(*Change_AgentEvent); ok {
+			return x.AgentEvent
+		}
+	}
+	return nil
+}
+
 type isChange_Kind interface {
 	isChange_Kind()
 }
@@ -759,11 +777,17 @@ type Change_PhaseChanged struct {
 	PhaseChanged *PhaseChanged `protobuf:"bytes,3,opt,name=phase_changed,json=phaseChanged,proto3,oneof"`
 }
 
+type Change_AgentEvent struct {
+	AgentEvent *AgentEvent `protobuf:"bytes,4,opt,name=agent_event,json=agentEvent,proto3,oneof"`
+}
+
 func (*Change_Created) isChange_Kind() {}
 
 func (*Change_StateChanged) isChange_Kind() {}
 
 func (*Change_PhaseChanged) isChange_Kind() {}
+
+func (*Change_AgentEvent) isChange_Kind() {}
 
 type Created struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -986,11 +1010,356 @@ func (x *PhaseChanged) GetPullRequestUrl() string {
 	return ""
 }
 
+// The lane's agent sent an event (api/jsonschema/agent-event.v1alpha1.schema.json), as the api
+// validated it: recorded once per message_id. An ask sets the session's question; a progress or
+// a worker_done clears it.
+type AgentEvent struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	MessageId string                 `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"` // the event's messageId (a UUIDv7)
+	SentAt    *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`          // the event's at: when the agent emitted it
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*AgentEvent_Ask
+	//	*AgentEvent_Progress
+	//	*AgentEvent_WorkerDone
+	//	*AgentEvent_Compacted
+	Kind          isAgentEvent_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentEvent) Reset() {
+	*x = AgentEvent{}
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentEvent) ProtoMessage() {}
+
+func (x *AgentEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentEvent.ProtoReflect.Descriptor instead.
+func (*AgentEvent) Descriptor() ([]byte, []int) {
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *AgentEvent) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
+}
+
+func (x *AgentEvent) GetSentAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.SentAt
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetKind() isAgentEvent_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetAsk() *Ask {
+	if x != nil {
+		if x, ok := x.Kind.(*AgentEvent_Ask); ok {
+			return x.Ask
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetProgress() *Progress {
+	if x != nil {
+		if x, ok := x.Kind.(*AgentEvent_Progress); ok {
+			return x.Progress
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetWorkerDone() *WorkerDone {
+	if x != nil {
+		if x, ok := x.Kind.(*AgentEvent_WorkerDone); ok {
+			return x.WorkerDone
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetCompacted() *Compacted {
+	if x != nil {
+		if x, ok := x.Kind.(*AgentEvent_Compacted); ok {
+			return x.Compacted
+		}
+	}
+	return nil
+}
+
+type isAgentEvent_Kind interface {
+	isAgentEvent_Kind()
+}
+
+type AgentEvent_Ask struct {
+	Ask *Ask `protobuf:"bytes,3,opt,name=ask,proto3,oneof"`
+}
+
+type AgentEvent_Progress struct {
+	Progress *Progress `protobuf:"bytes,4,opt,name=progress,proto3,oneof"`
+}
+
+type AgentEvent_WorkerDone struct {
+	WorkerDone *WorkerDone `protobuf:"bytes,5,opt,name=worker_done,json=workerDone,proto3,oneof"`
+}
+
+type AgentEvent_Compacted struct {
+	Compacted *Compacted `protobuf:"bytes,6,opt,name=compacted,proto3,oneof"`
+}
+
+func (*AgentEvent_Ask) isAgentEvent_Kind() {}
+
+func (*AgentEvent_Progress) isAgentEvent_Kind() {}
+
+func (*AgentEvent_WorkerDone) isAgentEvent_Kind() {}
+
+func (*AgentEvent_Compacted) isAgentEvent_Kind() {}
+
+// The lane needs its member.
+type Ask struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Question      string                 `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
+	Options       []string               `protobuf:"bytes,2,rep,name=options,proto3" json:"options,omitempty"` // choices to offer, if any
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Ask) Reset() {
+	*x = Ask{}
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Ask) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Ask) ProtoMessage() {}
+
+func (x *Ask) ProtoReflect() protoreflect.Message {
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Ask.ProtoReflect.Descriptor instead.
+func (*Ask) Descriptor() ([]byte, []int) {
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *Ask) GetQuestion() string {
+	if x != nil {
+		return x.Question
+	}
+	return ""
+}
+
+func (x *Ask) GetOptions() []string {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+// Feed only, and the start of each turn (stage "turn").
+type Progress struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Stage         string                 `protobuf:"bytes,1,opt,name=stage,proto3" json:"stage,omitempty"`
+	Note          string                 `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Progress) Reset() {
+	*x = Progress{}
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Progress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Progress) ProtoMessage() {}
+
+func (x *Progress) ProtoReflect() protoreflect.Message {
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Progress.ProtoReflect.Descriptor instead.
+func (*Progress) Descriptor() ([]byte, []int) {
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *Progress) GetStage() string {
+	if x != nil {
+		return x.Stage
+	}
+	return ""
+}
+
+func (x *Progress) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+// The agent says it is done: a claim, never proof (ADR 0045 §3).
+type WorkerDone struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Summary       string                 `protobuf:"bytes,1,opt,name=summary,proto3" json:"summary,omitempty"`
+	HeadSha       string                 `protobuf:"bytes,2,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkerDone) Reset() {
+	*x = WorkerDone{}
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkerDone) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkerDone) ProtoMessage() {}
+
+func (x *WorkerDone) ProtoReflect() protoreflect.Message {
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkerDone.ProtoReflect.Descriptor instead.
+func (*WorkerDone) Descriptor() ([]byte, []int) {
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *WorkerDone) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *WorkerDone) GetHeadSha() string {
+	if x != nil {
+		return x.HeadSha
+	}
+	return ""
+}
+
+// The agent session's context was compacted.
+type Compacted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Trigger       string                 `protobuf:"bytes,1,opt,name=trigger,proto3" json:"trigger,omitempty"` // "auto" or "manual"
+	Summary       string                 `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Compacted) Reset() {
+	*x = Compacted{}
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Compacted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Compacted) ProtoMessage() {}
+
+func (x *Compacted) ProtoReflect() protoreflect.Message {
+	mi := &file_rangelight_session_v1alpha1_session_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Compacted.ProtoReflect.Descriptor instead.
+func (*Compacted) Descriptor() ([]byte, []int) {
+	return file_rangelight_session_v1alpha1_session_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *Compacted) GetTrigger() string {
+	if x != nil {
+		return x.Trigger
+	}
+	return ""
+}
+
+func (x *Compacted) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
 var File_rangelight_session_v1alpha1_session_proto protoreflect.FileDescriptor
 
 const file_rangelight_session_v1alpha1_session_proto_rawDesc = "" +
 	"\n" +
-	")rangelight/session/v1alpha1/session.proto\x12\x1brangelight.session.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a'rangelight/runner/v1alpha1/runner.proto\"\xd4\x03\n" +
+	")rangelight/session/v1alpha1/session.proto\x12\x1brangelight.session.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a'rangelight/runner/v1alpha1/runner.proto\"\xf0\x03\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\atracker\x18\x02 \x01(\tR\atracker\x12\x1b\n" +
@@ -1010,7 +1379,8 @@ const file_rangelight_session_v1alpha1_session_proto_rawDesc = "" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1d\n" +
 	"\n" +
 	"ticket_url\x18\f \x01(\tR\tticketUrl\x12(\n" +
-	"\x10pull_request_url\x18\r \x01(\tR\x0epullRequestUrl\"\x15\n" +
+	"\x10pull_request_url\x18\r \x01(\tR\x0epullRequestUrl\x12\x1a\n" +
+	"\bquestion\x18\x0e \x01(\tR\bquestion\"\x15\n" +
 	"\x13ListSessionsRequest\"X\n" +
 	"\x14ListSessionsResponse\x12@\n" +
 	"\bsessions\x18\x01 \x03(\v2$.rangelight.session.v1alpha1.SessionR\bsessions\"2\n" +
@@ -1037,11 +1407,13 @@ const file_rangelight_session_v1alpha1_session_proto_rawDesc = "" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x10\n" +
 	"\x03seq\x18\x03 \x01(\x04R\x03seq\x12*\n" +
 	"\x02at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12;\n" +
-	"\x06change\x18\x05 \x01(\v2#.rangelight.session.v1alpha1.ChangeR\x06change\"\xf6\x01\n" +
+	"\x06change\x18\x05 \x01(\v2#.rangelight.session.v1alpha1.ChangeR\x06change\"\xc2\x02\n" +
 	"\x06Change\x12@\n" +
 	"\acreated\x18\x01 \x01(\v2$.rangelight.session.v1alpha1.CreatedH\x00R\acreated\x12P\n" +
 	"\rstate_changed\x18\x02 \x01(\v2).rangelight.session.v1alpha1.StateChangedH\x00R\fstateChanged\x12P\n" +
-	"\rphase_changed\x18\x03 \x01(\v2).rangelight.session.v1alpha1.PhaseChangedH\x00R\fphaseChangedB\x06\n" +
+	"\rphase_changed\x18\x03 \x01(\v2).rangelight.session.v1alpha1.PhaseChangedH\x00R\fphaseChanged\x12J\n" +
+	"\vagent_event\x18\x04 \x01(\v2'.rangelight.session.v1alpha1.AgentEventH\x00R\n" +
+	"agentEventB\x06\n" +
 	"\x04kind\"\xec\x01\n" +
 	"\aCreated\x12\x1b\n" +
 	"\tticket_id\x18\x01 \x01(\tR\bticketId\x12\x1d\n" +
@@ -1062,7 +1434,31 @@ const file_rangelight_session_v1alpha1_session_proto_rawDesc = "" +
 	"\n" +
 	"message_id\x18\x04 \x01(\tR\tmessageId\x123\n" +
 	"\asent_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x12(\n" +
-	"\x10pull_request_url\x18\x06 \x01(\tR\x0epullRequestUrl2\xe5\x03\n" +
+	"\x10pull_request_url\x18\x06 \x01(\tR\x0epullRequestUrl\"\xf7\x02\n" +
+	"\n" +
+	"AgentEvent\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\x01 \x01(\tR\tmessageId\x123\n" +
+	"\asent_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x124\n" +
+	"\x03ask\x18\x03 \x01(\v2 .rangelight.session.v1alpha1.AskH\x00R\x03ask\x12C\n" +
+	"\bprogress\x18\x04 \x01(\v2%.rangelight.session.v1alpha1.ProgressH\x00R\bprogress\x12J\n" +
+	"\vworker_done\x18\x05 \x01(\v2'.rangelight.session.v1alpha1.WorkerDoneH\x00R\n" +
+	"workerDone\x12F\n" +
+	"\tcompacted\x18\x06 \x01(\v2&.rangelight.session.v1alpha1.CompactedH\x00R\tcompactedB\x06\n" +
+	"\x04kind\";\n" +
+	"\x03Ask\x12\x1a\n" +
+	"\bquestion\x18\x01 \x01(\tR\bquestion\x12\x18\n" +
+	"\aoptions\x18\x02 \x03(\tR\aoptions\"4\n" +
+	"\bProgress\x12\x14\n" +
+	"\x05stage\x18\x01 \x01(\tR\x05stage\x12\x12\n" +
+	"\x04note\x18\x02 \x01(\tR\x04note\"A\n" +
+	"\n" +
+	"WorkerDone\x12\x18\n" +
+	"\asummary\x18\x01 \x01(\tR\asummary\x12\x19\n" +
+	"\bhead_sha\x18\x02 \x01(\tR\aheadSha\"?\n" +
+	"\tCompacted\x12\x18\n" +
+	"\atrigger\x18\x01 \x01(\tR\atrigger\x12\x18\n" +
+	"\asummary\x18\x02 \x01(\tR\asummary2\xe5\x03\n" +
 	"\x0eSessionService\x12s\n" +
 	"\fListSessions\x120.rangelight.session.v1alpha1.ListSessionsRequest\x1a1.rangelight.session.v1alpha1.ListSessionsResponse\x12m\n" +
 	"\n" +
@@ -1082,7 +1478,7 @@ func file_rangelight_session_v1alpha1_session_proto_rawDescGZIP() []byte {
 	return file_rangelight_session_v1alpha1_session_proto_rawDescData
 }
 
-var file_rangelight_session_v1alpha1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_rangelight_session_v1alpha1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_rangelight_session_v1alpha1_session_proto_goTypes = []any{
 	(*Session)(nil),               // 0: rangelight.session.v1alpha1.Session
 	(*ListSessionsRequest)(nil),   // 1: rangelight.session.v1alpha1.ListSessionsRequest
@@ -1099,42 +1495,53 @@ var file_rangelight_session_v1alpha1_session_proto_goTypes = []any{
 	(*Created)(nil),               // 12: rangelight.session.v1alpha1.Created
 	(*StateChanged)(nil),          // 13: rangelight.session.v1alpha1.StateChanged
 	(*PhaseChanged)(nil),          // 14: rangelight.session.v1alpha1.PhaseChanged
-	(v1alpha1.DesiredState)(0),    // 15: rangelight.runner.v1alpha1.DesiredState
-	(v1alpha1.Phase)(0),           // 16: rangelight.runner.v1alpha1.Phase
-	(*timestamppb.Timestamp)(nil), // 17: google.protobuf.Timestamp
+	(*AgentEvent)(nil),            // 15: rangelight.session.v1alpha1.AgentEvent
+	(*Ask)(nil),                   // 16: rangelight.session.v1alpha1.Ask
+	(*Progress)(nil),              // 17: rangelight.session.v1alpha1.Progress
+	(*WorkerDone)(nil),            // 18: rangelight.session.v1alpha1.WorkerDone
+	(*Compacted)(nil),             // 19: rangelight.session.v1alpha1.Compacted
+	(v1alpha1.DesiredState)(0),    // 20: rangelight.runner.v1alpha1.DesiredState
+	(v1alpha1.Phase)(0),           // 21: rangelight.runner.v1alpha1.Phase
+	(*timestamppb.Timestamp)(nil), // 22: google.protobuf.Timestamp
 }
 var file_rangelight_session_v1alpha1_session_proto_depIdxs = []int32{
-	15, // 0: rangelight.session.v1alpha1.Session.state:type_name -> rangelight.runner.v1alpha1.DesiredState
-	16, // 1: rangelight.session.v1alpha1.Session.phase:type_name -> rangelight.runner.v1alpha1.Phase
-	17, // 2: rangelight.session.v1alpha1.Session.created_at:type_name -> google.protobuf.Timestamp
+	20, // 0: rangelight.session.v1alpha1.Session.state:type_name -> rangelight.runner.v1alpha1.DesiredState
+	21, // 1: rangelight.session.v1alpha1.Session.phase:type_name -> rangelight.runner.v1alpha1.Phase
+	22, // 2: rangelight.session.v1alpha1.Session.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 3: rangelight.session.v1alpha1.ListSessionsResponse.sessions:type_name -> rangelight.session.v1alpha1.Session
 	0,  // 4: rangelight.session.v1alpha1.GetSessionResponse.session:type_name -> rangelight.session.v1alpha1.Session
 	10, // 5: rangelight.session.v1alpha1.WatchSessionResponse.event:type_name -> rangelight.session.v1alpha1.Event
 	9,  // 6: rangelight.session.v1alpha1.WatchSessionsResponse.snapshot:type_name -> rangelight.session.v1alpha1.Snapshot
 	10, // 7: rangelight.session.v1alpha1.WatchSessionsResponse.change:type_name -> rangelight.session.v1alpha1.Event
 	0,  // 8: rangelight.session.v1alpha1.Snapshot.sessions:type_name -> rangelight.session.v1alpha1.Session
-	17, // 9: rangelight.session.v1alpha1.Event.at:type_name -> google.protobuf.Timestamp
+	22, // 9: rangelight.session.v1alpha1.Event.at:type_name -> google.protobuf.Timestamp
 	11, // 10: rangelight.session.v1alpha1.Event.change:type_name -> rangelight.session.v1alpha1.Change
 	12, // 11: rangelight.session.v1alpha1.Change.created:type_name -> rangelight.session.v1alpha1.Created
 	13, // 12: rangelight.session.v1alpha1.Change.state_changed:type_name -> rangelight.session.v1alpha1.StateChanged
 	14, // 13: rangelight.session.v1alpha1.Change.phase_changed:type_name -> rangelight.session.v1alpha1.PhaseChanged
-	15, // 14: rangelight.session.v1alpha1.Created.state:type_name -> rangelight.runner.v1alpha1.DesiredState
-	15, // 15: rangelight.session.v1alpha1.StateChanged.state:type_name -> rangelight.runner.v1alpha1.DesiredState
-	16, // 16: rangelight.session.v1alpha1.PhaseChanged.phase:type_name -> rangelight.runner.v1alpha1.Phase
-	17, // 17: rangelight.session.v1alpha1.PhaseChanged.sent_at:type_name -> google.protobuf.Timestamp
-	1,  // 18: rangelight.session.v1alpha1.SessionService.ListSessions:input_type -> rangelight.session.v1alpha1.ListSessionsRequest
-	3,  // 19: rangelight.session.v1alpha1.SessionService.GetSession:input_type -> rangelight.session.v1alpha1.GetSessionRequest
-	5,  // 20: rangelight.session.v1alpha1.SessionService.WatchSession:input_type -> rangelight.session.v1alpha1.WatchSessionRequest
-	7,  // 21: rangelight.session.v1alpha1.SessionService.WatchSessions:input_type -> rangelight.session.v1alpha1.WatchSessionsRequest
-	2,  // 22: rangelight.session.v1alpha1.SessionService.ListSessions:output_type -> rangelight.session.v1alpha1.ListSessionsResponse
-	4,  // 23: rangelight.session.v1alpha1.SessionService.GetSession:output_type -> rangelight.session.v1alpha1.GetSessionResponse
-	6,  // 24: rangelight.session.v1alpha1.SessionService.WatchSession:output_type -> rangelight.session.v1alpha1.WatchSessionResponse
-	8,  // 25: rangelight.session.v1alpha1.SessionService.WatchSessions:output_type -> rangelight.session.v1alpha1.WatchSessionsResponse
-	22, // [22:26] is the sub-list for method output_type
-	18, // [18:22] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	15, // 14: rangelight.session.v1alpha1.Change.agent_event:type_name -> rangelight.session.v1alpha1.AgentEvent
+	20, // 15: rangelight.session.v1alpha1.Created.state:type_name -> rangelight.runner.v1alpha1.DesiredState
+	20, // 16: rangelight.session.v1alpha1.StateChanged.state:type_name -> rangelight.runner.v1alpha1.DesiredState
+	21, // 17: rangelight.session.v1alpha1.PhaseChanged.phase:type_name -> rangelight.runner.v1alpha1.Phase
+	22, // 18: rangelight.session.v1alpha1.PhaseChanged.sent_at:type_name -> google.protobuf.Timestamp
+	22, // 19: rangelight.session.v1alpha1.AgentEvent.sent_at:type_name -> google.protobuf.Timestamp
+	16, // 20: rangelight.session.v1alpha1.AgentEvent.ask:type_name -> rangelight.session.v1alpha1.Ask
+	17, // 21: rangelight.session.v1alpha1.AgentEvent.progress:type_name -> rangelight.session.v1alpha1.Progress
+	18, // 22: rangelight.session.v1alpha1.AgentEvent.worker_done:type_name -> rangelight.session.v1alpha1.WorkerDone
+	19, // 23: rangelight.session.v1alpha1.AgentEvent.compacted:type_name -> rangelight.session.v1alpha1.Compacted
+	1,  // 24: rangelight.session.v1alpha1.SessionService.ListSessions:input_type -> rangelight.session.v1alpha1.ListSessionsRequest
+	3,  // 25: rangelight.session.v1alpha1.SessionService.GetSession:input_type -> rangelight.session.v1alpha1.GetSessionRequest
+	5,  // 26: rangelight.session.v1alpha1.SessionService.WatchSession:input_type -> rangelight.session.v1alpha1.WatchSessionRequest
+	7,  // 27: rangelight.session.v1alpha1.SessionService.WatchSessions:input_type -> rangelight.session.v1alpha1.WatchSessionsRequest
+	2,  // 28: rangelight.session.v1alpha1.SessionService.ListSessions:output_type -> rangelight.session.v1alpha1.ListSessionsResponse
+	4,  // 29: rangelight.session.v1alpha1.SessionService.GetSession:output_type -> rangelight.session.v1alpha1.GetSessionResponse
+	6,  // 30: rangelight.session.v1alpha1.SessionService.WatchSession:output_type -> rangelight.session.v1alpha1.WatchSessionResponse
+	8,  // 31: rangelight.session.v1alpha1.SessionService.WatchSessions:output_type -> rangelight.session.v1alpha1.WatchSessionsResponse
+	28, // [28:32] is the sub-list for method output_type
+	24, // [24:28] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_rangelight_session_v1alpha1_session_proto_init() }
@@ -1150,6 +1557,13 @@ func file_rangelight_session_v1alpha1_session_proto_init() {
 		(*Change_Created)(nil),
 		(*Change_StateChanged)(nil),
 		(*Change_PhaseChanged)(nil),
+		(*Change_AgentEvent)(nil),
+	}
+	file_rangelight_session_v1alpha1_session_proto_msgTypes[15].OneofWrappers = []any{
+		(*AgentEvent_Ask)(nil),
+		(*AgentEvent_Progress)(nil),
+		(*AgentEvent_WorkerDone)(nil),
+		(*AgentEvent_Compacted)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1157,7 +1571,7 @@ func file_rangelight_session_v1alpha1_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rangelight_session_v1alpha1_session_proto_rawDesc), len(file_rangelight_session_v1alpha1_session_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

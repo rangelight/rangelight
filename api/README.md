@@ -62,6 +62,19 @@ check-jsonschema 0.38.2, Go and Node.
 | `rl.<org>.runner.<runner>.capacity` | runner → CP | JetStream | `CapacityReport` |
 | `rl.<org>.runner.<runner>.cmd` | CP → runner | request/reply | `Command` → `CommandResult` |
 | `rl.<org>.runner.<runner>.gate` | runner → CP | JetStream, ordered per session | `GateResult` |
+| `rl.<org>.agent.<session>.events` | lane agent → api | core NATS, captured by the api's stream `rl-<org>-agent` | one `agent-event.v1alpha1` JSON object |
+
+A lane publishes only its own `agent.<session>.events`, from the LANE account, which has no
+JetStream; the control plane's account imports the subject, and the api's stream there, a work
+queue (an acknowledged event leaves it), holds up to 100 events a session and 512 MiB in all
+(64 KiB each, 24 hours, the oldest go first), so an event sent while the api is away waits for it
+and lanes can't fill the JetStream volume. The api's durable consumer `api` holds each to the
+schema (no control characters but newline and tab) and takes the session from the subject, never
+the payload (one naming another session is dropped), and keeps it only while the session is hot.
+A session's past 30 events a minute are dropped (redeliveries don't count), as is one Postgres
+refuses; one that waits for Postgres is redelivered. Each event it keeps is a chained `AgentEvent`
+change: an `ask` sets `Session.question` ("waiting for you"), a `progress` or `worker_done`
+clears it, and so does the session leaving hot. A message id is unique per session.
 
 The desired stream keeps one message per subject (`max_messages_per_subject` 1, no age limit), so
 it is the desired-state table: each session's latest `SessionDesired`, and a cold one is a closed
@@ -144,3 +157,8 @@ frozen (ADR 0027). Receipt predicate versions are never removed, so receipts ver
   `shared/ts/gen/proto/`.
 - **v1alpha1** (RAN-55, additive): `Ticket` gains `url` (the ticket's page, which the PR body links). The
   ticket schema gains the optional `url`, which the lane's `ticket.json` leaves out.
+- **v1alpha1** (RAN-63, additive): `Change` gains `agent_event` (new messages `AgentEvent`, `Ask`,
+  `Progress`, `WorkerDone`, `Compacted`: a lane's `agent-event.v1alpha1` event as the api kept
+  it), and `Session` gains `question` (waiting for you). New subject
+  `rl.<org>.agent.<session>.events`. The agent sends a `progress` with stage `turn` at each turn
+  start; a `progress` also ends a wait (its schema description says so).

@@ -6,10 +6,11 @@ use std::time::{Duration, Instant, SystemTime};
 use rl_app::{IdGen, change_state, intake};
 use rl_chain::{Link, Record};
 use rl_domain::{
-    EventId, INTAKE_LABEL, NewSession, Phase, ReportPhase, SessionId, State, Upstream,
+    AgentEvent, EventId, INTAKE_LABEL, NewSession, Phase, ReportAgentEvent, ReportPhase, SessionId,
+    State, Upstream,
 };
 use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::change::Kind;
-use rl_store::{ChainEvent, SessionRow, Store, StoreError};
+use rl_store::{AgentEventRecorded, ChainEvent, SessionRow, Store, StoreError};
 use rl_testkit::{Database, FakeTickets, FixedClock, SeqIds, ticket};
 
 /// A time with nanoseconds, which the chain truncates to microseconds.
@@ -60,7 +61,7 @@ fn replay(chain: &[ChainEvent]) -> (State, u64) {
         let to = match rl_chain::decode(&event.payload).unwrap().kind.unwrap() {
             Kind::Created(created) => created.state,
             Kind::StateChanged(changed) => changed.state,
-            Kind::PhaseChanged(_) => continue,
+            Kind::PhaseChanged(_) | Kind::AgentEvent(_) => continue,
         };
         state = Some(to.as_known().unwrap());
     }
@@ -474,4 +475,91 @@ async fn a_failed_link_waits_its_turn_and_a_refused_one_ends() {
         .await
         .unwrap();
     assert_eq!(listed().await, [first], "the refused one ends");
+}
+
+/// RAN-63: an ask opens the session's question, a compaction leaves it, a progress closes it;
+/// each is one chained event, recorded once.
+#[tokio::test]
+async fn an_ask_opens_the_question_until_the_lane_goes_on() {
+    let store = rl_testkit::store("store::agent_events").await;
+    let ids = SeqIds::default();
+    let command = new_session(1, &ids).await;
+    assert!(create(&store, &command).await);
+    let report = |agent| ReportAgentEvent {
+        session: command.id,
+        event: EventId(ids.new_id()),
+        at: clock().0,
+        message_id: uuid::Uuid::now_v7(),
+        sent_at: clock().0,
+        agent,
+    };
+    let question = || async { store.list_sessions(1).await.unwrap()[0].question.clone() };
+    let ask = report(AgentEvent::Ask {
+        question: "Sign in?".into(),
+        options: Vec::new(),
+    });
+    let recorded = store.report_agent_event(&ask).await.unwrap();
+    assert_eq!(recorded, AgentEventRecorded::New);
+    let again = store.report_agent_event(&ask).await.unwrap();
+    assert_eq!(again, AgentEventRecorded::Duplicate, "once");
+    assert_eq!(question().await.as_deref(), Some("Sign in?"));
+    let compacted = report(AgentEvent::Compacted {
+        trigger: "auto".into(),
+        summary: "s".into(),
+    });
+    store.report_agent_event(&compacted).await.unwrap();
+    assert_eq!(question().await.as_deref(), Some("Sign in?"), "kept");
+    let turn = report(AgentEvent::Progress {
+        stage: "turn".into(),
+        note: "n".into(),
+    });
+    store.report_agent_event(&turn).await.unwrap();
+    assert_eq!(question().await, None);
+    assert_eq!(store.chain(command.id).await.unwrap().len(), 4);
+    assert_replays(&store).await;
+}
+
+/// Security review L4 and L5: a session that leaves hot closes its question and takes no more
+/// agent events; a message id is a session's own, so another session's same id is recorded too.
+#[tokio::test]
+async fn a_closed_session_takes_no_agent_events_and_ids_are_per_session() {
+    let store = rl_testkit::store("store::agent_events_closed").await;
+    let ids = SeqIds::default();
+    let (one, two) = (new_session(1, &ids).await, new_session(2, &ids).await);
+    assert!(create(&store, &one).await);
+    assert!(create(&store, &two).await);
+    let message_id = uuid::Uuid::now_v7();
+    let ask = |session| ReportAgentEvent {
+        session,
+        event: EventId(ids.new_id()),
+        at: clock().0,
+        message_id,
+        sent_at: clock().0,
+        agent: AgentEvent::Ask {
+            question: "Sign in?".into(),
+            options: Vec::new(),
+        },
+    };
+    for session in [one.id, two.id] {
+        let recorded = store.report_agent_event(&ask(session)).await.unwrap();
+        assert_eq!(
+            recorded,
+            AgentEventRecorded::New,
+            "the same id in each session"
+        );
+    }
+    move_to(&store, one.id, State::Cold, &ids).await.unwrap();
+    let row = store.get_session(one.id).await.unwrap().unwrap();
+    assert_eq!(row.question, None, "closing ends the wait");
+    let late = ReportAgentEvent {
+        message_id: uuid::Uuid::now_v7(),
+        ..ask(one.id)
+    };
+    let recorded = store.report_agent_event(&late).await.unwrap();
+    assert_eq!(recorded, AgentEventRecorded::NotLive);
+    assert_eq!(
+        store.get_session(one.id).await.unwrap().unwrap().question,
+        None
+    );
+    assert_replays(&store).await;
 }

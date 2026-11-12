@@ -91,6 +91,28 @@ test("RAN-56 at 360x640 the list and the session view fit, PR link included", as
   expect(await fits()).toBe(true);
 });
 
+const SIGN_IN =
+  "Please sign in to Claude: open this lane's terminal, type /login, and answer Yes when Claude asks whether you trust the folder. The lane starts by itself once you're signed in.";
+
+test("RAN-63 an ask shows waiting for you live, on the row and in the session view, until the lane goes on", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await stub(page, "agent", { sessionId: FIRST, question: SIGN_IN });
+  await expect(row(page, "RAN-101")).toContainText("Waiting for you");
+  await stub(page, "agent", { sessionId: FIRST, question: "" });
+  await expect(row(page, "RAN-101")).not.toContainText("Waiting for you");
+
+  await page.goto(`/sessions/${FIRST}`);
+  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  await stub(page, "agent", { sessionId: FIRST, question: SIGN_IN });
+  await expect(page.locator("header")).toContainText(`Waiting for you: ${SIGN_IN}`);
+  await expect(page.getByRole("region", { name: "Feed" })).toContainText(
+    `The agent asks: ${SIGN_IN}`,
+  );
+});
+
 test("AC1 a session created after the page loaded shows up without a reload", async ({ page }) => {
   await page.goto("/");
   await expect(row(page, "RAN-101")).toBeVisible();

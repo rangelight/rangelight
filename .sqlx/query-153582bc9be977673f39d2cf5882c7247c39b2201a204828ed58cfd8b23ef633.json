@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- The session's desired state. Only a hot session has a lane to wait on: any other state closes\n-- its open question.\nUPDATE sessions SET\n  state = $2,\n  question = CASE WHEN $2 = 'hot' THEN question END,\n  generation = $3,\n  updated_at = $4\nWHERE id = $1\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "153582bc9be977673f39d2cf5882c7247c39b2201a204828ed58cfd8b23ef633"
+}

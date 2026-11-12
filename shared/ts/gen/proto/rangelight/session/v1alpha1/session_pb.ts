@@ -19,7 +19,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file rangelight/session/v1alpha1/session.proto.
  */
 export const file_rangelight_session_v1alpha1_session: GenFile = /*@__PURE__*/
-  fileDesc("CilyYW5nZWxpZ2h0L3Nlc3Npb24vdjFhbHBoYTEvc2Vzc2lvbi5wcm90bxIbcmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExItoCCgdTZXNzaW9uEgoKAmlkGAEgASgJEg8KB3RyYWNrZXIYAiABKAkSEQoJdGlja2V0X2lkGAMgASgJEhIKCnRpY2tldF9rZXkYBCABKAkSDQoFdGl0bGUYBSABKAkSEQoJbmFtZXNwYWNlGAYgASgJEjcKBXN0YXRlGAcgASgOMigucmFuZ2VsaWdodC5ydW5uZXIudjFhbHBoYTEuRGVzaXJlZFN0YXRlEhIKCmdlbmVyYXRpb24YCCABKAQSMAoFcGhhc2UYCSABKA4yIS5yYW5nZWxpZ2h0LnJ1bm5lci52MWFscGhhMS5QaGFzZRIMCgRyZXBvGAogASgJEi4KCmNyZWF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnRpY2tldF91cmwYDCABKAkSGAoQcHVsbF9yZXF1ZXN0X3VybBgNIAEoCSIVChNMaXN0U2Vzc2lvbnNSZXF1ZXN0Ik4KFExpc3RTZXNzaW9uc1Jlc3BvbnNlEjYKCHNlc3Npb25zGAEgAygLMiQucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLlNlc3Npb24iJwoRR2V0U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSJLChJHZXRTZXNzaW9uUmVzcG9uc2USNQoHc2Vzc2lvbhgBIAEoCzIkLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5TZXNzaW9uIikKE1dhdGNoU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSJJChRXYXRjaFNlc3Npb25SZXNwb25zZRIxCgVldmVudBgBIAEoCzIiLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5FdmVudCIWChRXYXRjaFNlc3Npb25zUmVxdWVzdCKQAQoVV2F0Y2hTZXNzaW9uc1Jlc3BvbnNlEjkKCHNuYXBzaG90GAEgASgLMiUucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLlNuYXBzaG90SAASNAoGY2hhbmdlGAIgASgLMiIucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLkV2ZW50SABCBgoEa2luZCJCCghTbmFwc2hvdBI2CghzZXNzaW9ucxgBIAMoCzIkLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5TZXNzaW9uIpEBCgVFdmVudBIKCgJpZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEgsKA3NlcRgDIAEoBBImCgJhdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoGY2hhbmdlGAUgASgLMiMucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLkNoYW5nZSLRAQoGQ2hhbmdlEjcKB2NyZWF0ZWQYASABKAsyJC5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuQ3JlYXRlZEgAEkIKDXN0YXRlX2NoYW5nZWQYAiABKAsyKS5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuU3RhdGVDaGFuZ2VkSAASQgoNcGhhc2VfY2hhbmdlZBgDIAEoCzIpLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5QaGFzZUNoYW5nZWRIAEIGCgRraW5kIq0BCgdDcmVhdGVkEhEKCXRpY2tldF9pZBgBIAEoCRISCgp0aWNrZXRfa2V5GAIgASgJEg0KBXRpdGxlGAMgASgJEhEKCW5hbWVzcGFjZRgEIAEoCRI3CgVzdGF0ZRgFIAEoDjIoLnJhbmdlbGlnaHQucnVubmVyLnYxYWxwaGExLkRlc2lyZWRTdGF0ZRISCgp0aWNrZXRfdXJsGAYgASgJEgwKBHJlcG8YByABKAkiRwoMU3RhdGVDaGFuZ2VkEjcKBXN0YXRlGAEgASgOMigucmFuZ2VsaWdodC5ydW5uZXIudjFhbHBoYTEuRGVzaXJlZFN0YXRlIskBCgxQaGFzZUNoYW5nZWQSMAoFcGhhc2UYASABKA4yIS5yYW5nZWxpZ2h0LnJ1bm5lci52MWFscGhhMS5QaGFzZRIPCgdtZXNzYWdlGAIgASgJEhsKE29ic2VydmVkX2dlbmVyYXRpb24YAyABKAQSEgoKbWVzc2FnZV9pZBgEIAEoCRIrCgdzZW50X2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIYChBwdWxsX3JlcXVlc3RfdXJsGAYgASgJMuUDCg5TZXNzaW9uU2VydmljZRJzCgxMaXN0U2Vzc2lvbnMSMC5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuTGlzdFNlc3Npb25zUmVxdWVzdBoxLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5MaXN0U2Vzc2lvbnNSZXNwb25zZRJtCgpHZXRTZXNzaW9uEi4ucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLkdldFNlc3Npb25SZXF1ZXN0Gi8ucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLkdldFNlc3Npb25SZXNwb25zZRJ1CgxXYXRjaFNlc3Npb24SMC5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuV2F0Y2hTZXNzaW9uUmVxdWVzdBoxLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5XYXRjaFNlc3Npb25SZXNwb25zZTABEngKDVdhdGNoU2Vzc2lvbnMSMS5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuV2F0Y2hTZXNzaW9uc1JlcXVlc3QaMi5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuV2F0Y2hTZXNzaW9uc1Jlc3BvbnNlMAFCXFpaZ2l0aHViLmNvbS9yYW5nZWxpZ2h0L3JhbmdlbGlnaHQvc2hhcmVkL2dvL2dlbi9yYW5nZWxpZ2h0L3Nlc3Npb24vdjFhbHBoYTE7c2Vzc2lvbnYxYWxwaGExYgZwcm90bzM", [file_google_protobuf_timestamp, file_rangelight_runner_v1alpha1_runner]);
+  fileDesc("CilyYW5nZWxpZ2h0L3Nlc3Npb24vdjFhbHBoYTEvc2Vzc2lvbi5wcm90bxIbcmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExIuwCCgdTZXNzaW9uEgoKAmlkGAEgASgJEg8KB3RyYWNrZXIYAiABKAkSEQoJdGlja2V0X2lkGAMgASgJEhIKCnRpY2tldF9rZXkYBCABKAkSDQoFdGl0bGUYBSABKAkSEQoJbmFtZXNwYWNlGAYgASgJEjcKBXN0YXRlGAcgASgOMigucmFuZ2VsaWdodC5ydW5uZXIudjFhbHBoYTEuRGVzaXJlZFN0YXRlEhIKCmdlbmVyYXRpb24YCCABKAQSMAoFcGhhc2UYCSABKA4yIS5yYW5nZWxpZ2h0LnJ1bm5lci52MWFscGhhMS5QaGFzZRIMCgRyZXBvGAogASgJEi4KCmNyZWF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnRpY2tldF91cmwYDCABKAkSGAoQcHVsbF9yZXF1ZXN0X3VybBgNIAEoCRIQCghxdWVzdGlvbhgOIAEoCSIVChNMaXN0U2Vzc2lvbnNSZXF1ZXN0Ik4KFExpc3RTZXNzaW9uc1Jlc3BvbnNlEjYKCHNlc3Npb25zGAEgAygLMiQucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLlNlc3Npb24iJwoRR2V0U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSJLChJHZXRTZXNzaW9uUmVzcG9uc2USNQoHc2Vzc2lvbhgBIAEoCzIkLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5TZXNzaW9uIikKE1dhdGNoU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSJJChRXYXRjaFNlc3Npb25SZXNwb25zZRIxCgVldmVudBgBIAEoCzIiLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5FdmVudCIWChRXYXRjaFNlc3Npb25zUmVxdWVzdCKQAQoVV2F0Y2hTZXNzaW9uc1Jlc3BvbnNlEjkKCHNuYXBzaG90GAEgASgLMiUucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLlNuYXBzaG90SAASNAoGY2hhbmdlGAIgASgLMiIucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLkV2ZW50SABCBgoEa2luZCJCCghTbmFwc2hvdBI2CghzZXNzaW9ucxgBIAMoCzIkLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5TZXNzaW9uIpEBCgVFdmVudBIKCgJpZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEgsKA3NlcRgDIAEoBBImCgJhdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoGY2hhbmdlGAUgASgLMiMucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLkNoYW5nZSKRAgoGQ2hhbmdlEjcKB2NyZWF0ZWQYASABKAsyJC5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuQ3JlYXRlZEgAEkIKDXN0YXRlX2NoYW5nZWQYAiABKAsyKS5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuU3RhdGVDaGFuZ2VkSAASQgoNcGhhc2VfY2hhbmdlZBgDIAEoCzIpLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5QaGFzZUNoYW5nZWRIABI+CgthZ2VudF9ldmVudBgEIAEoCzInLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5BZ2VudEV2ZW50SABCBgoEa2luZCKtAQoHQ3JlYXRlZBIRCgl0aWNrZXRfaWQYASABKAkSEgoKdGlja2V0X2tleRgCIAEoCRINCgV0aXRsZRgDIAEoCRIRCgluYW1lc3BhY2UYBCABKAkSNwoFc3RhdGUYBSABKA4yKC5yYW5nZWxpZ2h0LnJ1bm5lci52MWFscGhhMS5EZXNpcmVkU3RhdGUSEgoKdGlja2V0X3VybBgGIAEoCRIMCgRyZXBvGAcgASgJIkcKDFN0YXRlQ2hhbmdlZBI3CgVzdGF0ZRgBIAEoDjIoLnJhbmdlbGlnaHQucnVubmVyLnYxYWxwaGExLkRlc2lyZWRTdGF0ZSLJAQoMUGhhc2VDaGFuZ2VkEjAKBXBoYXNlGAEgASgOMiEucmFuZ2VsaWdodC5ydW5uZXIudjFhbHBoYTEuUGhhc2USDwoHbWVzc2FnZRgCIAEoCRIbChNvYnNlcnZlZF9nZW5lcmF0aW9uGAMgASgEEhIKCm1lc3NhZ2VfaWQYBCABKAkSKwoHc2VudF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGAoQcHVsbF9yZXF1ZXN0X3VybBgGIAEoCSK+AgoKQWdlbnRFdmVudBISCgptZXNzYWdlX2lkGAEgASgJEisKB3NlbnRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KA2FzaxgDIAEoCzIgLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5Bc2tIABI5Cghwcm9ncmVzcxgEIAEoCzIlLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5Qcm9ncmVzc0gAEj4KC3dvcmtlcl9kb25lGAUgASgLMicucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLldvcmtlckRvbmVIABI7Cgljb21wYWN0ZWQYBiABKAsyJi5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuQ29tcGFjdGVkSABCBgoEa2luZCIoCgNBc2sSEAoIcXVlc3Rpb24YASABKAkSDwoHb3B0aW9ucxgCIAMoCSInCghQcm9ncmVzcxINCgVzdGFnZRgBIAEoCRIMCgRub3RlGAIgASgJIi8KCldvcmtlckRvbmUSDwoHc3VtbWFyeRgBIAEoCRIQCghoZWFkX3NoYRgCIAEoCSItCglDb21wYWN0ZWQSDwoHdHJpZ2dlchgBIAEoCRIPCgdzdW1tYXJ5GAIgASgJMuUDCg5TZXNzaW9uU2VydmljZRJzCgxMaXN0U2Vzc2lvbnMSMC5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuTGlzdFNlc3Npb25zUmVxdWVzdBoxLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5MaXN0U2Vzc2lvbnNSZXNwb25zZRJtCgpHZXRTZXNzaW9uEi4ucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLkdldFNlc3Npb25SZXF1ZXN0Gi8ucmFuZ2VsaWdodC5zZXNzaW9uLnYxYWxwaGExLkdldFNlc3Npb25SZXNwb25zZRJ1CgxXYXRjaFNlc3Npb24SMC5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuV2F0Y2hTZXNzaW9uUmVxdWVzdBoxLnJhbmdlbGlnaHQuc2Vzc2lvbi52MWFscGhhMS5XYXRjaFNlc3Npb25SZXNwb25zZTABEngKDVdhdGNoU2Vzc2lvbnMSMS5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuV2F0Y2hTZXNzaW9uc1JlcXVlc3QaMi5yYW5nZWxpZ2h0LnNlc3Npb24udjFhbHBoYTEuV2F0Y2hTZXNzaW9uc1Jlc3BvbnNlMAFCXFpaZ2l0aHViLmNvbS9yYW5nZWxpZ2h0L3JhbmdlbGlnaHQvc2hhcmVkL2dvL2dlbi9yYW5nZWxpZ2h0L3Nlc3Npb24vdjFhbHBoYTE7c2Vzc2lvbnYxYWxwaGExYgZwcm90bzM", [file_google_protobuf_timestamp, file_rangelight_runner_v1alpha1_runner]);
 
 /**
  * @generated from message rangelight.session.v1alpha1.Session
@@ -109,6 +109,13 @@ export type Session = Message<"rangelight.session.v1alpha1.Session"> & {
    * @generated from field: string pull_request_url = 13;
    */
   pullRequestUrl: string;
+
+  /**
+   * waiting for you: the lane's open ask; empty when it isn't waiting
+   *
+   * @generated from field: string question = 14;
+   */
+  question: string;
 };
 
 /**
@@ -358,6 +365,12 @@ export type Change = Message<"rangelight.session.v1alpha1.Change"> & {
      */
     value: PhaseChanged;
     case: "phaseChanged";
+  } | {
+    /**
+     * @generated from field: rangelight.session.v1alpha1.AgentEvent agent_event = 4;
+     */
+    value: AgentEvent;
+    case: "agentEvent";
   } | { case: undefined; value?: undefined };
 };
 
@@ -491,6 +504,165 @@ export type PhaseChanged = Message<"rangelight.session.v1alpha1.PhaseChanged"> &
  */
 export const PhaseChangedSchema: GenMessage<PhaseChanged> = /*@__PURE__*/
   messageDesc(file_rangelight_session_v1alpha1_session, 14);
+
+/**
+ * The lane's agent sent an event (api/jsonschema/agent-event.v1alpha1.schema.json), as the api
+ * validated it: recorded once per message_id. An ask sets the session's question; a progress or
+ * a worker_done clears it.
+ *
+ * @generated from message rangelight.session.v1alpha1.AgentEvent
+ */
+export type AgentEvent = Message<"rangelight.session.v1alpha1.AgentEvent"> & {
+  /**
+   * the event's messageId (a UUIDv7)
+   *
+   * @generated from field: string message_id = 1;
+   */
+  messageId: string;
+
+  /**
+   * the event's at: when the agent emitted it
+   *
+   * @generated from field: google.protobuf.Timestamp sent_at = 2;
+   */
+  sentAt?: Timestamp | undefined;
+
+  /**
+   * @generated from oneof rangelight.session.v1alpha1.AgentEvent.kind
+   */
+  kind: {
+    /**
+     * @generated from field: rangelight.session.v1alpha1.Ask ask = 3;
+     */
+    value: Ask;
+    case: "ask";
+  } | {
+    /**
+     * @generated from field: rangelight.session.v1alpha1.Progress progress = 4;
+     */
+    value: Progress;
+    case: "progress";
+  } | {
+    /**
+     * @generated from field: rangelight.session.v1alpha1.WorkerDone worker_done = 5;
+     */
+    value: WorkerDone;
+    case: "workerDone";
+  } | {
+    /**
+     * @generated from field: rangelight.session.v1alpha1.Compacted compacted = 6;
+     */
+    value: Compacted;
+    case: "compacted";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message rangelight.session.v1alpha1.AgentEvent.
+ * Use `create(AgentEventSchema)` to create a new message.
+ */
+export const AgentEventSchema: GenMessage<AgentEvent> = /*@__PURE__*/
+  messageDesc(file_rangelight_session_v1alpha1_session, 15);
+
+/**
+ * The lane needs its member.
+ *
+ * @generated from message rangelight.session.v1alpha1.Ask
+ */
+export type Ask = Message<"rangelight.session.v1alpha1.Ask"> & {
+  /**
+   * @generated from field: string question = 1;
+   */
+  question: string;
+
+  /**
+   * choices to offer, if any
+   *
+   * @generated from field: repeated string options = 2;
+   */
+  options: string[];
+};
+
+/**
+ * Describes the message rangelight.session.v1alpha1.Ask.
+ * Use `create(AskSchema)` to create a new message.
+ */
+export const AskSchema: GenMessage<Ask> = /*@__PURE__*/
+  messageDesc(file_rangelight_session_v1alpha1_session, 16);
+
+/**
+ * Feed only, and the start of each turn (stage "turn").
+ *
+ * @generated from message rangelight.session.v1alpha1.Progress
+ */
+export type Progress = Message<"rangelight.session.v1alpha1.Progress"> & {
+  /**
+   * @generated from field: string stage = 1;
+   */
+  stage: string;
+
+  /**
+   * @generated from field: string note = 2;
+   */
+  note: string;
+};
+
+/**
+ * Describes the message rangelight.session.v1alpha1.Progress.
+ * Use `create(ProgressSchema)` to create a new message.
+ */
+export const ProgressSchema: GenMessage<Progress> = /*@__PURE__*/
+  messageDesc(file_rangelight_session_v1alpha1_session, 17);
+
+/**
+ * The agent says it is done: a claim, never proof (ADR 0045 §3).
+ *
+ * @generated from message rangelight.session.v1alpha1.WorkerDone
+ */
+export type WorkerDone = Message<"rangelight.session.v1alpha1.WorkerDone"> & {
+  /**
+   * @generated from field: string summary = 1;
+   */
+  summary: string;
+
+  /**
+   * @generated from field: string head_sha = 2;
+   */
+  headSha: string;
+};
+
+/**
+ * Describes the message rangelight.session.v1alpha1.WorkerDone.
+ * Use `create(WorkerDoneSchema)` to create a new message.
+ */
+export const WorkerDoneSchema: GenMessage<WorkerDone> = /*@__PURE__*/
+  messageDesc(file_rangelight_session_v1alpha1_session, 18);
+
+/**
+ * The agent session's context was compacted.
+ *
+ * @generated from message rangelight.session.v1alpha1.Compacted
+ */
+export type Compacted = Message<"rangelight.session.v1alpha1.Compacted"> & {
+  /**
+   * "auto" or "manual"
+   *
+   * @generated from field: string trigger = 1;
+   */
+  trigger: string;
+
+  /**
+   * @generated from field: string summary = 2;
+   */
+  summary: string;
+};
+
+/**
+ * Describes the message rangelight.session.v1alpha1.Compacted.
+ * Use `create(CompactedSchema)` to create a new message.
+ */
+export const CompactedSchema: GenMessage<Compacted> = /*@__PURE__*/
+  messageDesc(file_rangelight_session_v1alpha1_session, 19);
 
 /**
  * Sessions, as the Workbench reads them.

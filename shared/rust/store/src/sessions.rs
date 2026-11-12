@@ -35,6 +35,8 @@ pub struct SessionRow {
     pub phase: Option<Phase>,
     /// The lane's pull request, once its runner reported one.
     pub pull_request_url: Option<String>,
+    /// Waiting for you: the open question of its agent's last ask, if one is open.
+    pub question: Option<String>,
     /// The seq of the session's last event.
     pub generation: u64,
     /// When the session was created.
@@ -154,6 +156,7 @@ impl Store {
         // The row lock serializes a session's reports; UNIQUE (message_id) backs this check.
         let recorded = sqlx::query_file_scalar!(
             "../../../db/queries/events/recorded.sql",
+            command.session.0,
             command.message_id
         )
         .fetch_one(&mut *tx)
@@ -309,6 +312,7 @@ struct Record {
     state: String,
     phase: Option<String>,
     pull_request_url: Option<String>,
+    question: Option<String>,
     generation: i64,
     created_at: OffsetDateTime,
 }
@@ -330,10 +334,14 @@ impl TryFrom<Record> for SessionRow {
             state: State::parse(&row.state)?,
             phase: row.phase.as_deref().map(Phase::parse).transpose()?,
             pull_request_url: row.pull_request_url,
+            question: row.question,
             generation: to_u64(row.generation, "generation")?,
             created_at: SystemTime::from(row.created_at),
         })
     }
 }
 
+mod agent_events;
 mod pull_requests;
+
+pub use agent_events::AgentEventRecorded;

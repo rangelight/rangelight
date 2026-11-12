@@ -23,11 +23,11 @@ const DUPLICATE_WINDOW: Duration = Duration::from_secs(120);
 /// How long a report waits in the stream while the api is away.
 const MAX_AGE: Duration = Duration::from_hours(7 * 24);
 /// The pause before a report the store couldn't take is redelivered.
-const RETRY: Duration = Duration::from_secs(1);
+pub(crate) const RETRY: Duration = Duration::from_secs(1);
 /// How long a delivered report is the api's before JetStream redelivers it.
 const ACK_WAIT: Duration = Duration::from_secs(30);
 /// The bound on recording one report, below [`ACK_WAIT`].
-const RECORD_TIMEOUT: Duration = Duration::from_secs(20);
+pub(crate) const RECORD_TIMEOUT: Duration = Duration::from_secs(20);
 /// How many deliveries of one report are worth a warning.
 const SLOW_DELIVERIES: i64 = 5;
 /// The longest pause between attempts to reach the stream.
@@ -154,58 +154,84 @@ pub async fn consume(
     replicas: usize,
     cancel: CancellationToken,
 ) {
+    let stream = stream::Config {
+        name: subject::status_stream(&org),
+        subjects: vec![subject::runners_status(&org)],
+        max_age: MAX_AGE,
+        num_replicas: replicas,
+        duplicate_window: DUPLICATE_WINDOW,
+        ..Default::default()
+    };
+    durable(nats, stream, subject::STATUS_CONSUMER, cancel, recorder).await;
+}
+
+/// What handles each message of a [`durable`] consumer, and acknowledges it.
+pub(crate) trait Handle: Send {
+    /// Handles `message` and acknowledges it.
+    fn handle(&mut self, message: &jetstream::Message) -> impl Future<Output = ()> + Send;
+}
+
+impl Handle for Recorder {
+    fn handle(&mut self, message: &jetstream::Message) -> impl Future<Output = ()> + Send {
+        handle(self, message)
+    }
+}
+
+/// Hands each message of `stream` (created or updated to this config, say a changed
+/// `replicas`), through the api's durable pull consumer `consumer` filtered by its one subject,
+/// to `handle` until `cancel`, one at a time: messages are handled in the order they were sent,
+/// and `handle` acknowledges each. NATS failures are logged and retried, backing off to 30s.
+/// ponytail: one in flight for all sessions. Ceiling: throughput at one transaction at a time.
+/// Upgrade: a consumer per sender, or per-session ordering keyed on the subject.
+pub(crate) async fn durable(
+    nats: async_nats::Client,
+    stream: stream::Config,
+    consumer: &'static str,
+    cancel: CancellationToken,
+    mut handle: impl Handle,
+) {
     let jetstream = jetstream::new(nats);
     let mut pause = RETRY;
     while !cancel.is_cancelled() {
         let round = async {
-            let mut messages = messages(&jetstream, &org, replicas).await?;
+            let mut messages = messages(&jetstream, &stream, consumer).await?;
             pause = RETRY;
             while let Some(message) = messages.next().await {
                 let message = message.map_err(|e| e.to_string())?;
-                handle(&recorder, &message).await;
+                handle.handle(&message).await;
             }
             Ok::<(), String>(())
         };
         if let Some(Err(error)) = cancel.run_until_cancelled(round).await {
-            tracing::warn!(%error, "status stream unavailable; retrying");
+            tracing::warn!(%error, stream = %stream.name, "stream unavailable; retrying");
         }
         let _ = cancel.run_until_cancelled(tokio::time::sleep(pause)).await;
         pause = pause.saturating_mul(2).min(MAX_BACKOFF);
     }
 }
 
-/// The api's durable consumer of the org's status stream, the stream created or updated to this
-/// config (say, a changed `replicas`). One message in flight: a session's reports are recorded in the order the runner sent them.
-/// ponytail: one in flight for all sessions. Ceiling: report throughput at one transaction at a
-/// time. Upgrade: a consumer per runner, or per-session ordering keyed on the subject.
+/// The durable consumer `consumer` of `stream`, the stream created or updated to its config. One
+/// message in flight.
 async fn messages(
     jetstream: &jetstream::Context,
-    org: &str,
-    replicas: usize,
+    stream: &stream::Config,
+    consumer: &str,
 ) -> Result<pull::Stream, String> {
-    let name = subject::status_stream(org);
     jetstream
-        .create_or_update_stream(stream::Config {
-            name: name.clone(),
-            subjects: vec![subject::runners_status(org)],
-            max_age: MAX_AGE,
-            num_replicas: replicas,
-            duplicate_window: DUPLICATE_WINDOW,
-            ..Default::default()
-        })
+        .create_or_update_stream(stream.clone())
         .await
         .map_err(|e| e.to_string())?;
-    let stream = jetstream
-        .get_stream(name)
+    let filter = stream.subjects.first().cloned().unwrap_or_default();
+    let consumer = jetstream
+        .get_stream(&stream.name)
         .await
-        .map_err(|e| e.to_string())?;
-    let consumer = stream
+        .map_err(|e| e.to_string())?
         .get_or_create_consumer(
-            subject::STATUS_CONSUMER,
+            consumer,
             pull::Config {
-                durable_name: Some(subject::STATUS_CONSUMER.into()),
+                durable_name: Some(consumer.into()),
                 // Created by its filtered subject, the only form the api may call.
-                filter_subject: subject::runners_status(org),
+                filter_subject: filter,
                 ack_wait: ACK_WAIT,
                 max_ack_pending: 1,
                 ..Default::default()

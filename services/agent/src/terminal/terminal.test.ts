@@ -8,7 +8,7 @@ import type { RangelightTerminalMessageV1Alpha1 as Message } from "../../../../s
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { testNatsUrl } from "../config.ts";
 import { SESSION, until } from "../runtime/contract.ts";
-import { ptyIn, ptyOut } from "../subjects.ts";
+import { agentEvents, ptyIn, ptyOut } from "../subjects.ts";
 import { MAX_CHUNK, startTerminal, type Pty, type Terminal } from "./terminal.ts";
 
 const ORG = "acme";
@@ -111,4 +111,30 @@ test("terminal: AC5 a message that isn't input is dropped, and no log line holds
   await until(() => logs.length === 4);
   expect(got).toEqual({ bytes: TOKEN, sizes: [] });
   for (const l of logs) expect(l).toBe("terminal: dropped a message that isn't terminal input");
+});
+
+test("terminal: RAN-63 lane events go out on the session's own events subject", async () => {
+  terminal.event('{"type":"ask"}');
+  await until(() => seen.length === 1);
+  expect(seen.map((m) => [m.subject, m.string()])).toEqual([
+    [agentEvents(ORG, SESSION), '{"type":"ask"}'],
+  ]);
+});
+
+test("terminal: RAN-63 an event from before the first connect is sent once it is up", async () => {
+  const other = "0190f3a0-0000-7000-8000-0000000000ee";
+  const early = startTerminal({
+    natsUrl: testNatsUrl(),
+    natsTokenFile: tokenFile,
+    org: ORG,
+    sessionId: other,
+    pty,
+    log: () => undefined,
+  });
+  early.event('{"type":"ask","early":true}');
+  await until(() => seen.some((m) => m.subject === agentEvents(ORG, other)));
+  expect(seen.filter((m) => m.subject === agentEvents(ORG, other)).map((m) => m.string())).toEqual([
+    '{"type":"ask","early":true}',
+  ]);
+  await early.close();
 });

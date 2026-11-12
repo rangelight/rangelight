@@ -43,6 +43,7 @@ message Session {
   google.protobuf.Timestamp created_at = 11;
   string ticket_url = 12; // the ticket in its tracker, https; empty for sessions from before it was recorded
   string pull_request_url = 13; // the lane's PR on GitHub; empty until the runner reports one
+  string question = 14; // waiting for you: the lane's open ask; empty when it isn't waiting
 }
 
 message ListSessionsRequest {}
@@ -98,6 +99,7 @@ message Change {
     Created created = 1;
     StateChanged state_changed = 2;
     PhaseChanged phase_changed = 3;
+    AgentEvent agent_event = 4;
   }
 }
 
@@ -123,4 +125,42 @@ message PhaseChanged {
   string message_id = 4; // the SessionStatus Envelope.message_id this event records
   google.protobuf.Timestamp sent_at = 5; // the Envelope.sent_at: when the runner sent it
   string pull_request_url = 6; // set on the report that first names the session's PR, empty otherwise
+}
+
+// The lane's agent sent an event (api/jsonschema/agent-event.v1alpha1.schema.json), as the api
+// validated it: recorded once per message_id. An ask sets the session's question; a progress or
+// a worker_done clears it.
+message AgentEvent {
+  string message_id = 1; // the event's messageId (a UUIDv7)
+  google.protobuf.Timestamp sent_at = 2; // the event's at: when the agent emitted it
+  oneof kind {
+    Ask ask = 3;
+    Progress progress = 4;
+    WorkerDone worker_done = 5;
+    Compacted compacted = 6;
+  }
+}
+
+// The lane needs its member.
+message Ask {
+  string question = 1;
+  repeated string options = 2; // choices to offer, if any
+}
+
+// Feed only, and the start of each turn (stage "turn").
+message Progress {
+  string stage = 1;
+  string note = 2;
+}
+
+// The agent says it is done: a claim, never proof (ADR 0045 §3).
+message WorkerDone {
+  string summary = 1;
+  string head_sha = 2;
+}
+
+// The agent session's context was compacted.
+message Compacted {
+  string trigger = 1; // "auto" or "manual"
+  string summary = 2;
 }

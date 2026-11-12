@@ -21,9 +21,10 @@ use buffa::Message;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use buffa_types::google::protobuf::Timestamp;
-use rl_domain::{Change, EventId, Phase, State};
+use rl_domain::{AgentEvent, Change, EventId, Phase, State};
 use rl_proto::rangelight::runner::v1alpha1::{DesiredState, Phase as ProtoPhase};
 use rl_proto::rangelight::session::v1alpha1 as proto;
+use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::agent_event::Kind as AgentKind;
 use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::change::Kind;
 use sha2::{Digest, Sha256};
 
@@ -180,10 +181,45 @@ pub fn to_proto(change: &Change) -> proto::Change {
             pull_request_url: pull_request_url.clone().unwrap_or_default(),
             ..Default::default()
         }),
+        Change::AgentEvent {
+            message_id,
+            sent_at,
+            event,
+        } => Kind::from(proto::AgentEvent {
+            message_id: message_id.to_string(),
+            sent_at: Some(Timestamp::from(*sent_at)).into(),
+            kind: Some(agent_kind(event)),
+            ..Default::default()
+        }),
     };
     proto::Change {
         kind: Some(kind),
         ..Default::default()
+    }
+}
+
+fn agent_kind(event: &AgentEvent) -> AgentKind {
+    match event {
+        AgentEvent::Ask { question, options } => AgentKind::from(proto::Ask {
+            question: question.clone(),
+            options: options.clone(),
+            ..Default::default()
+        }),
+        AgentEvent::Progress { stage, note } => AgentKind::from(proto::Progress {
+            stage: stage.clone(),
+            note: note.clone(),
+            ..Default::default()
+        }),
+        AgentEvent::WorkerDone { summary, head_sha } => AgentKind::from(proto::WorkerDone {
+            summary: summary.clone(),
+            head_sha: head_sha.clone(),
+            ..Default::default()
+        }),
+        AgentEvent::Compacted { trigger, summary } => AgentKind::from(proto::Compacted {
+            trigger: trigger.clone(),
+            summary: summary.clone(),
+            ..Default::default()
+        }),
     }
 }
 

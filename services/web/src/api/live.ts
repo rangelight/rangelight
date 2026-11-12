@@ -1,7 +1,9 @@
 // Following sessions as their events commit (WatchSessions, WatchSession), and applying events.
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError } from "@connectrpc/connect";
+import { DesiredState } from "@gen/proto/rangelight/runner/v1alpha1/runner_pb.ts";
 import {
+  type Change,
   type Event,
   type Session,
   SessionSchema,
@@ -89,8 +91,32 @@ export function applyEvent(list: readonly Session[], e: Event): Session[] {
     const phase = reported?.phase ?? s.phase;
     // Only the report that first names the session's PR carries it; the first one stays.
     const pullRequestUrl = s.pullRequestUrl || (reported?.pullRequestUrl ?? "");
-    return { ...s, state, phase, pullRequestUrl, generation: e.seq };
+    return {
+      ...s,
+      state,
+      phase,
+      pullRequestUrl,
+      question: question(s.question, kind),
+      generation: e.seq,
+    };
   });
+}
+
+/** The session's open question after a change: an ask opens it, a progress or a worker_done
+ * (the lane went on) or leaving hot closes it, anything else leaves it (the api's rule). */
+function question(open: string, kind: Change["kind"] | undefined): string {
+  // Only a hot session has a lane to wait on.
+  if (kind?.case === "stateChanged") return kind.value.state === DesiredState.HOT ? open : "";
+  if (kind?.case !== "agentEvent") return open;
+  switch (kind.value.kind.case) {
+    case "ask":
+      return kind.value.kind.value.question;
+    case "progress":
+    case "workerDone":
+      return "";
+    default:
+      return open;
+  }
 }
 
 /** A short, safe description of a failed call: its code and the api's machine reason. */

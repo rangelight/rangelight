@@ -282,3 +282,19 @@ test("AC3 the loop by touch: open a lane, /login in its terminal, watch the feed
   await page.getByRole("link", { name: "Sessions" }).first().tap();
   await expect(row(page, "RAN-102")).toBeVisible();
 });
+
+test("RAN-63 waiting for you fits the phone, on the list and in the session view", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect.poll(async () => (await stubState(page)).watching).toBe(1);
+  const question =
+    "Please sign in to Claude: open this lane's terminal, type /login, and answer Yes when Claude asks whether you trust the folder. The lane starts by itself once you're signed in.";
+  await stub(page, "agent", { sessionId: FIRST, question });
+  await expect(row(page, "RAN-101")).toContainText("Waiting for you");
+  await fitsTheWidth(page);
+  await page.goto(SESSION);
+  await expect(page.locator("header")).toContainText(`Waiting for you: ${question}`);
+  // Once the terminal has fitted itself to the screen it is left with and the view has settled.
+  await expect(() => fitsTheWidth(page)).toPass({ timeout: 5_000 });
+});

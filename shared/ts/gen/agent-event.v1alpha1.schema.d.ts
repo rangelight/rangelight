@@ -57,7 +57,7 @@ export interface WorkerDone {
   headSha: string;
 }
 /**
- * Feed only; it changes no state (ADR 0045 §2).
+ * Feed only (ADR 0045 §2), except that it ends a wait for the member: the lane went on. The agent sends one with stage 'turn' at each turn start (RAN-63).
  *
  * This interface was referenced by `undefined`'s JSON-Schema
  * via the `definition` "progress".

@@ -51,6 +51,40 @@ test("a report that names the session's PR links it, and the first one stays", (
   );
 });
 
+test("RAN-63 an ask makes the session wait for you; the next turn's progress ends it", () => {
+  const agent = (
+    seq: bigint,
+    kind:
+      | { case: "ask"; value: { question: string } }
+      | { case: "progress"; value: { stage: string; note: string } }
+      | { case: "compacted"; value: { trigger: string; summary: string } },
+  ) =>
+    create(EventSchema, {
+      sessionId: "s1",
+      seq,
+      change: { kind: { case: "agentEvent", value: { kind } } },
+    });
+  const [waiting] = applyEvent(
+    [session],
+    agent(4n, { case: "ask", value: { question: "Sign in?" } }),
+  );
+  expect(waiting?.question).toBe("Sign in?");
+  const kept =
+    waiting &&
+    applyEvent(
+      [waiting],
+      agent(5n, { case: "compacted", value: { trigger: "auto", summary: "s" } }),
+    )[0];
+  expect(kept?.question).toBe("Sign in?");
+  const going =
+    kept &&
+    applyEvent([kept], agent(6n, { case: "progress", value: { stage: "turn", note: "n" } }))[0];
+  expect(going?.question).toBe("");
+  const again =
+    going && applyEvent([going], agent(7n, { case: "ask", value: { question: "q" } }))[0];
+  expect(again && applyEvent([again], warm(8n))[0]?.question).toBe("");
+});
+
 test("a creation adds the session on top, once", () => {
   const created = create(EventSchema, {
     sessionId: "s2",

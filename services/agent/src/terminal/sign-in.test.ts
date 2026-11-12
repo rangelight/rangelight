@@ -9,7 +9,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { connect } from "@nats-io/transport-node";
 import { afterEach, expect, test } from "vitest";
 import { SESSION, until } from "../runtime/contract.ts";
-import { ptyIn } from "../subjects.ts";
+import { agentEvents, ptyIn } from "../subjects.ts";
 import { startTerminal, type Terminal } from "./terminal.ts";
 
 const ORG = "acme";
@@ -127,4 +127,35 @@ test("terminal: RAN-66 each failed first connect is logged with its reason, then
   expect(logs.join("\n")).not.toContain("lane-token");
   server = await natsServer(port, "lane-token");
   await untilAsync(() => reaches(port, "lane-token", sizes), 15_000);
+}, 30_000);
+
+test("terminal: RAN-63 an event from before a refused first sign-in is sent once one succeeds", async () => {
+  const port = await freePort();
+  const tokenFile = join(mkdtempSync(join(tmpdir(), "rl-agent-sign-in-")), "token");
+  writeFileSync(tokenFile, "stale\n");
+  server = await natsServer(port, "one");
+  terminal = startTerminal({
+    natsUrl: `nats://127.0.0.1:${String(port)}`,
+    natsTokenFile: tokenFile,
+    org: ORG,
+    sessionId: SESSION,
+    pty: { write: () => undefined, resize: () => Promise.resolve() },
+    log: () => undefined,
+  });
+  terminal.event('{"type":"ask"}');
+  const watcher = await connect({ servers: `nats://127.0.0.1:${String(port)}`, token: "one" });
+  const got: string[] = [];
+  watcher.subscribe(agentEvents(ORG, SESSION), {
+    callback: (_, m) => {
+      got.push(m.string());
+    },
+  });
+  await watcher.flush();
+  // Refused at least once (connectUntil tries every 2 s), then the token rotates.
+  await sleep(3_000);
+  expect(got).toEqual([]);
+  writeFileSync(tokenFile, "one\n");
+  await untilAsync(() => Promise.resolve(got.length > 0), 15_000);
+  expect(got).toEqual(['{"type":"ask"}']);
+  await watcher.close();
 }, 30_000);

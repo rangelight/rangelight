@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- The sessions whose pull request is still to link: neither linked nor refused, the least recently\n-- tried first (never tried before all).\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, member, state, phase,\n  pull_request_url, generation, created_at\nFROM sessions\nWHERE pull_request_url IS NOT NULL AND pull_request_linked_at IS NULL\n  AND pull_request_link_refused_at IS NULL\nORDER BY pull_request_link_tried_at NULLS FIRST, created_at, id\nLIMIT $1\n",
+  "query": "-- One session.\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, member, state, phase,\n  pull_request_url, question, generation, created_at\nFROM sessions\nWHERE id = $1\n",
   "describe": {
     "columns": [
       {
@@ -137,6 +137,17 @@
       },
       {
         "ordinal": 12,
+        "name": "question",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "question"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
         "name": "generation",
         "type_info": "Int8",
         "origin": {
@@ -147,7 +158,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -160,7 +171,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -176,9 +187,10 @@
       false,
       true,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "6920f897c9279966c00db941eb7fdf188dda43eecc6dd70d0cb0e0a833016d16"
+  "hash": "38f1546c4f3f511e6eb1b37ebd39b83ae09807bb32089351a81fe61c3cb1818e"
 }

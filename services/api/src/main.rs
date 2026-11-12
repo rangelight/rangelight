@@ -1,11 +1,11 @@
 //! The api binary: loads config, starts telemetry, migrates, starts the NATS auth callout, wires
-//! Postgres, NATS, Linear and OIDC, and runs the intake and link loops, the status consumer and the
-//! server until SIGTERM or Ctrl-C.
+//! Postgres, NATS, Linear and OIDC, and runs the intake and link loops, the status and agent event
+//! consumers and the server until SIGTERM or Ctrl-C.
 
 use anyhow::Context;
 use api::{
-    Auth, SessionApi, check_intake_label, config::Config, connect_nats, intake_loop, link_loop,
-    serve, status,
+    Auth, SessionApi, agent_events, check_intake_label, config::Config, connect_nats, intake_loop,
+    link_loop, serve, status,
 };
 use rl_store::Store;
 use tokio::signal::unix::{SignalKind, signal};
@@ -60,12 +60,19 @@ async fn main() -> anyhow::Result<()> {
         config.stream_replicas,
         cancel.clone(),
     ));
+    let lanes = tokio::spawn(agent_events::consume(
+        store.clone(),
+        nats.reports.clone(),
+        config.org.clone(),
+        config.stream_replicas,
+        cancel.clone(),
+    ));
     tracing::info!(listen = %config.listen, "api started");
     let api = SessionApi::new(store, &nats, config.org, auth.clone(), cancel.clone());
     serve(listener, api, auth, cancel).await;
-    intake.await?;
-    links.await?;
-    reports.await?;
+    for task in [intake, links, reports, lanes] {
+        task.await?;
+    }
     callout.await?;
     Ok(())
 }

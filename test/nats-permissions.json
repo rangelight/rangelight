@@ -12,6 +12,13 @@
       "$JS.API.CONSUMER.INFO.rl-acme-status.api",
       "$JS.API.CONSUMER.MSG.NEXT.rl-acme-status.api",
       "$JS.ACK.rl-acme-status.api.>",
+      "$JS.API.STREAM.CREATE.rl-acme-agent",
+      "$JS.API.STREAM.UPDATE.rl-acme-agent",
+      "$JS.API.STREAM.INFO.rl-acme-agent",
+      "$JS.API.CONSUMER.CREATE.rl-acme-agent.api.rl.acme.agent.*.events",
+      "$JS.API.CONSUMER.INFO.rl-acme-agent.api",
+      "$JS.API.CONSUMER.MSG.NEXT.rl-acme-agent.api",
+      "$JS.ACK.rl-acme-agent.api.>",
       "rl.acme.pty.*.in"
     ],
     "subscribe": ["rl.acme.session.*.events", "rl.acme.pty.*.out", "_INBOX_api.>"]
@@ -37,7 +44,10 @@
     "subscribe": ["_INBOX_runner-r1.>"]
   },
   "lane": {
-    "publish": ["rl.acme.pty.0190f3a0-0000-7000-8000-000000000001.out"],
+    "publish": [
+      "rl.acme.pty.0190f3a0-0000-7000-8000-000000000001.out",
+      "rl.acme.agent.0190f3a0-0000-7000-8000-000000000001.events"
+    ],
     "subscribe": ["rl.acme.pty.0190f3a0-0000-7000-8000-000000000001.in"]
   }
 }

@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use uuid::Uuid;
 
-use crate::{DomainError, PullRequest, Ticket, Workspace};
+use crate::{AgentEvent, DomainError, PullRequest, Ticket, Workspace};
 
 /// A session's id, a UUIDv7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -285,6 +285,15 @@ pub enum Change {
         /// The session's pull request, on the report that first names it.
         pull_request_url: Option<String>,
     },
+    /// The lane's agent sent an event.
+    AgentEvent {
+        /// The event's `messageId`, recorded once.
+        message_id: Uuid,
+        /// When the agent emitted it.
+        sent_at: SystemTime,
+        /// The event.
+        event: AgentEvent,
+    },
 }
 
 impl Change {
@@ -295,6 +304,7 @@ impl Change {
             Change::Created { .. } => "session.created",
             Change::StateChanged { .. } => "session.state_changed",
             Change::PhaseChanged { .. } => "session.phase_changed",
+            Change::AgentEvent { .. } => "session.agent_event",
         }
     }
 
@@ -303,7 +313,7 @@ impl Change {
     pub fn state(&self) -> Option<State> {
         match self {
             Change::Created { state, .. } | Change::StateChanged { state } => Some(*state),
-            Change::PhaseChanged { .. } => None,
+            Change::PhaseChanged { .. } | Change::AgentEvent { .. } => None,
         }
     }
 }

@@ -6,6 +6,7 @@
 // connectrpc's generated traits return `impl Encodable<M>`; handlers name the concrete message.
 #![allow(refining_impl_trait_internal, refining_impl_trait_reachable)]
 
+pub mod agent_events;
 pub mod auth;
 pub mod config;
 mod intake;
@@ -50,11 +51,11 @@ pub enum ApiError {
 }
 
 /// The api's own NATS clients, each signed in as the api: `reports` consumes the runners'
-/// status, `viewers` follows sessions for the Workbench (`viewers_client`), `terminals` bridges
+/// status and the lanes' agent events, `viewers` follows sessions for the Workbench (`viewers_client`), `terminals` bridges
 /// the lane terminals (`terminals_client`).
 #[derive(Debug, Clone)]
 pub struct Nats {
-    /// For the status consumer.
+    /// For the status and agent event consumers.
     pub reports: async_nats::Client,
     /// For the session streams.
     pub viewers: async_nats::Client,

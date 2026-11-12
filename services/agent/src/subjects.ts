@@ -6,3 +6,7 @@ export const ptyIn = (org: string, session: string): string => `rl.${org}.pty.${
 
 /** The lane terminal's output: `output` messages from this session's PTY. */
 export const ptyOut = (org: string, session: string): string => `rl.${org}.pty.${session}.out`;
+
+/** The lane's agent events (agent-event.v1alpha1), one JSON event per message. */
+export const agentEvents = (org: string, session: string): string =>
+  `rl.${org}.agent.${session}.events`;

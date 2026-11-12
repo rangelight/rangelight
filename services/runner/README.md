@@ -33,14 +33,16 @@ Phase: `Pending`, `Starting` (the namespace exists, the agent container not Read
 restart or ImagePullBackOff is in `status.message`), `Hot` (only while the agent container is
 Ready), or `Failed` (an invalid profile, a namespace that isn't the session's, no Cilium, or an agent
 container in CrashLoopBackOff after 3 restarts: the last exit's reason and code) with the reason in
-`status.message`; reported as `QUEUED`, `STARTING`, `RUNNING`, `FAILED`, and `GONE` once deleted. Deleting the Session deletes the namespace (finalizer `rangelight.dev/lane`).
+`status.message`; reported as `QUEUED`, `STARTING`, `RUNNING`, `FAILED`, and `GONE` once deleted. Deleting the Session deletes the namespace and the session's repo on the git mirror (`DELETE
+/sessions/<id>.git` as the runner; the Session stays until the mirror answers), finalizer `rangelight.dev/lane`.
 
 **`/auth/git`** (port 8080): a projected token as a Basic password or Bearer token, which a
 TokenReview accepts for `rangelight-git-mirror`, bound to a pod. 200 with `X-Remote-User: runner`
 for the runner's own ServiceAccount (it reads profiles with that token; the mirror lets `runner`
-only read), or `session-<id>` for the agent pod of the live Session `<id>`'s lane; else 401.
+only read, and drop a closed session's repo), or `session-<id>` for the agent pod of the live Session `<id>`'s lane; else 401.
 
-**Publishing** (ADR 0011, ADR 0040 §3; on with `github_app_id` and `github_app_private_key`). The
+**Publishing** (ADR 0011, ADR 0040 §3; on with `github_app_id` and `github_app_private_key`; off, a pushed
+session's status message says `publishing is off: no GitHub App configured (githubApp.secretRef)`). The
 mirror's `post-receive` POSTs each push of `refs/heads/rangelight/<id>/work` to `/git/pushed` with the
 pushing lane's own token, which the runner identifies as for `/auth/git`: only `session-<id>`, naming its
 own work branch, is recorded (`status.workCommit`, 202); anything else is 401 or 403 and records nothing.

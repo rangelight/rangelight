@@ -51,6 +51,9 @@ test_runner_pod_is_restricted_with_one_replica() {
   expect_line '  replicas: 1'
   expect_line "          image: \"ghcr.io/rangelight/runner:test@sha256:$(printf '2%.0s' {1..64})\""
   expect_line "              value: \"ghcr.io/rangelight/agent:test@sha256:$(printf '3%.0s' {1..64})\""
+  # RAN-65: no mirror deployed, no mirror URL (a deleted Session then waits for no mirror).
+  expect_line '              value: ""'
+  render "${RUNNER[@]}" --show-only templates/runner/deployment.yaml -f "${CHART}/test/git-mirror-values.yaml"
   expect_line '              value: "http://git-mirror.rangelight-system.svc.cluster.local:8080"'
   expect_line '              value: "4"'
   expect_line '            sizeLimit: "2Gi"'

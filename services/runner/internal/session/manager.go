@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -82,6 +83,7 @@ func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
 		return err
 	}
 	r.pub = newPublishing()
+	r.mirrorGiveUp = 10 * time.Minute
 	toSession := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		s, err := byID(ctx, r.Client, o.GetLabels()[LabelSession])
 		if err != nil || s == nil {

@@ -46,7 +46,8 @@ type Config struct {
 	Namespace string `toml:"namespace"`
 	// Listen is the address of /auth/git and /healthz.
 	Listen string `toml:"listen"`
-	// MirrorURL is the git mirror's base URL, without a trailing slash.
+	// MirrorURL is the git mirror's base URL, without a trailing slash; empty: no mirror is deployed
+	// (lanes then fail, and a deleted Session has no mirror repo to remove).
 	MirrorURL string `toml:"mirror_url"`
 	// MirrorTokenFile is the runner's own projected token for the mirror, an absolute path.
 	MirrorTokenFile string `toml:"mirror_token_file"`
@@ -249,8 +250,8 @@ func (c *Config) validate() error {
 	_, _, err := net.SplitHostPort(c.Listen)
 	check(err == nil, "listen", "host:port")
 	u, err := url.Parse(c.MirrorURL)
-	check(err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil &&
-		u.RawQuery == "" && u.Fragment == "", "mirror_url", "an http(s) URL without credentials, query or fragment")
+	check(c.MirrorURL == "" || err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil &&
+		u.RawQuery == "" && u.Fragment == "", "mirror_url", "empty, or an http(s) URL without credentials, query or fragment")
 	check(pinnedImage.MatchString(c.AgentImage) && !strings.Contains(c.AgentImage, ":latest@"),
 		"agent_image", "an image by tag and digest, not latest")
 	check(filepath.IsAbs(c.MirrorTokenFile) && filepath.Clean(c.MirrorTokenFile) == c.MirrorTokenFile, "mirror_token_file", "a clean absolute path")

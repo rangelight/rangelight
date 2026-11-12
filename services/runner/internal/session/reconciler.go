@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -21,7 +23,11 @@ import (
 	"github.com/rangelight/rangelight/services/runner/internal/github"
 )
 
-const messageMax = 2000
+const (
+	messageMax = 2000
+	// mirrorTimeout bounds the call that removes a closed session's repo from the git mirror.
+	mirrorTimeout = 10 * time.Second
+)
 
 // Options are the runner's settings that shape a lane (internal/config).
 type Options struct {
@@ -56,7 +62,9 @@ type Reconciler struct {
 	Options
 	mirrorHost string
 	profiles   *profiles
-	pub        *publishing
+	// mirrorGiveUp is how long after its deletion a Session waits for the mirror to drop its repo.
+	mirrorGiveUp time.Duration
+	pub          *publishing
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -272,6 +280,13 @@ func (r *Reconciler) remove(ctx context.Context, s *Session) error {
 	if err := r.revokeRunning(ctx, s); err != nil {
 		return err
 	}
+	if err := r.removeMirrorRepo(ctx, s.Spec.ID); err != nil {
+		if time.Since(s.DeletionTimestamp.Time) < r.mirrorGiveUp {
+			return err
+		}
+		slog.WarnContext(ctx, "the git mirror didn't remove a closed session's repo; giving up, it stays",
+			"session_id", s.Spec.ID, "repo", "/srv/git/sessions/"+s.Spec.ID+".git", "error", err.Error())
+	}
 	controllerutil.RemoveFinalizer(s, finalizer)
 	if err := r.Update(ctx, s); err != nil {
 		return fmt.Errorf("session %s: remove finalizer: %w", s.Spec.ID, err)
@@ -287,6 +302,37 @@ func (r *Reconciler) remove(ctx context.Context, s *Session) error {
 // owns reports whether ns is the one the runner created for s.
 func owns(ns *corev1.Namespace, s *Session) bool {
 	return s.UID != "" && ns.Annotations[AnnotationSessionUID] == string(s.UID) && ns.Labels[LabelSession] == s.Spec.ID
+}
+
+// removeMirrorRepo asks the git mirror, as the runner, to drop the session's repo
+// (DELETE /sessions/<id>.git; services/git-mirror/backend.sh). A repo already gone is fine. The path
+// is the session id, which the CRD holds to a UUID, so no upstream repo is ever named. Until the
+// mirror answers, the Session stays (its finalizer retries with the controller's backoff), for at
+// most mirrorGiveUp after its deletion. Without a mirror (no MirrorURL) there is nothing to remove.
+func (r *Reconciler) removeMirrorRepo(ctx context.Context, id string) error {
+	if r.MirrorURL == "" {
+		return nil
+	}
+	token, err := os.ReadFile(r.MirrorTokenFile)
+	if err != nil {
+		return fmt.Errorf("session %s: mirror token: %w", id, err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, mirrorTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, r.MirrorURL+"/sessions/"+id+".git", nil)
+	if err != nil {
+		return fmt.Errorf("session %s: mirror repo: %w", id, err)
+	}
+	req.SetBasicAuth("runner", strings.TrimSpace(string(token)))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("session %s: remove the mirror repo: %w", id, err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("session %s: remove the mirror repo: the mirror answered %d", id, resp.StatusCode)
+	}
+	return nil
 }
 
 // oneLine is s on one line, at most messageMax characters (the CRD's maxLength counts characters),

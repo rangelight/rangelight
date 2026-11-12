@@ -244,6 +244,17 @@ type testMirror struct {
 	mu   sync.Mutex
 	auth map[string]string
 	slow chan struct{}
+	// deleted are the paths of the DELETE requests (a closed session's repo, RAN-65); while down, each
+	// DELETE is a 503.
+	deleted []string
+	down    bool
+}
+
+// setDown makes the mirror's DELETEs fail (true) or work again.
+func (m *testMirror) setDown(down bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.down = down
 }
 
 func newTestMirror() (*testMirror, error) {
@@ -262,6 +273,19 @@ func newTestMirror() (*testMirror, error) {
 		m.mu.Lock()
 		m.auth[repo] = r.Header.Get("Authorization")
 		m.mu.Unlock()
+		if r.Method == http.MethodDelete { // the mirror's DELETE /sessions/<id>.git (backend.sh; tested there)
+			m.mu.Lock()
+			m.deleted = append(m.deleted, r.URL.Path)
+			down := m.down
+			m.mu.Unlock()
+			if down {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			_ = os.RemoveAll(filepath.Join(m.Root, filepath.Clean(r.URL.Path))) //nolint:gosec // the test mirror, under its own temporary root
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if repo == "slow.git" {
 			select {
 			case <-m.slow:

@@ -6,6 +6,7 @@ namespace = "rangelight-runner"
 # The listener for the git mirror's /auth/git and for /healthz.
 listen = ":8080"
 # The git mirror (services/git-mirror): the profile is read from it, and lanes clone from it.
+# Empty: no mirror is deployed (the chart's gitMirror.enabled=false).
 mirror_url = "http://git-mirror.rangelight-system.svc.cluster.local:8080"
 # The runner's own projected token for the mirror (audience rangelight-git-mirror), read at each fetch.
 mirror_token_file = "/var/run/secrets/rangelight/git-mirror/token"

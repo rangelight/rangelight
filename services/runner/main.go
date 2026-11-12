@@ -40,7 +40,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("session: %w", err)
 	}
-	report, err := session.AddProtocol(mgr, cfg.NATSURL, cfg.Namespace, cfg.Org, cfg.RunnerID)
+	report, err := session.AddProtocol(mgr, cfg)
 	if err != nil {
 		return fmt.Errorf("session: %w", err)
 	}

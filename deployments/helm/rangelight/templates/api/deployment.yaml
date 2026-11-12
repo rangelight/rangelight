@@ -4,7 +4,7 @@
 # /var/run/rangelight/secrets, never environment values.
 {{- $oidc := printf "%s#%s" .Values.oidc.clientSecretRef.name .Values.oidc.clientSecretRef.key }}
 {{- $linear := printf "%s#%s" .Values.linear.apiKeySecretRef.name .Values.linear.apiKeySecretRef.key }}
-{{- $refs := list (include "rangelight.databaseRef" .) $oidc $linear }}
+{{- $refs := concat (list (include "rangelight.databaseRef" .) $oidc $linear) (splitList "\n" (include "rangelight.natsSeeds" .)) }}
 {{- with .Values.tls.extraCaSecretRef }}
 {{- if .name }}
 {{- $refs = append $refs (printf "%s#%s" .name .key) }}
@@ -30,6 +30,8 @@ spec:
         # A changed ConfigMap rolls the pod: the api reads its config at start.
         checksum/config: {{ include (print $.Template.BasePath "/api/configmap.yaml") . | sha256sum | quote }}
     spec:
+      # Its NATS identity (the auth callout maps it); no API token but the one below for the cluster's JWKS.
+      serviceAccountName: "rangelight-api"
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -72,6 +74,32 @@ spec:
             - name: "secrets"
               mountPath: "/var/run/rangelight/secrets"
               readOnly: true
+            # The auth callout's issuers (configs/api.default.toml [nats_auth]).
+            - name: "config"
+              mountPath: "/etc/rangelight"
+              readOnly: true
+            - name: "nats-token"
+              mountPath: "/var/run/secrets/rangelight/nats"
+              readOnly: true
+            - name: "kubernetes"
+              mountPath: "/var/run/secrets/rangelight/kubernetes"
+              readOnly: true
       volumes:
         {{- include "rangelight.secretsVolume" $refs | nindent 8 }}
+        - name: "config"
+          configMap:
+            name: "rangelight-api-file"
+        {{- include "rangelight.natsTokenVolume" . | nindent 8 }}
+        # The API server's token and CA, only to fetch the cluster's token signing keys (/openid/v1/jwks).
+        - name: "kubernetes"
+          projected:
+            sources:
+              - serviceAccountToken:
+                  expirationSeconds: 3600
+                  path: "token"
+              - configMap:
+                  name: "kube-root-ca.crt"
+                  items:
+                    - key: "ca.crt"
+                      path: "ca.crt"
 {{- end }}

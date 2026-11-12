@@ -545,7 +545,7 @@ async fn relay_once(store: &Store, org: &str) -> usize {
 async fn desired_messages(org: &str) -> u64 {
     let jetstream = async_nats::jetstream::new(rl_testkit::nats().await);
     let mut stream = jetstream
-        .get_stream(format!("rl-{org}-desired"))
+        .get_stream(rl_domain::subject::desired_stream(org))
         .await
         .unwrap();
     stream.info().await.unwrap().state.messages

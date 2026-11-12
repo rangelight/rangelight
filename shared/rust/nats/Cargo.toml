@@ -1,0 +1,21 @@
+[package]
+name = "rl-nats"
+description = "A workload's NATS connection with its own identity: its projected token, re-read at every connect, and its own inbox."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-nats.workspace = true
+rl-domain.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

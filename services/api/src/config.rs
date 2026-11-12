@@ -20,10 +20,17 @@ pub struct Config {
     pub listen: SocketAddr,
     /// The Postgres URL, in a secret.
     pub database_url: SecretRef,
-    /// The NATS server.
+    /// The NATS server: `tls://`, or `nats://` inside the cluster (`rl_nats::check_url`).
     pub nats_url: String,
+    /// The api's projected token for NATS (audience `rangelight-nats`), read at every connect.
+    pub nats_token_file: PathBuf,
+    /// The api as NATS's auth callout.
+    pub nats_auth: NatsAuth,
     /// The org's subject token.
     pub org: String,
+    /// The runner every session runs at, until admission places sessions (ADR 0018): the
+    /// relay's `runner`. Lanes sign in only from that runner's cluster.
+    pub runner: String,
     /// Linear's GraphQL endpoint.
     pub linear_url: String,
     /// The key of the Linear team whose issues are polled, for example `RAN`.
@@ -58,6 +65,52 @@ pub struct Config {
     /// A PEM bundle of CA certificates the api's HTTPS (the issuer, Linear) trusts beside the
     /// platform's roots: for an issuer or a Linear proxy behind your own CA.
     pub extra_ca_file: Option<PathBuf>,
+}
+
+/// The api as NATS's auth callout (ADR 0021 amendment): it verifies each client's projected
+/// token and answers with a user JWT holding the identity's exact permissions.
+#[derive(Debug, Clone, Deserialize)]
+pub struct NatsAuth {
+    /// The callout issuer's nkey seed, in a secret: it signs every user JWT. Its public key is
+    /// the server's `auth_callout.issuer`.
+    pub issuer_seed: SecretRef,
+    /// The api's own sign-in as the callout's auth user, in a secret: an nkey seed (the bundled
+    /// server), or a `.creds` file (your own server in operator mode).
+    pub auth_user: SecretRef,
+    /// The account the control plane's and the runners' user JWTs are for: `RL` on the bundled
+    /// server, or the account's public key in operator mode.
+    pub account: String,
+    /// The lanes' account: `LANE` on the bundled server, or its public key in operator mode.
+    pub lane_account: String,
+    /// The lane account's signing key seed, in a secret, in operator mode; else the issuer's
+    /// signs the lanes' user JWTs too.
+    #[serde(default)]
+    pub lane_issuer_seed: Option<SecretRef>,
+    /// The ServiceAccount token issuers clients may sign in with.
+    pub issuers: Vec<Issuer>,
+}
+
+/// One cluster's ServiceAccount token issuer and who signs in from it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Issuer {
+    /// The issuer, as tokens name it (`iss`), https.
+    pub url: String,
+    /// Its signing keys (JWKS), https.
+    pub jwks_url: String,
+    /// A bearer token for the JWKS, read at each fetch: the api's own token for the in-cluster
+    /// API server. None for a public JWKS.
+    #[serde(default)]
+    pub jwks_token_file: Option<PathBuf>,
+    /// The CA the JWKS's certificate chains to, when it isn't a public one: the cluster's.
+    #[serde(default)]
+    pub jwks_ca_file: Option<PathBuf>,
+    /// The api and the relay run in this cluster: only its tokens can be them.
+    #[serde(default)]
+    pub control_plane: bool,
+    /// The runner of this cluster.
+    pub runner: String,
+    /// That runner's ServiceAccount, `<namespace>:<name>`.
+    pub runner_service_account: String,
 }
 
 impl Config {
@@ -157,7 +210,11 @@ impl Config {
     }
 
     fn validate(self) -> Result<Config, ConfigError> {
-        subject::token(&self.org).map_err(|e| ConfigError(e.to_string()))?;
+        for token in [&self.org, &self.runner] {
+            subject::token(token).map_err(|e| ConfigError(e.to_string()))?;
+        }
+        rl_nats::check_url(&self.nats_url).map_err(|e| ConfigError(e.to_string()))?;
+        self.nats_auth.validate()?;
         self.workspace()?;
         self.upstream()?;
         if !matches!(self.stream_replicas, 1..=5) {
@@ -200,179 +257,45 @@ impl Config {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used)]
-
-    use super::*;
-
-    const REQUIRED: &str = "
-linear_team = \"RAN\"
-public_url = \"https://rangelight.example.com\"
-oidc_issuer = \"https://rangelight.example.com/dex\"
-repo = \"shop\"
-member = \"ariel\"
-";
-
-    fn defaults() -> Config {
-        let toml = [include_str!("../../../configs/api.default.toml"), REQUIRED].concat();
-        rl_config::load("api", &toml).unwrap()
-    }
-
-    #[test]
-    fn defaults_with_the_required_keys_are_valid() {
-        defaults().validate().unwrap();
-    }
-
-    #[test]
-    fn the_team_is_required_and_the_org_checked() {
-        let defaults_only = include_str!("../../../configs/api.default.toml");
-        assert!(
-            rl_config::load::<Config>("api", defaults_only).is_err(),
-            "no default team"
-        );
-        for team in ["", "RAN.*", "a-very-long-team-key"] {
-            assert!(
-                Config {
-                    linear_team: team.into(),
-                    ..defaults()
-                }
-                .validate()
-                .is_err(),
-                "{team:?}"
-            );
+impl NatsAuth {
+    fn validate(&self) -> Result<(), ConfigError> {
+        let bad = |what: &str| Err(ConfigError(format!("nats_auth: {what}")));
+        // Each names an account, and is a subject token in the lane's CONNZ request.
+        for account in [&self.account, &self.lane_account] {
+            subject::token(account).map_err(|e| ConfigError(e.to_string()))?;
         }
-        assert!(
-            Config {
-                org: "a b".into(),
-                ..defaults()
+        if self.account == self.lane_account {
+            return bad("lanes need an account of their own (lane_account)");
+        }
+        if self.issuers.iter().filter(|i| i.control_plane).count() != 1 {
+            return bad("exactly one issuer must be the control_plane's");
+        }
+        let mut urls: Vec<&str> = self.issuers.iter().map(|i| i.url.as_str()).collect();
+        urls.sort_unstable();
+        urls.dedup();
+        if urls.len() != self.issuers.len() {
+            return bad("each issuer url once");
+        }
+        for issuer in &self.issuers {
+            // A token's signature is only as good as the keys: never fetched in clear text.
+            if !issuer.url.starts_with("https://") || !issuer.jwks_url.starts_with("https://") {
+                return bad("an issuer's url and jwks_url must be https://");
             }
-            .validate()
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn sign_in_needs_https_and_an_origin() {
-        let url = |s: &str| Url::parse(s).unwrap();
-        for public_url in [
-            "http://rangelight.example.com",
-            "https://rangelight.example.com/workbench",
-            "https://rangelight.example.com/?a=b",
-            "https://user@rangelight.example.com",
-        ] {
-            let config = Config {
-                public_url: url(public_url),
-                ..defaults()
-            };
-            assert!(config.validate().is_err(), "{public_url}");
+            subject::token(&issuer.runner).map_err(|e| ConfigError(e.to_string()))?;
+            let account_ok =
+                issuer
+                    .runner_service_account
+                    .split_once(':')
+                    .is_some_and(|(ns, name)| {
+                        !ns.is_empty() && !name.is_empty() && !name.contains(':')
+                    });
+            if !account_ok {
+                return bad("runner_service_account must be <namespace>:<name>");
+            }
         }
-        let plain_issuer = Config {
-            oidc_issuer: url("http://dex.example.com/dex"),
-            ..defaults()
-        };
-        assert!(plain_issuer.validate().is_err());
-        let no_client = Config {
-            oidc_client_id: String::new(),
-            ..defaults()
-        };
-        assert!(no_client.validate().is_err());
-        let no_claim = Config {
-            oidc_member_claim: String::new(),
-            ..defaults()
-        };
-        assert!(no_claim.validate().is_err());
-        let no_recheck = Config {
-            login_recheck_seconds: 0,
-            ..defaults()
-        };
-        assert!(no_recheck.validate().is_err());
-    }
-
-    #[test]
-    fn the_upstream_is_optional_or_a_github_repo() {
-        assert_eq!(defaults().upstream().unwrap(), None);
-        let config = Config {
-            upstream: "https://github.com/acme/shop.git".into(),
-            ..defaults()
-        };
-        let upstream = config.upstream().unwrap().unwrap();
-        assert!(
-            upstream
-                .pull_request("https://github.com/acme/shop/pull/1")
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn the_workspace_upstream_and_replicas_are_checked() {
-        for bad in [
-            Config {
-                repo: "shop.git".into(),
-                ..defaults()
-            },
-            Config {
-                member: String::new(),
-                ..defaults()
-            },
-            Config {
-                stream_replicas: 0,
-                ..defaults()
-            },
-            Config {
-                upstream: "https://gitlab.com/acme/shop".into(),
-                ..defaults()
-            },
-        ] {
-            assert!(bad.validate().is_err());
-        }
-    }
-
-    fn roots_from(pem: &str) -> Result<Vec<CertificateDer<'static>>, ConfigError> {
-        let mut file = tempfile::NamedTempFile::new().unwrap();
-        std::io::Write::write_all(&mut file, pem.as_bytes()).unwrap();
-        Config {
-            extra_ca_file: Some(file.path().to_owned()),
-            ..defaults()
-        }
-        .extra_roots()
-    }
-
-    #[tokio::test]
-    async fn the_extra_ca_file_is_every_certificate_in_it() {
-        assert!(defaults().extra_roots().unwrap().is_empty(), "unset: none");
-        let ca = rl_testkit::HttpsStub::start(|_| String::new())
-            .await
-            .ca_pem
-            .clone();
-        assert_eq!(roots_from(&[ca.as_str(), &ca].concat()).unwrap().len(), 2);
-    }
-
-    #[test]
-    fn an_extra_ca_file_that_doesnt_parse_stops_the_api() {
-        for pem in [
-            "",
-            "not a certificate",
-            "-----BEGIN CERTIFICATE-----\n!!!!\n-----END CERTIFICATE-----\n",
-            "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n",
-        ] {
-            let error = roots_from(pem).unwrap_err().to_string();
-            assert!(error.contains("extra_ca_file /"), "{pem:?}: {error}");
-        }
-        let missing = Config {
-            extra_ca_file: Some("/nonexistent/ca.crt".into()),
-            ..defaults()
-        };
-        let error = missing.extra_roots().unwrap_err().to_string();
-        assert!(error.contains("/nonexistent/ca.crt"), "{error}");
-    }
-
-    #[test]
-    fn the_linear_key_only_travels_over_https() {
-        let plain = Config {
-            linear_url: "http://api.linear.app/graphql".into(),
-            ..defaults()
-        };
-        assert!(plain.validate().is_err());
+        Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

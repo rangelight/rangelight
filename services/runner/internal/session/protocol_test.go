@@ -190,7 +190,7 @@ func settled(t *testing.T, seq uint64) {
 			return err
 		}
 		defer nc.Close()
-		c, err := js.Consumer(context.Background(), "rl-"+org+"-desired", "runner-"+runnerID)
+		c, err := js.Consumer(context.Background(), DesiredStream(org), "runner-"+runnerID)
 		if err != nil {
 			return err
 		}
@@ -354,7 +354,7 @@ func TestB1ANewRunnerNeverRevivesAClosedSession(t *testing.T) {
 	defer nc.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	d := &desired{Client: asRunner, Reader: asRunner, js: js, namespace: runnerNS, runner: fresh, subject: DesiredSubject(org, fresh, "*")}
+	d := &desired{Client: asRunner, Reader: asRunner, js: js, namespace: runnerNS, runner: fresh, stream: DesiredStream(org), subject: DesiredSubject(org, fresh, "*")}
 	go d.run(ctx)
 	s := session(t, open)
 	cancel()

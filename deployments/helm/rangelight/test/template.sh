@@ -6,7 +6,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 EXTERNAL=(--set postgres.enabled=false --set postgres.external.secretRef.name=pg-api
-  --set nats.enabled=false --set nats.external.url=tls://nats.example.com:4222)
+  --set nats.enabled=false --set nats.external.url=tls://nats.example.com:4222 --set nats.auth.existingSecret=nats-keys)
 
 # --- AC1: CloudNativePG operator and the cluster rangelight-pg ------------------
 
@@ -115,7 +115,7 @@ test_external_postgres_alone_keeps_bundled_nats() {
   render --api-versions "${CNPG_API}" --set postgres.enabled=false --set postgres.external.secretRef.name=pg-api \
     --set postgres.external.secretRef.key=url "${EXTERNAL_OIDC[@]}"
   expect_ok
-  [[ "$(kinds | paste -sd' ')" == "ConfigMap/rangelight-api ConfigMap/rangelight-nats-config NetworkPolicy/rangelight-nats Service/rangelight-nats Service/rangelight-nats-headless StatefulSet/rangelight-nats" ]] ||
+  [[ "$(kinds | paste -sd' ')" == "ConfigMap/rangelight-api ConfigMap/rangelight-nats-auth-config ConfigMap/rangelight-nats-config ConfigMap/rangelight-nats-keys Job/rangelight-nats-keys NetworkPolicy/rangelight-nats Role/rangelight-nats-keys RoleBinding/rangelight-nats-keys Service/rangelight-nats Service/rangelight-nats-headless ServiceAccount/rangelight-nats-keys StatefulSet/rangelight-nats" ]] ||
     fail "external Postgres with bundled NATS renders: $(kinds | paste -sd' ')"
   expect_line '  RANGELIGHT_API_DATABASE_URL: "secret://pg-api#url"'
 }
@@ -164,17 +164,17 @@ test_refuses_external_postgres_without_secret() {
 }
 
 test_refuses_external_nats_without_url() {
-  render --set nats.enabled=false
+  render --set nats.enabled=false --set nats.auth.existingSecret=nats-keys
   expect_refused "/nats/external/url"
 }
 
 test_refuses_a_nats_url_that_is_not_nats() {
-  render --set nats.enabled=false --set nats.external.url=http://nats.example.com:4222
+  render --set nats.enabled=false --set nats.auth.existingSecret=k --set nats.external.url=http://nats.example.com:4222
   expect_refused "/nats/external/url"
   # One server, no path: the api's and the relay's egress allow the one port the URL names (RAN-44).
-  render --set nats.enabled=false --set 'nats.external.url=nats://a:4222\,nats://b:4223'
+  render --set nats.enabled=false --set nats.auth.existingSecret=k --set 'nats.external.url=tls://a:4222\,tls://b:4223'
   expect_refused "/nats/external/url"
-  render --set nats.enabled=false --set nats.external.url=nats://a:4222/
+  render --set nats.enabled=false --set nats.auth.existingSecret=k --set nats.external.url=tls://a:4222/
   expect_refused "/nats/external/url"
 }
 

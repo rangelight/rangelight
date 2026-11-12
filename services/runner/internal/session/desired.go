@@ -32,8 +32,9 @@ type desired struct {
 	// Reader reads past the cache, so generations are compared with what the API server holds.
 	Reader client.Reader
 	js     jetstream.JetStream
-	// subject filters every session's desired subject at this runner (DesiredSubject(org, runner, "*")).
-	namespace, runner, subject string
+	// stream is the org's desired stream (DesiredStream); subject filters every session's desired
+	// subject at this runner (DesiredSubject(org, runner, "*")).
+	namespace, runner, stream, subject string
 }
 
 // refused is a message that can never be applied.
@@ -63,11 +64,7 @@ func (d *desired) run(ctx context.Context) {
 func (d *desired) consume(ctx context.Context) error {
 	setup, cancel := context.WithTimeout(ctx, natsTimeout)
 	defer cancel()
-	stream, err := d.js.StreamNameBySubject(setup, d.subject)
-	if err != nil {
-		return fmt.Errorf("stream for %s: %w", d.subject, err)
-	}
-	consumer, err := d.js.CreateOrUpdateConsumer(setup, stream, jetstream.ConsumerConfig{
+	consumer, err := d.js.CreateOrUpdateConsumer(setup, d.stream, jetstream.ConsumerConfig{
 		Durable: "runner-" + d.runner, FilterSubject: d.subject, DeliverPolicy: jetstream.DeliverLastPerSubjectPolicy,
 		AckPolicy: jetstream.AckExplicitPolicy, MaxAckPending: 1, AckWait: ackWait,
 	})

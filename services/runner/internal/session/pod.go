@@ -8,12 +8,12 @@ import (
 )
 
 // agentPod is the lane's agent (ADR 0015): non-root, read-only root filesystem, no capabilities,
-// seccomp RuntimeDefault, no ServiceAccount token but one projected token for the git mirror. The
-// only writable places are the worktree, /tmp and the Claude home, each bounded.
+// seccomp RuntimeDefault, no ServiceAccount token but two projected ones: for the git mirror, and
+// for NATS, where it signs the lane in to its own terminal only (ADR 0045 amendment). The only
+// writable places are the worktree, /tmp and the Claude home, each bounded.
 func agentPod(s *Session, o Options) *corev1.Pod {
 	no, yes, ndots := false, true, "1"
 	uid := int64(agentUID)
-	expiry := int64(tokenSeconds)
 	return &corev1.Pod{
 		ObjectMeta: objectMeta(agentName, Namespace(s), s.Spec.ID),
 		Spec: corev1.PodSpec{
@@ -55,6 +55,7 @@ func agentPod(s *Session, o Options) *corev1.Pod {
 					{Name: claudeHome, MountPath: claudeHomeDir},
 					{Name: laneName, MountPath: "/etc/rangelight", ReadOnly: true},
 					{Name: "git-mirror-token", MountPath: tokenDir, ReadOnly: true},
+					{Name: "nats-token", MountPath: natsTokenDir, ReadOnly: true},
 				},
 			}},
 			Volumes: []corev1.Volume{
@@ -66,14 +67,21 @@ func agentPod(s *Session, o Options) *corev1.Pod {
 				{Name: laneName, VolumeSource: corev1.VolumeSource{
 					ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: laneName}},
 				}},
-				{Name: "git-mirror-token", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
-					Sources: []corev1.VolumeProjection{{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-						Audience: MirrorAudience, ExpirationSeconds: &expiry, Path: "token",
-					}}},
-				}}},
+				{Name: "git-mirror-token", VolumeSource: projectedToken(MirrorAudience, tokenSeconds)},
+				{Name: "nats-token", VolumeSource: projectedToken(NATSAudience, natsTokenSeconds)},
 			},
 		},
 	}
+}
+
+// projectedToken is a volume holding the pod's ServiceAccount token for audience, as the file token,
+// valid for seconds (the kubelet renews it before then).
+func projectedToken(audience string, seconds int64) corev1.VolumeSource {
+	return corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
+		Sources: []corev1.VolumeProjection{{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+			Audience: audience, ExpirationSeconds: &seconds, Path: "token",
+		}}},
+	}}
 }
 
 // crashLoops is how many restarts of a crash-looping agent container fail its session. The pod

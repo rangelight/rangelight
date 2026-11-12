@@ -294,6 +294,25 @@ impl Store {
             .transpose()
     }
 
+    /// The session whose namespace is `namespace`, or `None`.
+    ///
+    /// # Errors
+    /// [`StoreError::Db`], or [`StoreError::Domain`] for a stored state or phase that isn't one.
+    pub async fn session_by_namespace(
+        &self,
+        namespace: &str,
+    ) -> Result<Option<SessionRow>, StoreError> {
+        sqlx::query_file_as!(
+            Record,
+            "../../../db/queries/sessions/by_namespace.sql",
+            namespace
+        )
+        .fetch_optional(&self.pool)
+        .await?
+        .map(SessionRow::try_from)
+        .transpose()
+    }
+
     /// What a `WatchSessions` stream starts from: the newest sessions to show (at most `limit`) and
     /// every session's generation, read in one repeatable-read transaction so they agree.
     ///

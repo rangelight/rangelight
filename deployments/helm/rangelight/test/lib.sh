@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The chart tests' helpers, sourced by template.sh, git-mirror.sh, runner.sh, dex.sh, api.sh, relay.sh, web.sh and
-# ingress.sh.
+# The chart tests' helpers, sourced by template.sh, git-mirror.sh, runner.sh, dex.sh, api.sh, relay.sh, web.sh,
+# ingress.sh and nats.sh.
 # main runs the sourcing file's test_* functions (or the named ones) and fails if any failed.
 # One sort order everywhere: the expected lists are in C order.
 export LC_ALL=C

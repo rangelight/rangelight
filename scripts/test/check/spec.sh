@@ -101,7 +101,7 @@ test_gen_writes_the_typescript_types() {
 test_spec_fails_on_breaking_change_against_base() {
   spec_fixture
   git -C "${REPO}" add -A
-  git -C "${REPO}" -c user.name=t -c user.email=t@example.com commit -qm base
+  git -C "${REPO}" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -qm base
   sed -i '/string node_name = 7;/d' "${REPO}/api/proto/rangelight/runner/v1alpha1/runner.proto"
   run spec RANGELIGHT_SPEC_BASE=HEAD
   expect_status 1

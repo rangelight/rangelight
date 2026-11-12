@@ -3,4 +3,4 @@ too-many-lines-threshold = 60
 cognitive-complexity-threshold = 15
 too-many-arguments-threshold = 5
 # Product and protocol names that aren't code ("..": keep clippy's own list).
-doc-valid-idents = ["..", "UUIDv7", "JetStream", "ConnectRPC"]
+doc-valid-idents = ["..", "UUIDv7", "JetStream", "ConnectRPC", "ServiceAccount", "ServiceAccounts"]

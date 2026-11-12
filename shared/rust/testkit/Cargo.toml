@@ -1,6 +1,6 @@
 [package]
 name = "rl-testkit"
-description = "Test fixtures: fakes, the TicketSource contract suite, a Linear stub, an HTTPS stub, real NATS and Dex. Dev-dependency only."
+description = "Test fixtures: fakes, the TicketSource contract suite, a Linear stub, an HTTPS stub, real NATS (also with the bundled sign-in) and Dex, a fake token issuer. Dev-dependency only."
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -10,6 +10,8 @@ publish.workspace = true
 
 [dependencies]
 async-nats.workspace = true
+base64.workspace = true
+nkeys.workspace = true
 rcgen.workspace = true
 # form: Dex's password login.
 reqwest = { workspace = true, features = ["form"] }
@@ -17,9 +19,11 @@ rl-app.workspace = true
 rl-config.workspace = true
 rl-domain.workspace = true
 rl-store.workspace = true
+ring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+tempfile.workspace = true
 tokio.workspace = true
 tokio-rustls.workspace = true
 uuid.workspace = true

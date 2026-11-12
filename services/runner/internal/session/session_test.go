@@ -194,8 +194,9 @@ func TestAgentPodHardened(t *testing.T) {
 		{"seccomp RuntimeDefault", ps.SeccompProfile.Type == corev1.SeccompProfileTypeRuntimeDefault},
 		{"no automounted token", !*pod.Spec.AutomountServiceAccountToken},
 		{"resources", !c.Resources.Requests.Cpu().IsZero() && !c.Resources.Limits.Memory().IsZero()},
-		{"one projected token for the mirror", oneMirrorToken(pod)},
-		{"token mounted where the agent reads it", mounted(c, "git-mirror-token", "/var/run/secrets/rangelight/git-mirror", true)},
+		{"two projected tokens, the mirror's and NATS's", projectedTokens(pod) == "rangelight-git-mirror/600,rangelight-nats/3600"},
+		{"tokens mounted where the agent reads them", mounted(c, "git-mirror-token", "/var/run/secrets/rangelight/git-mirror", true) &&
+			mounted(c, "nats-token", "/var/run/secrets/rangelight/nats", true)},
 		{"ticket and profile from the lane ConfigMap", mounted(c, "lane", "/etc/rangelight", true)},
 		{"worktree on an emptyDir", mounted(c, "workspace", "/workspace", false) && volume(pod, "workspace").EmptyDir != nil},
 		{"bounded disk", *volume(pod, "workspace").EmptyDir.SizeLimit == options.Workspace &&
@@ -213,17 +214,22 @@ func TestAgentPodHardened(t *testing.T) {
 	}
 }
 
-func oneMirrorToken(pod *corev1.Pod) bool {
-	var tokens []*corev1.ServiceAccountTokenProjection
+// projectedTokens lists the pod's projected sources as audience/expiry, each a ServiceAccount
+// token at the path token.
+func projectedTokens(pod *corev1.Pod) string {
+	var tokens []string
 	for _, v := range pod.Spec.Volumes {
 		if v.Projected != nil {
 			for _, src := range v.Projected.Sources {
-				tokens = append(tokens, src.ServiceAccountToken)
+				t := src.ServiceAccountToken
+				if t == nil || t.Path != "token" || t.ExpirationSeconds == nil {
+					return "not only tokens"
+				}
+				tokens = append(tokens, fmt.Sprintf("%s/%d", t.Audience, *t.ExpirationSeconds))
 			}
 		}
 	}
-	return len(tokens) == 1 && tokens[0] != nil && tokens[0].Audience == "rangelight-git-mirror" &&
-		*tokens[0].ExpirationSeconds == 600 && tokens[0].Path == "token"
+	return strings.Join(tokens, ",")
 }
 
 func mounted(c corev1.Container, name, path string, readOnly bool) bool {
@@ -404,14 +410,21 @@ func TestDeleteCleansUp(t *testing.T) {
 	})
 }
 
+// A namespace made in advance, even one carrying the session's label, is never adopted: the session
+// fails and nothing is created in it (RAN-43 review: it would capture the lane's NATS identity).
 func TestNeverAdoptsAForeignNamespace(t *testing.T) {
 	demoRepo(t, "foreign")
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("rl-ran-%d", 1000+nextID+1)}}
+	forged := map[string]string{LabelSession: fmt.Sprintf("019a5e1c-0000-7000-8000-%012d", nextID+1)}
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("rl-ran-%d", 1000+nextID+1), Labels: forged}}
 	if err := k8s.Create(context.Background(), ns); err != nil {
 		t.Fatal(err)
 	}
 	s := phase(t, newSession(t, "foreign"), PhaseFailed)
-	if want := "namespace " + ns.Name + " already exists and is not this session's"; s.Status.Message != want {
+	var pods corev1.PodList
+	if err := k8s.List(context.Background(), &pods, client.InNamespace(ns.Name)); err != nil || len(pods.Items) != 0 {
+		t.Errorf("created %d pods in a namespace that wasn't its own: %v", len(pods.Items), err)
+	}
+	if want := "namespace_taken: namespace " + ns.Name + " already exists and is not this session's"; s.Status.Message != want {
 		t.Errorf("message = %q, want %q", s.Status.Message, want)
 	}
 	if err := k8s.Delete(context.Background(), s); err != nil {
@@ -597,14 +610,15 @@ func TestProfileIsReadAsTheRunner(t *testing.T) {
 // A ConfigMap another session of the same ticket left behind is never this session's profile.
 func TestReusesOnlyItsOwnProfile(t *testing.T) {
 	ctx := context.Background()
-	heads := mirror.repo(t, "reuse", map[string]map[string]string{"main": {"rangelight.yaml": validProfile(t)}})
 	spec := Spec{ID: "019a5e1c-0000-7000-8000-0000000000dd", Ticket: Ticket{Key: "RAN-77777"}}
-	// This session's namespace, with the lane ConfigMap an earlier session of the ticket left in it.
+	// The session waits for its repo; meanwhile its namespace holds the lane ConfigMap an earlier session of
+	// the ticket left in it.
+	s := newSession(t, "reuse", func(s *Session) { s.Spec.ID, s.Spec.Ticket.Key = spec.ID, spec.Ticket.Key })
 	stale := laneConfig(&Session{Spec: Spec{ID: "019a5e1c-0000-7000-8000-0000000000ee", Ticket: spec.Ticket}}, []byte("{}"), []byte(`{"stale":true}`))
-	if err := errors.Join(k8s.Create(ctx, namespace(&Session{Spec: spec})), k8s.Create(ctx, stale)); err != nil {
+	if err := errors.Join(k8s.Create(ctx, namespace(s)), k8s.Create(ctx, stale)); err != nil {
 		t.Fatal(err)
 	}
-	s := newSession(t, "reuse", func(s *Session) { s.Spec.ID, s.Spec.Ticket.Key = spec.ID, spec.Ticket.Key })
+	heads := mirror.repo(t, "reuse", map[string]map[string]string{"main": {"rangelight.yaml": validProfile(t)}})
 	eventually(t, "the profile read from main", func() error {
 		var cm corev1.ConfigMap
 		if err := k8s.Get(ctx, client.ObjectKeyFromObject(stale), &cm); err != nil {

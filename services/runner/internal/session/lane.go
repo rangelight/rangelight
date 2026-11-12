@@ -16,6 +16,9 @@ import (
 const (
 	// LabelSession holds the session id on the lane namespace and everything in it.
 	LabelSession = "rangelight.dev/session"
+	// AnnotationSessionUID on a lane namespace is the UID of the Session that created it. Anyone may set
+	// a label to a session's id; only the runner knows the Session object's UID.
+	AnnotationSessionUID = "rangelight.dev/session-uid"
 	// LabelLane marks a lane namespace; the git mirror admits only these (RAN-17).
 	LabelLane = "rangelight.dev/lane"
 	// LabelClaudeHome marks a namespace that mounts a Claude home (the cluster guard, ADR 0046).
@@ -37,6 +40,15 @@ const (
 	tokenDir       = "/var/run/secrets/rangelight/git-mirror" //nolint:gosec // a mount path, not a credential
 	tokenSeconds   = 600
 	agentUID       = 1000 // the agent image's node user (ADR 0045 §5)
+)
+
+// The lane's NATS identity (ADR 0045 amendment): its own terminal, nothing else.
+const (
+	// NATSAudience is the audience of every NATS client's projected token: the api's auth callout
+	// accepts only it. The kubelet renews the token well before its hour is up.
+	NATSAudience     = "rangelight-nats"
+	natsTokenDir     = "/var/run/secrets/rangelight/nats" //nolint:gosec // a mount path, not a credential
+	natsTokenSeconds = 3600
 )
 
 // The git mirror (RAN-17), the lane's only in-cluster egress besides the cluster DNS (ADR 0016).
@@ -76,6 +88,7 @@ func objectMeta(name, namespace, id string) metav1.ObjectMeta {
 
 func namespace(s *Session) *corev1.Namespace {
 	ns := &corev1.Namespace{ObjectMeta: objectMeta(Namespace(s), "", s.Spec.ID)}
+	ns.Annotations = map[string]string{AnnotationSessionUID: string(s.UID)}
 	ns.Labels["pod-security.kubernetes.io/enforce"] = "restricted"
 	ns.Labels[LabelLane] = "true"
 	ns.Labels[LabelClaudeHome] = "true"

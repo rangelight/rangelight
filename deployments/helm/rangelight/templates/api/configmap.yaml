@@ -43,3 +43,36 @@ data:
   {{- end }}
   RANGELIGHT_API_MEMBER: {{ required "api.member is required" .Values.api.member | quote }}
   RANGELIGHT_API_STREAM_REPLICAS: {{ .Values.api.streamReplicas | quote }}
+{{- if .Values.api.enabled }}
+---
+# The api's NATS auth callout (configs/api.default.toml [nats_auth], ADR 0021 amendment), as /etc/rangelight/api.toml:
+# a list of issuers doesn't fit an environment variable. This cluster's issuer, its keys fetched with the api's own
+# token over the cluster CA; the runner here is the one every session runs at.
+{{- $seeds := splitList "\n" (include "rangelight.natsSeeds" .) }}
+apiVersion: "v1"
+kind: "ConfigMap"
+metadata:
+  name: "rangelight-api-file"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "api" "component" "config") | nindent 4 }}
+data:
+  api.toml: |
+    [nats_auth]
+    issuer_seed = {{ printf "secret://%s" (index $seeds 0) | quote }}
+    auth_user = {{ printf "secret://%s" (index $seeds 1) | quote }}
+    {{- if gt (len $seeds) 2 }}
+    lane_issuer_seed = {{ printf "secret://%s" (index $seeds 2) | quote }}
+    {{- end }}
+    account = {{ .Values.nats.auth.account | quote }}
+    lane_account = {{ .Values.nats.auth.laneAccount | quote }}
+
+    [[nats_auth.issuers]]
+    url = {{ .Values.nats.auth.issuer | quote }}
+    jwks_url = "https://kubernetes.default.svc/openid/v1/jwks"
+    jwks_token_file = "/var/run/secrets/rangelight/kubernetes/token"
+    jwks_ca_file = "/var/run/secrets/rangelight/kubernetes/ca.crt"
+    control_plane = true
+    runner = "default"
+    runner_service_account = {{ printf "%s:runner" .Values.runner.namespace | quote }}
+{{- end }}

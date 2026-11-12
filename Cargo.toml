@@ -20,6 +20,7 @@ rl-auth = { path = "shared/rust/auth" }
 rl-chain = { path = "shared/rust/chain" }
 rl-config = { path = "shared/rust/config" }
 rl-domain = { path = "shared/rust/domain" }
+rl-nats = { path = "shared/rust/nats" }
 rl-proto = { path = "shared/rust/proto" }
 rl-store = { path = "shared/rust/store" }
 rl-telemetry = { path = "shared/rust/telemetry" }
@@ -30,8 +31,9 @@ relay = { path = "services/relay" }
 anyhow = "1.0.104"
 # Only the server pieces the api uses: Connect routes are mounted beside the sign-in routes.
 axum = { version = "0.8.9", default-features = false, features = ["query"] }
-# No nkeys, KV, object store or websockets until a ticket needs them.
-async-nats = { version = "0.52.0", default-features = false, features = ["jetstream", "ring"] }
+# nkeys: the api's auth callout signs in with one (RAN-43). No KV, object store or websockets
+# until a ticket needs them.
+async-nats = { version = "0.52.0", default-features = false, features = ["jetstream", "nkeys", "ring"] }
 # The version openidconnect and connectrpc already use.
 base64 = "0.22.1"
 buffa = "0.9.2"
@@ -46,6 +48,8 @@ hyper = { version = "1.12.0", features = ["server", "http1"] }
 hyper-util = { version = "0.1.21", features = ["service", "tokio"] }
 # OIDC with our own reqwest (below) as its HTTP client, so no second reqwest or TLS stack.
 openidconnect = { version = "4.1.0", default-features = false }
+# NATS's Ed25519 keys: the auth callout signs user JWTs with its issuer's (the version async-nats uses).
+nkeys = "0.4.5"
 proptest = "1.9.0"
 # Throwaway CAs and certificates for the TLS tests (rl-testkit only).
 rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }

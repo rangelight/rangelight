@@ -30,11 +30,15 @@ const VIEWER_CAPACITY: usize = 1024;
 
 /// The NATS client for viewers' streams, separate from the api's other subscriptions (runner
 /// reports): its subscription capacity bounds how far a viewer may lag ([`VIEWER_CAPACITY`]).
+/// `options` sign it in.
 ///
 /// # Errors
 /// NATS's, when it can't connect.
-pub async fn viewers_client(url: &str) -> Result<async_nats::Client, async_nats::ConnectError> {
-    async_nats::ConnectOptions::new()
+pub async fn viewers_client(
+    url: &str,
+    options: async_nats::ConnectOptions,
+) -> Result<async_nats::Client, async_nats::ConnectError> {
+    options
         .subscription_capacity(VIEWER_CAPACITY)
         .connect(url)
         .await

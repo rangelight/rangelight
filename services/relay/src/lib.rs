@@ -12,10 +12,11 @@
 #![deny(missing_docs)]
 
 pub mod config;
+mod reseed;
 
 use std::time::Duration;
 
-use async_nats::jetstream::{self, message::PublishMessage, stream};
+use async_nats::jetstream::{self, context::PublishErrorKind, message::PublishMessage, stream};
 use buffa::EnumValue;
 use buffa::Message;
 use rl_domain::subject;
@@ -24,7 +25,7 @@ use rl_proto::rangelight::runner::v1alpha1::{
     DesiredState, Envelope, SessionDesired, Ticket, Worktree,
 };
 use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::change::Kind;
-use rl_proto::rangelight::session::v1alpha1::Event;
+use rl_proto::rangelight::session::v1alpha1::{Change, Event};
 use rl_store::{Store, StoreError, Unsent};
 use tokio_util::sync::CancellationToken;
 
@@ -82,7 +83,7 @@ impl Relay {
         let jetstream = jetstream::new(nats.clone());
         jetstream
             .create_or_update_stream(stream::Config {
-                name: format!("rl-{org}-desired"),
+                name: subject::desired_stream(&org),
                 subjects: vec![subject::runners_desired(&org)],
                 // No max_age: a hot session's desired state stays however long it runs.
                 // ponytail: a closed session's tombstone stays for ever, one small message each.
@@ -96,13 +97,15 @@ impl Relay {
             })
             .await
             .map_err(|e| RelayError::Nats(e.to_string()))?;
-        Ok(Relay {
+        let relay = Relay {
             store,
             nats,
             jetstream,
             org,
             runner,
-        })
+        };
+        relay.reseed().await?;
+        Ok(relay)
     }
 
     /// Publishes one event: for a change of the desired state, JetStream first, waiting for its
@@ -113,31 +116,12 @@ impl Relay {
     /// [`RelayError::Payload`] or [`RelayError::Nats`].
     #[tracing::instrument(skip_all, fields(session_id = %event.session.0, event_id = %event.event.0, seq = event.seq))]
     pub async fn publish(&self, event: &Unsent) -> Result<(), RelayError> {
-        let change =
-            rl_chain::decode(&event.payload).map_err(|_| RelayError::Payload(event.event.0))?;
-        let id = event.event.0.to_string();
-        let nats = |e: &dyn std::fmt::Display| RelayError::Nats(e.to_string());
-        let state = match &change.kind {
-            Some(Kind::Created(created)) => Some(created.state),
-            Some(Kind::StateChanged(changed)) => Some(changed.state),
-            Some(Kind::PhaseChanged(_)) => None,
-            None => return Err(RelayError::Payload(event.event.0)),
-        };
+        let (change, state) = decode(event)?;
         if let Some(state) = state {
-            let publish = PublishMessage::build()
-                .message_id(id.as_str())
-                .payload(self.desired(event, state).encode_to_vec().into());
-            let subject = subject::runner_desired(&self.org, &self.runner, event.session);
-            let ack = self
-                .jetstream
-                .send_publish(subject, publish)
-                .await
-                .map_err(|e| nats(&e))?;
-            ack.await.map_err(|e| nats(&e))?;
+            self.send_desired(event, state, false).await?;
         }
-
         let fanout = Event {
-            id,
+            id: event.event.0.to_string(),
             session_id: event.session.0.to_string(),
             seq: event.seq,
             at: buffa_types::google::protobuf::Timestamp::from(event.at).into(),
@@ -150,7 +134,39 @@ impl Relay {
                 fanout.encode_to_vec().into(),
             )
             .await
-            .map_err(|e| nats(&e))
+            .map_err(|e| RelayError::Nats(e.to_string()))
+    }
+
+    /// Publishes `event`'s desired state to JetStream and waits for the acknowledgement; `false`
+    /// when `if_empty` and its session's subject already holds a message (nothing written).
+    /// Otherwise `Nats-Msg-Id` is the event id.
+    pub(crate) async fn send_desired(
+        &self,
+        event: &Unsent,
+        state: EnumValue<DesiredState>,
+        if_empty: bool,
+    ) -> Result<bool, RelayError> {
+        let nats = |e: &dyn std::fmt::Display| RelayError::Nats(e.to_string());
+        let publish =
+            PublishMessage::build().payload(self.desired(event, state).encode_to_vec().into());
+        // Put back only onto an empty subject, and without the event's id: JetStream would take a
+        // republish inside its duplicate window as a repeat and store nothing.
+        let publish = if if_empty {
+            publish.expected_last_subject_sequence(0)
+        } else {
+            publish.message_id(event.event.0.to_string().as_str())
+        };
+        let subject = subject::runner_desired(&self.org, &self.runner, event.session);
+        let ack = self
+            .jetstream
+            .send_publish(subject, publish)
+            .await
+            .map_err(|e| nats(&e))?;
+        match ack.await {
+            Ok(_) => Ok(true),
+            Err(e) if if_empty && e.kind() == PublishErrorKind::WrongLastSequence => Ok(false),
+            Err(e) => Err(nats(&e)),
+        }
     }
 
     /// The whole desired session as of `event`, in its envelope: what the runner's `Session`
@@ -236,6 +252,19 @@ impl Relay {
     }
 }
 
+/// `event`'s change, and the desired state it sets (`None` for a runner's own report).
+fn decode(event: &Unsent) -> Result<(Change, Option<EnumValue<DesiredState>>), RelayError> {
+    let change =
+        rl_chain::decode(&event.payload).map_err(|_| RelayError::Payload(event.event.0))?;
+    let state = match &change.kind {
+        Some(Kind::Created(created)) => Some(created.state),
+        Some(Kind::StateChanged(changed)) => Some(changed.state),
+        Some(Kind::PhaseChanged(_)) => None,
+        None => return Err(RelayError::Payload(event.event.0)),
+    };
+    Ok((change, state))
+}
+
 /// The pause after a round: none after a full batch (more is waiting), [`IDLE`] after a partial
 /// one, and after a failure double the previous pause, from [`IDLE`] up to [`MAX_BACKOFF`].
 #[must_use]
@@ -263,45 +292,4 @@ pub async fn serve_health(
 }
 
 #[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used)]
-
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn healthz_answers_200_until_cancelled() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let cancel = CancellationToken::new();
-        let served = tokio::spawn(serve_health(listener, cancel.clone()));
-        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
-        stream
-            .write_all(b"GET /healthz HTTP/1.1\r\nHost: relay\r\nConnection: close\r\n\r\n")
-            .await
-            .unwrap();
-        let mut reply = String::new();
-        stream.read_to_string(&mut reply).await.unwrap();
-        assert!(reply.starts_with("HTTP/1.1 200 OK"), "{reply}");
-        cancel.cancel();
-        served.await.unwrap().unwrap();
-    }
-
-    #[test]
-    fn failed_rounds_back_off_to_a_cap_and_success_resets() {
-        let failed = Err(RelayError::Nats("down".into()));
-        let mut pause = Duration::ZERO;
-        let mut pauses = Vec::new();
-        for _ in 0..9 {
-            pause = next_pause(pause, &failed);
-            pauses.push(pause.as_millis());
-        }
-        assert_eq!(
-            pauses,
-            [500, 1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]
-        );
-        assert_eq!(next_pause(pause, &Ok(3)), IDLE);
-        assert_eq!(next_pause(pause, &Ok(usize::from(BATCH))), Duration::ZERO);
-    }
-}
+mod tests;

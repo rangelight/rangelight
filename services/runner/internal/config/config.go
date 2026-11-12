@@ -58,8 +58,12 @@ type Config struct {
 	LaneWorkspaceSize    string `toml:"lane_workspace_size"`
 	LaneTmpSize          string `toml:"lane_tmp_size"`
 	LaneEphemeralStorage string `toml:"lane_ephemeral_storage"`
-	// NATSURL is the control plane's NATS server (ADR 0021).
+	// NATSURL is the control plane's NATS server (ADR 0021): tls://, or nats:// to a Service in
+	// this cluster, since the runner's token travels to it.
 	NATSURL string `toml:"nats_url"`
+	// NATSTokenFile is the runner's projected token for NATS (audience rangelight-nats), an
+	// absolute path, read again at every connect.
+	NATSTokenFile string `toml:"nats_token_file"`
 	// Org and RunnerID are the subject tokens of the runner protocol: rl.<org>.runner.<runner_id>.*.
 	Org      string `toml:"org"`
 	RunnerID string `toml:"runner_id"`
@@ -130,7 +134,7 @@ func (c *Config) fields() map[string]*string {
 		"lane_workspace_size": &c.LaneWorkspaceSize, "lane_tmp_size": &c.LaneTmpSize,
 		"lane_ephemeral_storage": &c.LaneEphemeralStorage,
 		"dns_namespace":          &c.DNSNamespace, "dns_pod_label": &c.DNSPodLabel,
-		"nats_url": &c.NATSURL, "org": &c.Org, "runner_id": &c.RunnerID,
+		"nats_url": &c.NATSURL, "nats_token_file": &c.NATSTokenFile, "org": &c.Org, "runner_id": &c.RunnerID,
 	}
 }
 
@@ -160,6 +164,20 @@ func (c *Config) fromEnv(environ []string) error {
 	return nil
 }
 
+// natsURL reports whether raw is one NATS server the runner's token may travel to: tls://, or
+// plain nats:// only to a Service in this cluster or loopback (rl_nats::check_url's rule). A remote
+// runner needs tls://.
+func natsURL(raw string) bool {
+	n, err := url.Parse(raw)
+	if err != nil || n.Host == "" || n.User != nil || strings.Trim(n.Path, "/") != "" {
+		return false
+	}
+	host := n.Hostname()
+	inCluster := host == "localhost" || host == "127.0.0.1" || host == "::1" ||
+		strings.HasSuffix(host, ".svc") || strings.HasSuffix(host, ".svc.cluster.local")
+	return n.Scheme == "tls" || n.Scheme == "nats" && inCluster
+}
+
 func (c *Config) validate() error {
 	var bad []error
 	check := func(ok bool, key, want string) {
@@ -186,9 +204,9 @@ func (c *Config) validate() error {
 		q, err := resource.ParseQuantity(v)
 		check(err == nil && q.Sign() > 0, key, "a positive size like 10Gi")
 	}
-	n, err := url.Parse(c.NATSURL)
-	check(err == nil && (n.Scheme == "nats" || n.Scheme == "tls") && n.Host != "" && n.User == nil,
-		"nats_url", "a nats:// or tls:// URL without credentials")
+	check(natsURL(c.NATSURL), "nats_url",
+		"tls://<host>[:<port>], or nats:// to a Service in this cluster (<name>.svc[.cluster.local]), without credentials")
+	check(filepath.IsAbs(c.NATSTokenFile) && filepath.Clean(c.NATSTokenFile) == c.NATSTokenFile, "nats_token_file", "a clean absolute path")
 	check(subjectToken.MatchString(c.Org), "org", "a subject token: no '.', '*', '>' or whitespace")
 	check(subjectToken.MatchString(c.RunnerID), "runner_id", "a subject token: no '.', '*', '>' or whitespace")
 	_, ok := logLevels[c.LogLevel]

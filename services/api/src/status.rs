@@ -18,8 +18,6 @@ use uuid::Uuid;
 
 /// The runner protocol version the api accepts.
 const PROTOCOL: &str = "v1alpha1";
-/// The durable consumer's name.
-const CONSUMER: &str = "api";
 /// How long JetStream drops a repeated `Nats-Msg-Id`; Postgres dedupes on `message_id` beyond it.
 const DUPLICATE_WINDOW: Duration = Duration::from_secs(120);
 /// How long a report waits in the stream while the api is away.
@@ -185,7 +183,7 @@ async fn messages(
     org: &str,
     replicas: usize,
 ) -> Result<pull::Stream, String> {
-    let name = format!("rl-{org}-status");
+    let name = subject::status_stream(org);
     jetstream
         .create_or_update_stream(stream::Config {
             name: name.clone(),
@@ -203,9 +201,11 @@ async fn messages(
         .map_err(|e| e.to_string())?;
     let consumer = stream
         .get_or_create_consumer(
-            CONSUMER,
+            subject::STATUS_CONSUMER,
             pull::Config {
-                durable_name: Some(CONSUMER.into()),
+                durable_name: Some(subject::STATUS_CONSUMER.into()),
+                // Created by its filtered subject, the only form the api may call.
+                filter_subject: subject::runners_status(org),
                 ack_wait: ACK_WAIT,
                 max_ack_pending: 1,
                 ..Default::default()

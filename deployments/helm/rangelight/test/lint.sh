@@ -43,16 +43,16 @@ main() {
     -f "${CHART}/test/ingress-values.yaml")
   render --api-versions "${CNPG_API}" "${on[@]}" >"${tmp}/bundled.yaml"
   render --set postgres.enabled=false --set postgres.external.secretRef.name=db \
-    --set nats.enabled=false --set nats.external.url=nats://nats.example:4222 \
+    --set nats.enabled=false --set nats.external.url=nats://nats.example.svc:4222 --set nats.auth.existingSecret=nats-keys \
     --set dex.enabled=false --set oidc.issuer=https://idp.example.com -f "${CHART}/test/serve-values.yaml" >"${tmp}/external.yaml"
   # The schema sets have no schema for a CRD object itself; the vendored CRDs are upstream's, pinned in Chart.lock.
   kubeconform -strict -summary -skip CustomResourceDefinition -kubernetes-version "${KUBERNETES_MIN}.0" -cache "${tmp}" \
     -schema-location default -schema-location "${CRD_SCHEMAS}" "${tmp}/bundled.yaml" "${tmp}/external.yaml"
 
   # Templates are YAML only once rendered (.yamllint.yaml ignores them): lint what ours render.
-  # validate.yaml renders nothing; it only refuses.
+  # validate.yaml renders nothing; it only refuses. With Cilium, so the api's CiliumNetworkPolicy renders too.
   mapfile -t templates < <(cd "${CHART}" && find templates -name '*.yaml' ! -name validate.yaml | sort | sed 's/^/--show-only=/')
-  render --api-versions "${CNPG_API}" "${on[@]}" "${templates[@]}" | yamllint --strict --config-file "${ROOT}/.yamllint.yaml" - ||
+  render --api-versions "${CNPG_API}" --api-versions cilium.io/v2 "${on[@]}" "${templates[@]}" | yamllint --strict --config-file "${ROOT}/.yamllint.yaml" - ||
     die "our templates render YAML that breaks the YAML style"
   printf 'chart lint: ok\n'
 }

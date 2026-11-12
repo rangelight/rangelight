@@ -179,7 +179,8 @@ func (r *Reconciler) laneConfig(ctx context.Context, s *Session) (*corev1.Config
 	return laneConfig(s, ticket, profile), nil
 }
 
-// ensureNamespace creates the lane namespace, and never adopts one that isn't this session's.
+// ensureNamespace creates the lane namespace, and never adopts one it didn't create for this Session:
+// a namespace made in advance by someone else would hand them the lane's NATS identity (its terminal).
 func (r *Reconciler) ensureNamespace(ctx context.Context, s *Session) error {
 	want := namespace(s)
 	var got corev1.Namespace
@@ -195,8 +196,8 @@ func (r *Reconciler) ensureNamespace(ctx context.Context, s *Session) error {
 	case !got.DeletionTimestamp.IsZero():
 		// An earlier session of the same ticket is still going away.
 		return fmt.Errorf("lane %s: namespace is still being deleted", want.Name)
-	case got.Labels[LabelSession] != s.Spec.ID:
-		return failed("namespace %s already exists and is not this session's", want.Name)
+	case !owns(&got, s):
+		return failed("namespace_taken: namespace %s already exists and is not this session's", want.Name)
 	}
 	return nil
 }
@@ -243,7 +244,7 @@ func (r *Reconciler) remove(ctx context.Context, s *Session) error {
 	case apierrors.IsNotFound(err):
 	case err != nil:
 		return fmt.Errorf("lane %s: namespace: %w", Namespace(s), err)
-	case ns.Labels[LabelSession] == s.Spec.ID && ns.DeletionTimestamp.IsZero():
+	case owns(&ns, s) && ns.DeletionTimestamp.IsZero():
 		if err := r.Delete(ctx, &ns); client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf("lane %s: delete namespace: %w", Namespace(s), err)
 		}
@@ -258,6 +259,11 @@ func (r *Reconciler) remove(ctx context.Context, s *Session) error {
 		r.report(s)
 	}
 	return nil
+}
+
+// owns reports whether ns is the one the runner created for s.
+func owns(ns *corev1.Namespace, s *Session) bool {
+	return s.UID != "" && ns.Annotations[AnnotationSessionUID] == string(s.UID) && ns.Labels[LabelSession] == s.Spec.ID
 }
 
 // oneLine is s on one line, at most messageMax characters (the CRD's maxLength counts characters),

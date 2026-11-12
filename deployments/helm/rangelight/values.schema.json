@@ -183,9 +183,38 @@
     "nats": {
       "description": "enabled and external are Rangelight's; every other key goes to the upstream nats chart.",
       "type": "object",
-      "required": ["enabled", "external", "fullnameOverride"],
+      "required": ["enabled", "external", "auth", "fullnameOverride"],
       "properties": {
         "enabled": { "description": "Install a NATS server with JetStream, or use nats.external.", "type": "boolean" },
+        "auth": {
+          "description": "Who may connect: every client signs in through the api's auth callout (ADR 0021 amendment).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["existingSecret", "keysImage", "issuer", "account", "laneAccount", "apiServerCidrs"],
+          "properties": {
+            "existingSecret": {
+              "description": "A Secret you create instead of the keys Job: issuer-seed, auth-user-seed, and for the bundled server issuer and auth-user.",
+              "anyOf": [{ "const": "" }, { "$ref": "#/$defs/dnsName" }]
+            },
+            "keysImage": { "description": "The keys Job's nats-box image, by tag and digest.", "$ref": "#/$defs/pinnedImage" },
+            "issuer": { "description": "This cluster's ServiceAccount token issuer.", "$ref": "#/$defs/httpsUrl" },
+            "account": {
+              "description": "RL on the bundled server, or the account's public key in operator mode.",
+              "type": "string",
+              "pattern": "^(RL|A[A-Z2-7]{55})$"
+            },
+            "laneAccount": {
+              "description": "LANE on the bundled server, or the lane account's public key in operator mode.",
+              "type": "string",
+              "pattern": "^(LANE|A[A-Z2-7]{55})$"
+            },
+            "apiServerCidrs": {
+              "description": "Without Cilium, the API server's addresses the api may reach (required then).",
+              "type": "array",
+              "items": { "type": "string", "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$" }
+            }
+          }
+        },
         "external": {
           "type": "object",
           "additionalProperties": false,
@@ -221,7 +250,13 @@
         }
       },
       "if": { "properties": { "enabled": { "const": false } } },
-      "then": { "properties": { "external": { "properties": { "url": { "$ref": "#/$defs/natsUrl" } } } } }
+      "then": {
+        "description": "Your own NATS: its URL, and the api's keys from your Secret.",
+        "properties": {
+          "external": { "properties": { "url": { "$ref": "#/$defs/natsUrl" } } },
+          "auth": { "properties": { "existingSecret": { "$ref": "#/$defs/dnsName" } } }
+        }
+      }
     },
     "cloudnative-pg": { "description": "The upstream cloudnative-pg chart's values; its own schema checks them.", "type": "object" },
     "gitMirror": {
@@ -377,7 +412,11 @@
     "githubOrg": { "type": "string", "pattern": "^[A-Za-z0-9](-?[A-Za-z0-9]){0,38}$" },
     "publicUrl": { "type": "string", "pattern": "^https://[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(:[0-9]{1,5})?$" },
     "httpsUrl": { "type": "string", "pattern": "^https://[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(:[0-9]{1,5})?(/[-._~A-Za-z0-9]+)*$" },
-    "natsUrl": { "type": "string", "pattern": "^(nats|tls)://[-.a-zA-Z0-9]+(:[0-9]{1,5})?$" },
+    "natsUrl": {
+      "description": "Clients send their ServiceAccount token there: tls://, or nats:// only to a Service in this cluster.",
+      "type": "string",
+      "pattern": "^(tls://[-.a-zA-Z0-9]+|nats://[-.a-zA-Z0-9]+\\.svc(\\.cluster\\.local)?)(:[0-9]{1,5})?$"
+    },
     "pinnedImage": {
       "type": "string",
       "pattern": "^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$",

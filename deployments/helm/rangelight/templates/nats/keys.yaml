@@ -1,0 +1,137 @@
+{{- if not .Values.nats.auth.existingSecret }}
+---
+# The NATS sign-in keys (ADR 0021 amendment), created once by the Job below before NATS and the api start:
+# files/nats/keys.sh. Its ServiceAccount, Role and script are hooks too, created first.
+apiVersion: "v1"
+kind: "ServiceAccount"
+metadata:
+  name: "rangelight-nats-keys"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "nats-keys" "component" "messaging") | nindent 4 }}
+  annotations:
+    helm.sh/hook: "pre-install,pre-upgrade"
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: "before-hook-creation,hook-succeeded"
+---
+apiVersion: "v1"
+kind: "ConfigMap"
+metadata:
+  name: "rangelight-nats-keys"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "nats-keys" "component" "messaging") | nindent 4 }}
+  annotations:
+    helm.sh/hook: "pre-install,pre-upgrade"
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: "before-hook-creation,hook-succeeded"
+data:
+  keys.sh: |
+    {{- regexReplaceAll "(?m)^ +$" (.Files.Get "files/nats/keys.sh" | nindent 4) "" }}
+  # The labels of the Secrets it creates.
+  labels.json: |
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "nats" "component" "messaging") | fromYaml | toPrettyJson | nindent 4 }}
+---
+# Create Secrets (Kubernetes can't limit create to a name) and read only the two it makes: nothing else.
+apiVersion: "rbac.authorization.k8s.io/v1"
+kind: "Role"
+metadata:
+  name: "rangelight-nats-keys"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "nats-keys" "component" "messaging") | nindent 4 }}
+  annotations:
+    helm.sh/hook: "pre-install,pre-upgrade"
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: "before-hook-creation,hook-succeeded"
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["rangelight-api-nats", "rangelight-nats-auth"]
+    verbs: ["get"]
+---
+apiVersion: "rbac.authorization.k8s.io/v1"
+kind: "RoleBinding"
+metadata:
+  name: "rangelight-nats-keys"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "nats-keys" "component" "messaging") | nindent 4 }}
+  annotations:
+    helm.sh/hook: "pre-install,pre-upgrade"
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: "before-hook-creation,hook-succeeded"
+roleRef:
+  apiGroup: "rbac.authorization.k8s.io"
+  kind: "Role"
+  name: "rangelight-nats-keys"
+subjects:
+  - kind: "ServiceAccount"
+    name: "rangelight-nats-keys"
+    namespace: {{ .Release.Namespace | quote }}
+---
+apiVersion: "batch/v1"
+kind: "Job"
+metadata:
+  name: "rangelight-nats-keys"
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "rangelight.labels" (dict "ctx" $ "name" "nats-keys" "component" "messaging") | nindent 4 }}
+  annotations:
+    helm.sh/hook: "pre-install,pre-upgrade"
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: "before-hook-creation,hook-succeeded"
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "rangelight.labels" (dict "ctx" $ "name" "nats-keys" "component" "messaging") | nindent 8 }}
+    spec:
+      restartPolicy: "Never"
+      serviceAccountName: "rangelight-nats-keys"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: "RuntimeDefault"
+      containers:
+        - name: "keys"
+          image: {{ .Values.nats.auth.keysImage | quote }}
+          command: ["/bin/sh", "/etc/rangelight/keys.sh"]
+          env:
+            - name: "NAMESPACE"
+              value: {{ .Release.Namespace | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              memory: "64Mi"
+          volumeMounts:
+            - name: "script"
+              mountPath: "/etc/rangelight"
+              readOnly: true
+            # The seeds live here until the Job ends, in memory only.
+            - name: "tmp"
+              mountPath: "/tmp"
+      volumes:
+        - name: "script"
+          configMap:
+            name: "rangelight-nats-keys"
+        - name: "tmp"
+          emptyDir:
+            medium: "Memory"
+            sizeLimit: "1Mi"
+{{- end }}

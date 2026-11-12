@@ -10,6 +10,9 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	"github.com/rangelight/rangelight/services/runner/internal/config"
+	"github.com/rangelight/rangelight/services/runner/internal/natsconn"
 )
 
 // The runner protocol (api/README.md, ADR 0021): Sessions arrive as SessionDesired on the runner's
@@ -38,6 +41,10 @@ func DesiredSubject(org, runner, session string) string {
 	return "rl." + org + ".runner." + runner + ".desired." + session
 }
 
+// DesiredStream is the org's stream of desired sessions, as the relay creates it
+// (rl_domain::subject::desired_stream): known by name, so the runner never looks streams up.
+func DesiredStream(org string) string { return "rl-" + org + "-desired" }
+
 // StatusSubject is the JetStream subject a runner reports SessionStatus on.
 func StatusSubject(org, runner string) string { return "rl." + org + ".runner." + runner + ".status" }
 
@@ -60,16 +67,18 @@ func sleep(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// AddProtocol connects to NATS at url (in the background: an unreachable server is retried with
-// backoff for ever) and adds to mgr the desired-session consumer and the status publisher. It
-// returns the reconciler's Report.
-func AddProtocol(mgr manager.Manager, url, namespace, org, runner string) (func(*Session), error) {
-	nc, err := nats.Connect(url, nats.Name(FieldManager+" "+runner), nats.Timeout(natsTimeout),
+// AddProtocol connects to cfg's NATS as the runner (natsconn; in the background: an unreachable
+// server is retried with backoff for ever) and adds to mgr the desired-session consumer and the
+// status publisher. It returns the reconciler's Report.
+func AddProtocol(mgr manager.Manager, cfg config.Config) (func(*Session), error) {
+	url, org, runner := cfg.NATSURL, cfg.Org, cfg.RunnerID
+	opts := append(natsconn.Options(cfg.NATSTokenFile, runner), nats.Name(FieldManager+" "+runner), nats.Timeout(natsTimeout),
 		nats.RetryOnFailedConnect(true), nats.MaxReconnects(-1),
 		nats.CustomReconnectDelay(func(attempts int) time.Duration { return backoff(attempts - 1) }),
 		nats.ConnectHandler(func(*nats.Conn) { slog.Info("nats connected", "url", url) }),
 		nats.ReconnectHandler(func(*nats.Conn) { slog.Info("nats reconnected", "url", url) }),
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) { slog.Warn("nats disconnected", "url", url, "error", fmt.Sprint(err)) }))
+	nc, err := nats.Connect(url, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("nats: %w", err)
 	}
@@ -79,7 +88,8 @@ func AddProtocol(mgr manager.Manager, url, namespace, org, runner string) (func(
 		return nil, fmt.Errorf("jetstream: %w", err)
 	}
 	status := newStatus(js, org, runner)
-	desired := &desired{Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), js: js, namespace: namespace, runner: runner, subject: DesiredSubject(org, runner, "*")}
+	desired := &desired{Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), js: js, namespace: cfg.Namespace,
+		runner: runner, stream: DesiredStream(org), subject: DesiredSubject(org, runner, "*")}
 	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		defer nc.Close()
 		go status.run(ctx)

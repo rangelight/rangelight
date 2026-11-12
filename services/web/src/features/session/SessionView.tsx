@@ -2,10 +2,12 @@ import { timestampMs } from "@bufbuild/protobuf/wkt";
 import type { Session } from "@gen/proto/rangelight/session/v1alpha1/session_pb.ts";
 import { ArrowLeft, PlugZap, RefreshCw, SearchX } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useState } from "react";
+import { signedOut } from "@/api/client";
 import { AppLink } from "@/components/rl/app-link";
 import { LiveStatus } from "@/components/rl/live-status";
 import { Notice } from "@/components/rl/notice";
 import { PullRequestLink } from "@/components/rl/pull-request-link";
+import { SignedOut } from "@/components/rl/signed-out";
 import { PhaseBadge, StateBadge } from "@/components/rl/state-badge";
 import { TicketLink } from "@/components/rl/ticket-link";
 import { ViewHeader } from "@/components/rl/view-header";
@@ -33,6 +35,7 @@ export function SessionView({ id }: { id: string }) {
         </Notice>
       );
     case "error":
+      if (signedOut(state.reason)) return <SignedOut />;
       return (
         <Notice
           icon={PlugZap}

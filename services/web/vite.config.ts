@@ -7,6 +7,7 @@ import { defineConfig } from "vitest/config";
 
 const api = "http://127.0.0.1:4180";
 const proxy = {
+  "/auth": api,
   "/rangelight.session.v1alpha1.SessionService": api,
   "/v1alpha1": { target: api, ws: true },
 };

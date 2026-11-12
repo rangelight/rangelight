@@ -1,7 +1,9 @@
 import type { Session } from "@gen/proto/rangelight/session/v1alpha1/session_pb.ts";
 import { Inbox, PlugZap, RefreshCw } from "lucide-react";
+import { signedOut } from "@/api/client";
 import { LiveStatus } from "@/components/rl/live-status";
 import { Notice } from "@/components/rl/notice";
+import { SignedOut } from "@/components/rl/signed-out";
 import { ViewHeader } from "@/components/rl/view-header";
 import { Button } from "@/components/ui/button";
 import { useNow } from "@/lib/time";
@@ -35,6 +37,7 @@ function Body({ state, reload }: { state: SessionsState; reload: () => void }) {
         </p>
       );
     case "error":
+      if (signedOut(state.reason)) return <SignedOut />;
       return (
         <Notice
           icon={PlugZap}

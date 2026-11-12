@@ -8,6 +8,9 @@ The Workbench: every session as a row, and each session's live event feed and te
   `api/jsonschema/terminal.v1alpha1.schema.json`. The browser never reaches NATS or a pod.
   The Sessions page follows one `WatchSessions` stream; a Session page follows `WatchSession` and
   reads the session once that stream is open (`src/api/live.ts`).
+- **Signed out**: a call the api refuses with 401 (`Unauthenticated`), or a terminal whose upgrade
+  is refused, sends the browser to `/auth/login`, which brings it back to `/`. Back within 10
+  seconds still signed out, the view shows "You're signed out" with a Sign in button instead.
 - **Look**: tokens only from `src/styles/tokens.css`, primitives in `src/components/ui`, product
   components in `src/components/rl`, one folder per feature in `src/features/`.
 - **Phones** are a first-class target: below 1024 px the session view shows its terminal and feed

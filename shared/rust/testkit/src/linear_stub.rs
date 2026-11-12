@@ -11,7 +11,7 @@ use tokio::net::{TcpListener, TcpStream};
 #[derive(Debug, Clone)]
 pub enum Reply {
     /// The seeded tickets carrying the request's `label` variable, as Linear filters them,
-    /// paged by its `first` and `after` variables.
+    /// paged by its `first` and `after` variables; and success to every `attachmentCreate`.
     Tickets(Vec<Seed>),
     /// This GraphQL answer, verbatim, with status 200.
     Answer(Value),
@@ -73,6 +73,16 @@ impl Drop for LinearStub {
 async fn serve(mut stream: TcpStream, reply: &Reply, seen: &Mutex<Vec<StubRequest>>) {
     let request = read_request(&mut stream).await;
     let (status, body) = match reply {
+        Reply::Tickets(_)
+            if request.body["query"]
+                .as_str()
+                .is_some_and(|q| q.contains("attachmentCreate")) =>
+        {
+            (
+                200,
+                json!({ "data": { "attachmentCreate": { "success": true } } }),
+            )
+        }
         Reply::Tickets(tickets) => (200, page(tickets, &request.body)),
         Reply::Answer(answer) => (200, answer.clone()),
         Reply::Status(status) => {

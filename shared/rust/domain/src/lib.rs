@@ -1,15 +1,17 @@
 //! Rangelight's domain: session ids, the session state machine and phases, tickets, members,
-//! workspaces and the commands that change sessions. Sync, no I/O, no clock, no environment
+//! workspaces, pull requests and the commands that change sessions. Sync, no I/O, no clock, no environment
 //! (ADR 0049 §2.1).
 #![deny(missing_docs)]
 
 mod member;
+mod pull_request;
 mod session;
 pub mod subject;
 pub(crate) mod ticket;
 mod workspace;
 
 pub use member::Member;
+pub use pull_request::{PullRequest, Upstream};
 pub use session::{
     Change, ChangeState, EventId, NewSession, PHASE_MESSAGE_MAX, Phase, ReportPhase, SessionId,
     State,
@@ -43,6 +45,9 @@ pub enum DomainError {
     /// A NATS subject token is empty or holds `.`, `*`, `>` or whitespace.
     #[error("invalid subject token {0:?}")]
     InvalidToken(String),
+    /// A repo upstream that isn't `https://github.com/<owner>/<repo>`.
+    #[error("the upstream must be https://github.com/<owner>/<repo>")]
+    InvalidUpstream,
     /// A username that isn't a member name (see [`Member`]). Holds nothing from the input.
     #[error("the username is not a valid member name")]
     InvalidMember,

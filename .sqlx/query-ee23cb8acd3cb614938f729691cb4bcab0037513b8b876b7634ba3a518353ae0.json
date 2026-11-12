@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- One session.\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, state, phase,\n  generation, created_at\nFROM sessions\nWHERE id = $1\n",
+  "query": "-- One session.\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, state, phase,\n  pull_request_url, generation, created_at\nFROM sessions\nWHERE id = $1\n",
   "describe": {
     "columns": [
       {
@@ -115,6 +115,17 @@
       },
       {
         "ordinal": 10,
+        "name": "pull_request_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "pull_request_url"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
         "name": "generation",
         "type_info": "Int8",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -152,9 +163,10 @@
       false,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "ce3313a5f4e7059764594608a41079dff9b302ad24a5a60ecb010d12a4c4660b"
+  "hash": "ee23cb8acd3cb614938f729691cb4bcab0037513b8b876b7634ba3a518353ae0"
 }

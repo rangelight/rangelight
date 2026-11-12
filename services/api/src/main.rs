@@ -1,8 +1,11 @@
 //! The api binary: loads config, starts telemetry, migrates, wires Postgres, NATS, Linear and
-//! OIDC, and runs the intake loop, the status consumer and the server until SIGTERM or Ctrl-C.
+//! OIDC, and runs the intake and link loops, the status consumer and the server until SIGTERM or
+//! Ctrl-C.
 
 use anyhow::Context;
-use api::{Auth, SessionApi, config::Config, intake_loop, serve, status, viewers_client};
+use api::{
+    Auth, SessionApi, config::Config, intake_loop, link_loop, serve, status, viewers_client,
+};
 use rl_store::Store;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
@@ -11,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 async fn main() -> anyhow::Result<()> {
     let config = Config::load()?;
     rl_telemetry::init(&config.log)?;
-    let workspace = config.workspace()?;
+    let (workspace, upstream) = (config.workspace()?, config.upstream()?);
     let roots = config.extra_roots()?;
     let store = Store::connect(&config.database_url.read()?)
         .await
@@ -44,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
         }
         stop.cancel();
     });
+    let links = tokio::spawn(link_loop(store.clone(), linear.clone(), cancel.clone()));
     let intake = tokio::spawn(intake_loop(
         store.clone(),
         linear,
@@ -51,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
         cancel.clone(),
     ));
     let reports = tokio::spawn(status::consume(
-        store.clone(),
+        status::Recorder::new(store.clone(), upstream),
         nats.clone(),
         config.org.clone(),
         config.stream_replicas,
@@ -66,6 +70,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .await;
     intake.await?;
+    links.await?;
     reports.await?;
     Ok(())
 }

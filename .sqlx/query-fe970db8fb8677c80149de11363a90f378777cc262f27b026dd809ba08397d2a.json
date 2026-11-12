@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- The session's state, repo and pull request, locked until the command's transaction ends.\nSELECT state, repo, pull_request_url FROM sessions WHERE id = $1 FOR UPDATE\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "repo",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "repo"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "pull_request_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "pull_request_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "fe970db8fb8677c80149de11363a90f378777cc262f27b026dd809ba08397d2a"
+}

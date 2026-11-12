@@ -327,7 +327,9 @@ api:
   # The api image, by tag and digest: ghcr.io/rangelight/api:<sha>@sha256:<digest>, built by
   # .github/workflows/images.yaml. Required when enabled.
   image: ""
-  # The git mirror's name for the repo the sessions work on (a gitMirror.repos name, without .git). Required.
+  # The git mirror's name for the repo the sessions work on (a gitMirror.repos name, without .git). Required. Its
+  # gitMirror.repos upstream, when that is https://github.com/<owner>/<repo>, is where the lanes' pull requests are:
+  # the api keeps them and attaches them to their tickets.
   repo: ""
   # The repo's approved base branch: lanes start there, and the profile is read there (ADR 0041).
   baseRef: "main"

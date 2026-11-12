@@ -151,6 +151,7 @@ message SessionStatus {
   repeated string preview_urls = 6;
   string node_name = 7;
   string message = 8;
+  string pull_request_url = 9;
 }
 
 // CP -> runner, request/reply on rl.<org>.runner.<runner>.cmd

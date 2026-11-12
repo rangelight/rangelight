@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- A link of the session's pull request $2 failed at $3: tried then, and refused for good when $4.\n-- A no-op if its pull request isn't $2.\nUPDATE sessions SET\n  pull_request_link_tried_at = $3::timestamptz,\n  pull_request_link_refused_at = CASE WHEN $4::boolean THEN $3::timestamptz END\nWHERE id = $1 AND pull_request_url = $2\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ba0165b9ef3d6b8c1563acea6f0b8fb7e8153a5c6dfab7556c523009d4a6aa09"
+}

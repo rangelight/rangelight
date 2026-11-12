@@ -37,6 +37,20 @@ test("a runner's report moves the session's phase", () => {
   });
 });
 
+test("a report that names the session's PR links it, and the first one stays", () => {
+  const pr = (seq: bigint, pullRequestUrl: string) =>
+    create(EventSchema, {
+      sessionId: "s1",
+      seq,
+      change: { kind: { case: "phaseChanged", value: { phase: Phase.RUNNING, pullRequestUrl } } },
+    });
+  const [opened] = applyEvent([session], pr(4n, "https://github.com/acme/shop/pull/7"));
+  expect(opened?.pullRequestUrl).toBe("https://github.com/acme/shop/pull/7");
+  expect(opened && applyEvent([opened], pr(5n, ""))[0]?.pullRequestUrl).toBe(
+    "https://github.com/acme/shop/pull/7",
+  );
+});
+
 test("a creation adds the session on top, once", () => {
   const created = create(EventSchema, {
     sessionId: "s2",

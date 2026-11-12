@@ -35,5 +35,11 @@ data:
   {{- end }}
   RANGELIGHT_API_REPO: {{ required "api.repo is required" .Values.api.repo | quote }}
   RANGELIGHT_API_BASE_REF: {{ .Values.api.baseRef | quote }}
+  {{- /* The repo's upstream, from its gitMirror.repos entry: the only repo whose pull requests a session keeps. */}}
+  {{- range .Values.gitMirror.repos }}
+  {{- if eq .name $.Values.api.repo }}
+  RANGELIGHT_API_UPSTREAM: {{ .upstream | quote }}
+  {{- end }}
+  {{- end }}
   RANGELIGHT_API_MEMBER: {{ required "api.member is required" .Values.api.member | quote }}
   RANGELIGHT_API_STREAM_REPLICAS: {{ .Values.api.streamReplicas | quote }}

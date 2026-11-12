@@ -85,8 +85,11 @@ export function applyEvent(list: readonly Session[], e: Event): Session[] {
   return list.map((s) => {
     if (s.id !== e.sessionId || e.seq <= s.generation) return s;
     const state = kind?.case === "stateChanged" ? kind.value.state : s.state;
-    const phase = kind?.case === "phaseChanged" ? kind.value.phase : s.phase;
-    return { ...s, state, phase, generation: e.seq };
+    const reported = kind?.case === "phaseChanged" ? kind.value : undefined;
+    const phase = reported?.phase ?? s.phase;
+    // Only the report that first names the session's PR carries it; the first one stays.
+    const pullRequestUrl = s.pullRequestUrl || (reported?.pullRequestUrl ?? "");
+    return { ...s, state, phase, pullRequestUrl, generation: e.seq };
   });
 }
 

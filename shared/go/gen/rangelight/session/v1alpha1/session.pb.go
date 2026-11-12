@@ -29,21 +29,22 @@ const (
 )
 
 type Session struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                // UUIDv7
-	Tracker       string                 `protobuf:"bytes,2,opt,name=tracker,proto3" json:"tracker,omitempty"`                      // "linear"
-	TicketId      string                 `protobuf:"bytes,3,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`    // the tracker's id
-	TicketKey     string                 `protobuf:"bytes,4,opt,name=ticket_key,json=ticketKey,proto3" json:"ticket_key,omitempty"` // e.g. "RAN-34"
-	Title         string                 `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
-	Namespace     string                 `protobuf:"bytes,6,opt,name=namespace,proto3" json:"namespace,omitempty"` // rl-<ticket key>
-	State         v1alpha1.DesiredState  `protobuf:"varint,7,opt,name=state,proto3,enum=rangelight.runner.v1alpha1.DesiredState" json:"state,omitempty"`
-	Generation    uint64                 `protobuf:"varint,8,opt,name=generation,proto3" json:"generation,omitempty"`                             // the seq of the session's last event
-	Phase         v1alpha1.Phase         `protobuf:"varint,9,opt,name=phase,proto3,enum=rangelight.runner.v1alpha1.Phase" json:"phase,omitempty"` // as its runner last reported it; unspecified before the first report
-	Repo          string                 `protobuf:"bytes,10,opt,name=repo,proto3" json:"repo,omitempty"`                                         // the git mirror repo it works in
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	TicketUrl     string                 `protobuf:"bytes,12,opt,name=ticket_url,json=ticketUrl,proto3" json:"ticket_url,omitempty"` // the ticket in its tracker, https; empty for sessions from before it was recorded
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                // UUIDv7
+	Tracker        string                 `protobuf:"bytes,2,opt,name=tracker,proto3" json:"tracker,omitempty"`                      // "linear"
+	TicketId       string                 `protobuf:"bytes,3,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`    // the tracker's id
+	TicketKey      string                 `protobuf:"bytes,4,opt,name=ticket_key,json=ticketKey,proto3" json:"ticket_key,omitempty"` // e.g. "RAN-34"
+	Title          string                 `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
+	Namespace      string                 `protobuf:"bytes,6,opt,name=namespace,proto3" json:"namespace,omitempty"` // rl-<ticket key>
+	State          v1alpha1.DesiredState  `protobuf:"varint,7,opt,name=state,proto3,enum=rangelight.runner.v1alpha1.DesiredState" json:"state,omitempty"`
+	Generation     uint64                 `protobuf:"varint,8,opt,name=generation,proto3" json:"generation,omitempty"`                             // the seq of the session's last event
+	Phase          v1alpha1.Phase         `protobuf:"varint,9,opt,name=phase,proto3,enum=rangelight.runner.v1alpha1.Phase" json:"phase,omitempty"` // as its runner last reported it; unspecified before the first report
+	Repo           string                 `protobuf:"bytes,10,opt,name=repo,proto3" json:"repo,omitempty"`                                         // the git mirror repo it works in
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	TicketUrl      string                 `protobuf:"bytes,12,opt,name=ticket_url,json=ticketUrl,proto3" json:"ticket_url,omitempty"`                  // the ticket in its tracker, https; empty for sessions from before it was recorded
+	PullRequestUrl string                 `protobuf:"bytes,13,opt,name=pull_request_url,json=pullRequestUrl,proto3" json:"pull_request_url,omitempty"` // the lane's PR on GitHub; empty until the runner reports one
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Session) Reset() {
@@ -156,6 +157,13 @@ func (x *Session) GetCreatedAt() *timestamppb.Timestamp {
 func (x *Session) GetTicketUrl() string {
 	if x != nil {
 		return x.TicketUrl
+	}
+	return ""
+}
+
+func (x *Session) GetPullRequestUrl() string {
+	if x != nil {
+		return x.PullRequestUrl
 	}
 	return ""
 }
@@ -901,6 +909,7 @@ type PhaseChanged struct {
 	ObservedGeneration uint64                 `protobuf:"varint,3,opt,name=observed_generation,json=observedGeneration,proto3" json:"observed_generation,omitempty"` // the SessionDesired.generation the runner had applied
 	MessageId          string                 `protobuf:"bytes,4,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`                             // the SessionStatus Envelope.message_id this event records
 	SentAt             *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`                                      // the Envelope.sent_at: when the runner sent it
+	PullRequestUrl     string                 `protobuf:"bytes,6,opt,name=pull_request_url,json=pullRequestUrl,proto3" json:"pull_request_url,omitempty"`            // set on the report that first names the session's PR, empty otherwise
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -970,11 +979,18 @@ func (x *PhaseChanged) GetSentAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *PhaseChanged) GetPullRequestUrl() string {
+	if x != nil {
+		return x.PullRequestUrl
+	}
+	return ""
+}
+
 var File_rangelight_session_v1alpha1_session_proto protoreflect.FileDescriptor
 
 const file_rangelight_session_v1alpha1_session_proto_rawDesc = "" +
 	"\n" +
-	")rangelight/session/v1alpha1/session.proto\x12\x1brangelight.session.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a'rangelight/runner/v1alpha1/runner.proto\"\xaa\x03\n" +
+	")rangelight/session/v1alpha1/session.proto\x12\x1brangelight.session.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a'rangelight/runner/v1alpha1/runner.proto\"\xd4\x03\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\atracker\x18\x02 \x01(\tR\atracker\x12\x1b\n" +
@@ -993,7 +1009,8 @@ const file_rangelight_session_v1alpha1_session_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"ticket_url\x18\f \x01(\tR\tticketUrl\"\x15\n" +
+	"ticket_url\x18\f \x01(\tR\tticketUrl\x12(\n" +
+	"\x10pull_request_url\x18\r \x01(\tR\x0epullRequestUrl\"\x15\n" +
 	"\x13ListSessionsRequest\"X\n" +
 	"\x14ListSessionsResponse\x12@\n" +
 	"\bsessions\x18\x01 \x03(\v2$.rangelight.session.v1alpha1.SessionR\bsessions\"2\n" +
@@ -1037,14 +1054,15 @@ const file_rangelight_session_v1alpha1_session_proto_rawDesc = "" +
 	"ticket_url\x18\x06 \x01(\tR\tticketUrl\x12\x12\n" +
 	"\x04repo\x18\a \x01(\tR\x04repo\"N\n" +
 	"\fStateChanged\x12>\n" +
-	"\x05state\x18\x01 \x01(\x0e2(.rangelight.runner.v1alpha1.DesiredStateR\x05state\"\xe6\x01\n" +
+	"\x05state\x18\x01 \x01(\x0e2(.rangelight.runner.v1alpha1.DesiredStateR\x05state\"\x90\x02\n" +
 	"\fPhaseChanged\x127\n" +
 	"\x05phase\x18\x01 \x01(\x0e2!.rangelight.runner.v1alpha1.PhaseR\x05phase\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12/\n" +
 	"\x13observed_generation\x18\x03 \x01(\x04R\x12observedGeneration\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x04 \x01(\tR\tmessageId\x123\n" +
-	"\asent_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt2\xe5\x03\n" +
+	"\asent_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x12(\n" +
+	"\x10pull_request_url\x18\x06 \x01(\tR\x0epullRequestUrl2\xe5\x03\n" +
 	"\x0eSessionService\x12s\n" +
 	"\fListSessions\x120.rangelight.session.v1alpha1.ListSessionsRequest\x1a1.rangelight.session.v1alpha1.ListSessionsResponse\x12m\n" +
 	"\n" +

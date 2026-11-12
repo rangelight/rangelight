@@ -5,7 +5,9 @@ use std::time::{Duration, Instant, SystemTime};
 
 use rl_app::{IdGen, change_state, intake};
 use rl_chain::{Link, Record};
-use rl_domain::{EventId, INTAKE_LABEL, NewSession, Phase, ReportPhase, SessionId, State};
+use rl_domain::{
+    EventId, INTAKE_LABEL, NewSession, Phase, ReportPhase, SessionId, State, Upstream,
+};
 use rl_proto::rangelight::session::v1alpha1::__buffa::oneof::change::Kind;
 use rl_store::{ChainEvent, SessionRow, Store, StoreError};
 use rl_testkit::{Database, FakeTickets, FixedClock, SeqIds, ticket};
@@ -336,6 +338,7 @@ async fn a_late_report_never_undoes_a_newer_phase() {
         phase,
         message: String::new(),
         observed_generation: 1,
+        pull_request: None,
     };
     assert!(
         store
@@ -364,4 +367,110 @@ async fn a_late_report_never_undoes_a_newer_phase() {
         "both reports are events"
     );
     assert_replays(&store).await;
+}
+
+/// RAN-56: the first pull request of the session's own repo is stored and stays; one on another
+/// repo's upstream isn't; the session is unlinked until its ticket links that very pull request.
+#[tokio::test]
+async fn a_session_keeps_its_first_pull_request_until_linked() {
+    let store = rl_testkit::store("store::pull_request").await;
+    let ids = SeqIds::default();
+    let command = new_session(1, &ids).await;
+    assert!(create(&store, &command).await);
+    let report = |repo: &str, url: &str| ReportPhase {
+        session: command.id,
+        event: EventId(ids.new_id()),
+        at: clock().0,
+        message_id: uuid::Uuid::now_v7(),
+        sent_at: None,
+        phase: Phase::Running,
+        message: String::new(),
+        observed_generation: 1,
+        pull_request: Upstream::new(repo, "https://github.com/acme/shop")
+            .unwrap()
+            .pull_request(url),
+    };
+    let (first, second) = (
+        "https://github.com/acme/shop/pull/1",
+        "https://github.com/acme/shop/pull/2",
+    );
+    let pull_request = || async {
+        store.list_sessions(1).await.unwrap()[0]
+            .pull_request_url
+            .clone()
+    };
+    store.report_phase(&report("other", first)).await.unwrap();
+    assert_eq!(pull_request().await, None, "another repo's");
+    store.report_phase(&report("shop", first)).await.unwrap();
+    store.report_phase(&report("shop", second)).await.unwrap();
+    assert_eq!(
+        pull_request().await.as_deref(),
+        Some(first),
+        "the first stays"
+    );
+    assert_replays(&store).await;
+
+    let unlinked = store.unlinked_pull_requests(10).await.unwrap();
+    assert_eq!(
+        unlinked.iter().map(|s| s.id).collect::<Vec<_>>(),
+        [command.id]
+    );
+    store
+        .pull_request_linked(command.id, second, clock().0)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.unlinked_pull_requests(10).await.unwrap().len(),
+        1,
+        "not its PR"
+    );
+    store
+        .pull_request_linked(command.id, first, clock().0)
+        .await
+        .unwrap();
+    assert_eq!(store.unlinked_pull_requests(10).await.unwrap(), []);
+}
+
+/// RAN-56 review M1: a failed link goes behind the untried ones, and a refused one is never listed
+/// again.
+#[tokio::test]
+async fn a_failed_link_waits_its_turn_and_a_refused_one_ends() {
+    let store = rl_testkit::store("store::link_failed").await;
+    let ids = SeqIds::default();
+    let upstream = Upstream::new("shop", "https://github.com/acme/shop").unwrap();
+    let mut sessions = Vec::new();
+    for n in 1..=2 {
+        let command = new_session(n, &ids).await;
+        assert!(create(&store, &command).await);
+        let url = format!("https://github.com/acme/shop/pull/{n}");
+        let report = ReportPhase {
+            session: command.id,
+            event: EventId(ids.new_id()),
+            at: clock().0,
+            message_id: uuid::Uuid::now_v7(),
+            sent_at: None,
+            phase: Phase::Running,
+            message: String::new(),
+            observed_generation: 1,
+            pull_request: upstream.pull_request(&url),
+        };
+        store.report_phase(&report).await.unwrap();
+        sessions.push((command.id, url));
+    }
+    let listed = || async {
+        let rows = store.unlinked_pull_requests(10).await.unwrap();
+        rows.into_iter().map(|s| s.id).collect::<Vec<_>>()
+    };
+    let [(first, first_url), (second, second_url)] = <[_; 2]>::try_from(sessions).unwrap();
+    assert_eq!(listed().await, [first, second], "oldest first");
+    store
+        .pull_request_link_failed(first, &first_url, clock().0, false)
+        .await
+        .unwrap();
+    assert_eq!(listed().await, [second, first], "the tried one waits");
+    store
+        .pull_request_link_failed(second, &second_url, clock().0, true)
+        .await
+        .unwrap();
+    assert_eq!(listed().await, [first], "the refused one ends");
 }

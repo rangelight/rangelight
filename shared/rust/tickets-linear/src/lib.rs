@@ -1,5 +1,6 @@
 //! The Linear adapter for `TicketSource` (ADR 0049 §2.2): lists a team's open issues labelled
-//! `rangelight` through Linear's GraphQL API, 50 per page.
+//! `rangelight` through Linear's GraphQL API, 50 per page, and attaches a lane's pull request to
+//! its issue.
 //!
 //! The API key is read from its secret file at each poll and sent only in the `Authorization`
 //! header. It is never logged, and errors never carry it or a response body.
@@ -16,7 +17,8 @@ use rl_domain::{INTAKE_LABEL, Ticket, Tracker};
 use rustls::pki_types::CertificateDer;
 use secrecy::ExposeSecret;
 use serde::Deserialize;
-use serde_json::json;
+use serde::de::DeserializeOwned;
+use serde_json::{Value, json};
 
 /// Linear's GraphQL endpoint.
 pub const API_URL: &str = "https://api.linear.app/graphql";
@@ -34,6 +36,11 @@ const QUERY: &str = "query Intake($team: String!, $label: String!, $first: Int!,
     nodes { id identifier title description url }
     pageInfo { hasNextPage endCursor }
   }
+}";
+
+// attachmentCreate is idempotent by URL per issue: a second one updates the first.
+const LINK: &str = "mutation Link($issue: String!, $url: String!, $title: String!) {
+  attachmentCreate(input: { issueId: $issue, url: $url, title: $title }) { success }
 }";
 
 /// A Linear team's issues as a [`TicketSource`].
@@ -83,14 +90,24 @@ impl Linear {
     }
 
     async fn page(&self, after: Option<&str>) -> Result<Issues, TicketError> {
+        let variables =
+            json!({ "team": self.team, "label": INTAKE_LABEL, "first": PAGE, "after": after });
+        let data: Option<Data> = self.graphql(QUERY, variables).await?;
+        data.map(|data| data.issues)
+            .ok_or_else(|| TicketError::Malformed("no data in the answer".into()))
+    }
+
+    /// Linear's answer's `data` to `query` with `variables`.
+    async fn graphql<T: DeserializeOwned>(
+        &self,
+        query: &str,
+        variables: Value,
+    ) -> Result<Option<T>, TicketError> {
         let key = self
             .api_key
             .read()
             .map_err(|e| TicketError::Credential(e.to_string()))?;
-        let body = json!({
-            "query": QUERY,
-            "variables": { "team": self.team, "label": INTAKE_LABEL, "first": PAGE, "after": after },
-        });
+        let body = json!({ "query": query, "variables": variables });
         let mut authorization = HeaderValue::from_str(key.expose_secret())
             .map_err(|_| TicketError::Credential("the key isn't a valid header value".into()))?;
         // Kept out of reqwest's and hyper's debug output.
@@ -116,14 +133,11 @@ impl Linear {
             )));
         }
         // No parser detail: serde quotes the offending value, which may echo the request.
-        let answer: Answer = response
+        let answer: Answer<T> = response
             .json()
             .await
-            .map_err(|_| TicketError::Malformed("the answer isn't a page of issues".into()))?;
-        answer
-            .data
-            .map(|data| data.issues)
-            .ok_or_else(|| TicketError::Malformed("no data in the answer".into()))
+            .map_err(|_| TicketError::Malformed("the answer isn't what was asked".into()))?;
+        Ok(answer.data)
     }
 }
 
@@ -154,6 +168,28 @@ impl TicketSource for Linear {
             "more than {MAX_PAGES} pages"
         )))
     }
+
+    async fn link_pull_request(&self, ticket_id: &str, url: &str) -> Result<(), TicketError> {
+        // The PR's number, as GitHub titles it: the url's last segment.
+        let title = format!(
+            "Pull request #{}",
+            url.rsplit('/').next().unwrap_or_default()
+        );
+        let variables = json!({ "issue": ticket_id, "url": url, "title": title });
+        let data: Option<Linked> = self.graphql(LINK, variables).await?;
+        if data
+            .and_then(|data| data.attachment_create)
+            .is_some_and(|created| created.success)
+        {
+            return Ok(());
+        }
+        // A 200 with a GraphQL error (say, the issue is gone) and no attachment: Linear answered
+        // and said no. Network failures, 5xx and rate limits (HTTP 400) are Unavailable above.
+        // Its text stays out: it is untrusted and may echo the request.
+        Err(TicketError::Refused(
+            "Linear didn't attach the pull request".into(),
+        ))
+    }
 }
 
 impl Linear {
@@ -182,8 +218,8 @@ impl Linear {
 }
 
 #[derive(Deserialize)]
-struct Answer {
-    data: Option<Data>,
+struct Answer<T> {
+    data: Option<T>,
 }
 
 #[derive(Deserialize)]
@@ -214,4 +250,16 @@ struct Node {
     description: Option<String>,
     /// The issue's page.
     url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Linked {
+    /// Null next to a GraphQL error.
+    attachment_create: Option<Success>,
+}
+
+#[derive(Deserialize)]
+struct Success {
+    success: bool,
 }

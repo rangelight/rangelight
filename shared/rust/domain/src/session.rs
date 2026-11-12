@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use uuid::Uuid;
 
-use crate::{DomainError, Ticket, Workspace};
+use crate::{DomainError, PullRequest, Ticket, Workspace};
 
 /// A session's id, a UUIDv7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -215,6 +215,8 @@ pub struct ReportPhase {
     pub message: String,
     /// The `SessionDesired.generation` the runner had applied.
     pub observed_generation: u64,
+    /// The lane's pull request, when the runner named one on the configured repo's upstream.
+    pub pull_request: Option<PullRequest>,
 }
 
 /// The longest phase message kept, in characters: the runner's own cap (the CRD's
@@ -222,15 +224,23 @@ pub struct ReportPhase {
 pub const PHASE_MESSAGE_MAX: usize = 2000;
 
 impl ReportPhase {
-    /// What this command records.
+    /// What this command records on a session that works in `repo` and has `recorded` as its
+    /// pull request. The reported one is recorded only when it is on `repo`'s upstream and the
+    /// session has none yet: a session's first pull request stays its pull request.
     #[must_use]
-    pub fn change(&self) -> Change {
+    pub fn change(&self, repo: &str, recorded: Option<&str>) -> Change {
+        let pull_request_url = self
+            .pull_request
+            .as_ref()
+            .filter(|pr| pr.repo() == repo && recorded.is_none())
+            .map(|pr| pr.url().to_owned());
         Change::PhaseChanged {
             phase: self.phase,
             message: self.message.chars().take(PHASE_MESSAGE_MAX).collect(),
             observed_generation: self.observed_generation,
             message_id: self.message_id,
             sent_at: self.sent_at,
+            pull_request_url,
         }
     }
 }
@@ -272,6 +282,8 @@ pub enum Change {
         message_id: Uuid,
         /// When the runner sent it.
         sent_at: Option<SystemTime>,
+        /// The session's pull request, on the report that first names it.
+        pull_request_url: Option<String>,
     },
 }
 

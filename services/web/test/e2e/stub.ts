@@ -46,6 +46,7 @@ const Report = z.object({
   sessionId: z.string(),
   phase: z.enum(Phase),
   message: z.string().default(""),
+  pullRequestUrl: z.string().default(""),
 });
 
 interface Watcher {
@@ -145,13 +146,19 @@ function emit(sessionId: string, state: DesiredState, atMs = Date.now()): void {
   );
 }
 
-/** A runner's report, recorded as the api records it. */
-function report(sessionId: string, phase: Phase, message: string): void {
+/** A runner's report, recorded as the api records it: the session keeps its first PR. */
+function report(sessionId: string, phase: Phase, message: string, pullRequestUrl: string): void {
   const session = world.sessions.find((s) => s.id === sessionId);
-  if (session) session.phase = phase;
+  const recorded = session?.pullRequestUrl ? "" : pullRequestUrl;
+  if (session) {
+    session.phase = phase;
+    session.pullRequestUrl ||= recorded;
+  }
   commit(
     sessionId,
-    create(ChangeSchema, { kind: { case: "phaseChanged", value: { phase, message } } }),
+    create(ChangeSchema, {
+      kind: { case: "phaseChanged", value: { phase, message, pullRequestUrl: recorded } },
+    }),
   );
 }
 
@@ -243,8 +250,8 @@ function command(name: string, b: unknown): unknown {
       add(StubSessionSchema.parse(b));
       return {};
     case "report": {
-      const { sessionId, phase, message } = Report.parse(b);
-      report(sessionId, phase, message);
+      const { sessionId, phase, message, pullRequestUrl } = Report.parse(b);
+      report(sessionId, phase, message, pullRequestUrl);
       return {};
     }
     case "abort":

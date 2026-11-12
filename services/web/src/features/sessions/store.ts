@@ -1,6 +1,16 @@
-// The Sessions page's state: one WatchSessions stream, a snapshot and then every change.
+// Every session, live: one WatchSessions stream for the whole Workbench (the shell's fleet and the
+// Sessions page share it), a snapshot and then every change.
 import type { Session } from "@gen/proto/rangelight/session/v1alpha1/session_pb.ts";
-import { useCallback, useEffect, useState } from "react";
+import {
+  createContext,
+  createElement,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import { signedOut } from "@/api/client";
 import { applyEvent, followAll, type WatchEnd } from "@/api/live";
 
 export type SessionsState =
@@ -8,7 +18,23 @@ export type SessionsState =
   | { status: "error"; reason: string }
   | { status: "ready"; sessions: Session[]; paused: Exclude<WatchEnd, "cancelled"> | null };
 
-export function useSessions(): { state: SessionsState; reload: () => void } {
+/** A stream that stopped or failed is tried again this long after. */
+const RETRY_MS = 10_000;
+
+/** Whether the stream should be tried again on its own: it stopped or failed, for any reason but a
+ * missing login (that one is the sign-in redirect's, whose loop guard a retry would defeat). */
+export const retries = (state: SessionsState): boolean =>
+  (state.status === "error" && !signedOut(state.reason)) ||
+  (state.status === "ready" && state.paused !== null);
+
+interface Value {
+  state: SessionsState;
+  reload: () => void;
+}
+
+const Sessions = createContext<Value | null>(null);
+
+export function SessionsProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SessionsState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -40,5 +66,21 @@ export function useSessions(): { state: SessionsState; reload: () => void } {
     setState({ status: "loading" });
     setAttempt((n) => n + 1);
   }, []);
-  return { state, reload };
+
+  useEffect(() => {
+    if (!retries(state)) return;
+    const timer = setTimeout(reload, RETRY_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [state, reload]);
+
+  return createElement(Sessions.Provider, { value: { state, reload } }, children);
+}
+
+/** The shared stream's state, and a way to reload it now. */
+export function useSessions(): Value {
+  const value = useContext(Sessions);
+  if (!value) throw new Error("useSessions outside SessionsProvider");
+  return value;
 }

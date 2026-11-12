@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { elapsed, useNow } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Feed } from "./Feed";
+import { StageStrip } from "./StageStrip";
 import { useSession } from "./store";
 import { Terminal } from "./Terminal";
 
@@ -49,13 +50,16 @@ export function SessionView({ id }: { id: string }) {
     case "loading":
     case "ready":
       return (
-        // A narrow touch screen with the terminal focused (the soft keyboard up): the header yields its
-        // rows to the terminal.
-        <div className="flex h-full min-w-0 flex-col max-lg:pointer-coarse:[&:has(.xterm:focus-within)>header]:hidden">
+        // A narrow touch screen with the terminal focused (the soft keyboard up): the header and the
+        // stage strip yield their rows to the terminal.
+        <div className="flex h-full min-w-0 flex-col max-lg:pointer-coarse:[&:has(.xterm:focus-within)>:is(header,[data-strip])]:hidden">
           {state.status === "ready" ? (
-            <Header session={state.session}>
-              <LiveStatus paused={watch === "watching" ? null : watch} onReconnect={reconnect} />
-            </Header>
+            <>
+              <Header session={state.session}>
+                <LiveStatus paused={watch === "watching" ? null : watch} onReconnect={reconnect} />
+              </Header>
+              <StageStrip phase={state.session.phase} />
+            </>
           ) : (
             <LoadingHeader />
           )}

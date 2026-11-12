@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
 import { z } from "zod";
+import { shellQuote } from "./pty.ts";
 import type { RuntimeEvent } from "./runtime.ts";
 
 // The Claude Code hook inputs the agent subscribes to, with only the fields it uses.
@@ -13,10 +14,15 @@ const hookSchema = z.discriminatedUnion("hook_event_name", [
     compact_summary: z.string(),
   }),
   z.object({ hook_event_name: z.literal("Stop") }),
+  // The session is up: past the workspace-trust dialog, which holds it back until the member answers.
+  z.object({ hook_event_name: z.literal("SessionStart") }),
 ]);
 
 /** A validated Claude Code hook input. */
 export type Hook = z.infer<typeof hookSchema>;
+
+/** The hooks of a session's turns and tools (every one but SessionStart). */
+export type TurnHook = Exclude<Hook, { hook_event_name: "SessionStart" }>;
 
 // A PostToolUse input carries the whole tool response; past this it's refused, not buffered.
 const MAX_BODY = 16 * 1024 * 1024;
@@ -36,7 +42,7 @@ export function stageOf(toolName: string): string {
  * The runtime event for a hook. A tool call reports only the tool's name: its input and output
  * may hold anything the model saw, and events leave the pod.
  */
-export function toRuntimeEvent(hook: Hook): RuntimeEvent {
+export function toRuntimeEvent(hook: TurnHook): RuntimeEvent {
   switch (hook.hook_event_name) {
     case "UserPromptSubmit":
       return { kind: "turn_start" };
@@ -73,8 +79,24 @@ export function hookSettings(url: string): object {
       PostToolUse: [{ matcher: "*", hooks: http }],
       PostCompact: [{ hooks: http }],
       Stop: [{ hooks: http }],
+      ...sessionStartHook(url),
     },
   };
+}
+
+// Posts a SessionStart to the endpoint in argv[1]: a fixed script, no hook input in it.
+const POST_SESSION_START = `fetch(process.argv[1], { method: "POST", body: '{"hook_event_name":"SessionStart"}' }).catch(() => {});`;
+
+/**
+ * The SessionStart hook to the endpoint at `url`. Claude Code runs no HTTP hook for SessionStart, so
+ * it is a command: this agent's own node posting it there. The command line holds only that fixed
+ * script and `url`, the agent's own.
+ */
+export function sessionStartHook(url: string): {
+  SessionStart: [{ hooks: [{ type: "command"; command: string }] }];
+} {
+  const command = [process.execPath, "-e", POST_SESSION_START, url].map(shellQuote).join(" ");
+  return { SessionStart: [{ hooks: [{ type: "command", command }] }] };
 }
 
 /** A running hook endpoint. */

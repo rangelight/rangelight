@@ -2,7 +2,13 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { readlink } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { ChildEnv } from "../config.ts";
-import { hookSettings, listenForHooks, toRuntimeEvent, type HookServer } from "./hooks.ts";
+import {
+  hookSettings,
+  listenForHooks,
+  sessionStartHook,
+  toRuntimeEvent,
+  type HookServer,
+} from "./hooks.ts";
 import { claudeOf, end, shellQuote, stty } from "./pty.ts";
 import type { AgentRuntime, InjectResult, OnRuntimeEvent } from "./runtime.ts";
 import { RESUME_FAILED, Turns } from "./runtime.ts";
@@ -14,6 +20,13 @@ import { RESUME_FAILED, Turns } from "./runtime.ts";
  */
 export const SIGN_IN_QUESTION =
   "Please sign in to Claude: open this lane's terminal, type /login, and answer Yes when Claude asks whether you trust the folder. The lane starts by itself once you're signed in.";
+
+/**
+ * What the member sees when the session's claude waits on Claude Code's workspace-trust dialog
+ * (no supported setting answers it ahead of time for an interactive session).
+ */
+export const TRUST_QUESTION =
+  "Please open this lane's terminal and answer Yes when Claude asks whether you trust the folder. The lane starts by itself then.";
 
 /** Options for {@link CliRuntime}. */
 export interface CliOptions {
@@ -30,6 +43,10 @@ export interface CliOptions {
   onOutput?: (chunk: Buffer) => void;
   /** How often to check for a login while waiting for one. */
   signInPollMs?: number;
+  /** How long the session's claude may take to start before the agent asks about trust. */
+  trustAskMs?: number;
+  /** Where the runtime reports its own state: never terminal output (ADR 0046 §3 step 4). */
+  log?: (line: string) => void;
 }
 
 // Claude Code treats a burst of input as a paste, Enter included; Enter goes in on its own.
@@ -141,8 +158,13 @@ export class CliRuntime implements AgentRuntime {
 
   async #launch(args: string[], onNoTurn?: () => void): Promise<void> {
     await this.#signIn();
-    if (this.#stopped) return;
+    // Until any hook (its SessionStart, at the latest its first turn) the session's claude waits on
+    // the trust dialog, and after trustAskMs the member is asked to answer it. Its first turn closes
+    // the lane's question (lane.ts).
+    const started: { timer?: NodeJS.Timeout } = {};
     const hooks = await listenForHooks((hook) => {
+      clearTimeout(started.timer);
+      if (hook.hook_event_name === "SessionStart") return;
       const event = toRuntimeEvent(hook);
       if (event.kind === "turn_start") {
         this.#turnSeen = true;
@@ -150,6 +172,11 @@ export class CliRuntime implements AgentRuntime {
       } else if (event.kind === "turn_end") this.#turns.ended(event.outcome);
       else this.#o.onEvent(event);
     });
+    // Stopped during the sign-in or while the endpoint came up: nothing starts.
+    if (this.#stopped) {
+      await hooks.close();
+      return;
+    }
     this.#hooks = hooks;
     this.#turnSeen = false;
     const settings = { ...hookSettings(hooks.url), skipDangerousModePermissionPrompt: true };
@@ -161,7 +188,15 @@ export class CliRuntime implements AgentRuntime {
       "bypassPermissions",
       ...args,
     ]);
+    started.timer = setTimeout(() => {
+      if (this.#stopped || this.#exited) return;
+      this.#o.onEvent({
+        kind: "lane",
+        event: { type: "ask", payload: { question: TRUST_QUESTION } },
+      });
+    }, this.#o.trustAskMs ?? 15_000);
     child.on("error", (error) => {
+      clearTimeout(started.timer);
       void hooks.close();
       const note = `claude failed to start: ${error.message}`.slice(0, 200);
       this.#o.onEvent({
@@ -171,6 +206,7 @@ export class CliRuntime implements AgentRuntime {
       this.#exit(127);
     });
     child.on("exit", (code) => {
+      clearTimeout(started.timer);
       void hooks.close();
       if (onNoTurn && !this.#turnSeen && !this.#stopped) onNoTurn();
       else this.#exit(code ?? 143);
@@ -229,9 +265,11 @@ export class CliRuntime implements AgentRuntime {
   }
 
   /**
-   * Returns once Claude Code holds a login, or the runtime stops. Until then `claude` runs with no
-   * prompt in the lane terminal (again if the member exits it), where the member types /login; it
-   * is ended before the session takes its place.
+   * Returns once Claude Code holds a login and the member has answered its workspace-trust dialog,
+   * or the runtime stops. Until then `claude` runs with no prompt in the lane terminal (again if
+   * the member exits it), where the member types /login; its SessionStart hook says the trust
+   * dialog is behind it. It is ended before the session takes its place, so the session starts
+   * with nothing left to answer.
    */
   async #signIn(): Promise<void> {
     if (await this.#signedIn()) return;
@@ -239,19 +277,31 @@ export class CliRuntime implements AgentRuntime {
       kind: "lane",
       event: { type: "ask", payload: { question: SIGN_IN_QUESTION } },
     });
-    let login: ChildProcess | undefined;
-    while (!this.#stopped) {
-      if (login === undefined || login.exitCode !== null || login.signalCode !== null) {
-        login = this.#spawn([]);
-        login.on("error", () => undefined); // spawning again is the answer
-        login.on("exit", () => {
-          if (this.#stopped) this.#exit(143);
-        });
+    const dialog = { trusted: false };
+    const hooks = await listenForHooks((hook) => {
+      dialog.trusted ||= hook.hook_event_name === "SessionStart";
+    });
+    const settings = JSON.stringify({ hooks: sessionStartHook(hooks.url) });
+    try {
+      let login: ChildProcess | undefined;
+      while (!this.#stopped) {
+        if (login === undefined || login.exitCode !== null || login.signalCode !== null) {
+          login = this.#spawn(["--settings", settings]);
+          login.on("error", () => undefined); // spawning again is the answer
+          login.on("exit", () => {
+            if (this.#stopped) this.#exit(143);
+          });
+        }
+        await sleep(this.#o.signInPollMs ?? 5_000);
+        if (dialog.trusted && (await this.#signedIn())) break;
       }
-      await sleep(this.#o.signInPollMs ?? 5_000);
-      if (await this.#signedIn()) break;
+      if (!this.#stopped) {
+        await end(login);
+        this.#o.log?.("signed in and the folder trusted: starting the session's claude");
+      }
+    } finally {
+      await hooks.close();
     }
-    if (!this.#stopped) await end(login);
   }
 
   #type(message: string): void {

@@ -41,6 +41,7 @@ async function main(): Promise<void> {
     sessionId: config.sessionId,
     claudeConfigDir: config.claudeConfigDir,
     env,
+    log: (line) => process.stderr.write(`agent: ${line}\n`),
     onOutput: (chunk) => {
       terminal.output(chunk);
     },

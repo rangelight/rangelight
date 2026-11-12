@@ -1,5 +1,7 @@
 import { expect, test } from "vitest";
-import { listenForHooks, stageOf, toRuntimeEvent, type Hook } from "./hooks.ts";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { listenForHooks, sessionStartHook, stageOf, toRuntimeEvent, type Hook } from "./hooks.ts";
 
 test("AC6 hooks map to runtime events; tool input and output never leave the pod", () => {
   expect(toRuntimeEvent({ hook_event_name: "UserPromptSubmit" })).toEqual({ kind: "turn_start" });
@@ -49,6 +51,20 @@ test("AC6 the hook endpoint passes valid hooks on and refuses anything else", as
     expect(await post("{}", "/other")).toBe(404);
     expect(await post(JSON.stringify({ hook_event_name: "Stop" }), "/hooks")).toBe(404);
     expect(got).toEqual([{ hook_event_name: "Stop" }]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("RAN-73 review the SessionStart hook is a command (Claude Code runs no HTTP one) that posts to the endpoint", async () => {
+  const got: Hook[] = [];
+  const server = await listenForHooks((h) => got.push(h));
+  try {
+    const [{ hooks }] = sessionStartHook(server.url).SessionStart;
+    expect(hooks[0].type).toBe("command");
+    // Async: the endpoint is in this process and must answer while the command runs.
+    await promisify(execFile)("sh", ["-c", hooks[0].command]);
+    expect(got).toEqual([{ hook_event_name: "SessionStart" }]);
   } finally {
     await server.close();
   }

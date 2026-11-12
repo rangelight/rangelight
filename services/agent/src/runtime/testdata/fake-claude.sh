@@ -8,8 +8,11 @@
 # prompt with "slow" waits 400 ms for Escape, which cancels the turn; like Claude Code's terminal
 # input, an Escape followed within 50 ms by another byte is Alt+<byte>, not Escape. The prompt
 # "exit" exits with 3. The line "size" is no turn: it prints the PTY's size and how many SIGWINCH
-# it has had, "<rows> <cols> <winches>". With no arguments it is the sign-in screen: the line
-# "/login" creates signed-in, and nothing else happens (no hooks, no turns). After the prompt
+# it has had, "<rows> <cols> <winches>". Without --session-id or --resume it is the sign-in claude:
+# the line "/login" creates signed-in, and there are no turns. Either kind first shows the workspace-
+# trust dialog, as Claude Code does in a folder it doesn't trust yet: the line "yes" answers it and
+# creates trusted (at once when trusted exists); then it runs its SessionStart hooks as Claude Code
+# 2.1.319 does: command hooks only, never an HTTP one. After the prompt
 # "stubborn" it ignores SIGTERM and SIGHUP and reads nothing more, so only SIGKILL ends it; its sleep is named
 # rl-stubborn-<the Claude home's directory name>.
 set -euo pipefail
@@ -32,8 +35,48 @@ key() {
   key="${key%x}"
 }
 
+settings="" session=""
+args=("$@")
+for i in "${!args[@]}"; do
+  case "${args[i]}" in
+    --settings) settings="${args[i + 1]}" ;;
+    --session-id) session=1 && mkdir -p "${home}/sessions" && touch "${home}/sessions/${args[i + 1]}" ;;
+    --resume) session=1 && { [[ -e "${home}/sessions/${args[i + 1]}" ]] || exit 1; } ;;
+  esac
+done
+url=""
+if [[ "${settings}" =~ \"url\":\"([^\"]+)\" ]]; then url="${BASH_REMATCH[1]}"; fi
+
+post() { curl -fsS -o /dev/null -X POST --data-binary "$1" "${url}"; }
+
+# session_start: the settings' SessionStart command hooks, each through sh; HTTP ones are skipped.
+session_start() {
+  local command
+  # shellcheck disable=SC2016 # a JavaScript program, not an expansion
+  command="$(node --input-type=module -e 'for (const m of JSON.parse(process.argv[1]).hooks?.SessionStart ?? [])
+    for (const h of m.hooks) if (h.type === "command") console.log(h.command);' "${settings}")"
+  if [[ -n "${command}" ]]; then sh -c "${command}" </dev/null; fi
+}
+
+# trust: the workspace-trust dialog until the line "yes" (none when trusted exists), then SessionStart.
+trust() {
+  if [[ ! -e "${home}/trusted" ]]; then
+    printf 'Do you trust this folder? Type yes\r\n'
+    local line=""
+    while :; do
+      key || exit 0
+      if [[ "${key}" != $'\r' ]]; then line+="${key}" && continue; fi
+      [[ "${line}" == yes ]] && break
+      line=""
+    done
+    touch "${home}/trusted"
+  fi
+  session_start
+}
+
 stty raw -echo
-if [[ $# -eq 0 ]]; then
+if [[ -z "${session}" ]]; then
+  trust
   printf 'Sign in: type /login\r\n'
   line=""
   while key; do
@@ -45,20 +88,7 @@ if [[ $# -eq 0 ]]; then
   done
   exit 0
 fi
-
-settings=""
-args=("$@")
-for i in "${!args[@]}"; do
-  case "${args[i]}" in
-    --settings) settings="${args[i + 1]}" ;;
-    --session-id) mkdir -p "${home}/sessions" && touch "${home}/sessions/${args[i + 1]}" ;;
-    --resume) [[ -e "${home}/sessions/${args[i + 1]}" ]] || exit 1 ;;
-  esac
-done
-[[ "${settings}" =~ \"url\":\"([^\"]+)\" ]]
-url="${BASH_REMATCH[1]}"
-
-post() { curl -fsS -o /dev/null -X POST --data-binary "$1" "${url}"; }
+trust
 
 # cancelled: an Escape arrived during the slow wait, on its own.
 cancelled() {

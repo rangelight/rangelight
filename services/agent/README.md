@@ -22,9 +22,12 @@ Resume is `claude --resume <session id>`, or a new session with the digest when 
 to resume. `CLAUDE_CONFIG_DIR` is the lane's mounted Claude home: the agent never reads it.
 The lane terminal is Claude Code's own TUI: every slash command and key works as in a local
 terminal, and a turn the member types is a turn like any other. Without a login the lane asks the
-member to sign in (`ask`) and runs `claude` with no prompt there; the member types `/login`, and
-once `claude auth status` passes the session takes its place in the same terminal. There is no
-API-key path. The PTY's output goes only to the lane terminal,
+member to sign in (`ask`) and runs `claude` with no prompt there; the member types `/login` and
+answers Claude Code's workspace-trust dialog (no supported setting answers it ahead of time for an
+interactive session). Once `claude auth status` passes and that claude's `SessionStart` hook (a
+command hook: Claude Code runs no HTTP one for it) says the dialog is behind it, the session takes its place in the same terminal and starts on its own. A
+session's claude that hasn't started after 15 s is waiting on that dialog: the lane asks the member
+to answer it. There is no API-key path. The PTY's output goes only to the lane terminal,
 which is live and never stored or logged, so a `/login` code is never kept (ADR 0046 §3 step 4).
 Git gets the mirror token only for the mirror's URL.
 

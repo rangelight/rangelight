@@ -428,9 +428,9 @@
     "publicUrl": { "type": "string", "pattern": "^https://[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(:[0-9]{1,5})?$" },
     "httpsUrl": { "type": "string", "pattern": "^https://[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(:[0-9]{1,5})?(/[-._~A-Za-z0-9]+)*$" },
     "natsUrl": {
-      "description": "Clients send their ServiceAccount token there: tls://, or nats:// only to a Service in this cluster.",
+      "description": "Clients send their ServiceAccount token there: tls://, or nats:// only to a Service in this cluster by its full name, <name>.<namespace>.svc.cluster.local (lanes cannot resolve a bare .svc).",
       "type": "string",
-      "pattern": "^(tls://[-.a-zA-Z0-9]+|nats://[-.a-zA-Z0-9]+\\.svc(\\.cluster\\.local)?)(:[0-9]{1,5})?$"
+      "pattern": "^(tls://[-.a-zA-Z0-9]+|nats://[-.a-zA-Z0-9]+\\.svc\\.cluster\\.local)(:[1-9][0-9]{0,4})?$"
     },
     "pinnedImage": {
       "type": "string",

@@ -226,18 +226,31 @@ func (c *Config) fromEnv(environ []string) error {
 }
 
 // natsURL reports whether raw is one NATS server the runner's token may travel to: tls://, or
-// plain nats:// only to a Service in this cluster or loopback (rl_nats::check_url's rule). A remote
-// runner needs tls://.
+// plain nats:// only to a Service in this cluster by its full name (<name>.<namespace>.svc.cluster.local)
+// or loopback (rl_nats::check_url's rule). Not a bare <name>.<namespace>.svc: the runner gives this URL
+// to the lanes, which resolve only exact names. A remote runner needs tls://. One server: url.Parse
+// takes a comma in the host, and nats.Connect would split it and send the token to each part.
 func natsURL(raw string) bool {
 	n, err := url.Parse(raw)
-	if err != nil || n.Host == "" || n.User != nil || strings.Trim(n.Path, "/") != "" {
+	if err != nil || strings.ContainsAny(raw, ",?#") || n.User != nil || strings.Trim(n.Path, "/") != "" {
 		return false
 	}
 	host := n.Hostname()
+	if host != "::1" && !natsHost.MatchString(host) {
+		return false
+	}
+	if p := n.Port(); p != "" {
+		if port, err := strconv.Atoi(p); err != nil || port < 1 || port > 65535 {
+			return false
+		}
+	}
 	inCluster := host == "localhost" || host == "127.0.0.1" || host == "::1" ||
-		strings.HasSuffix(host, ".svc") || strings.HasSuffix(host, ".svc.cluster.local")
+		len(host) > len(".svc.cluster.local") && strings.HasSuffix(host, ".svc.cluster.local")
 	return n.Scheme == "tls" || n.Scheme == "nats" && inCluster
 }
+
+// natsHost is a host name a NATS URL may name: letters, digits, dots and dashes, nothing else.
+var natsHost = regexp.MustCompile(`^[-.a-zA-Z0-9]+$`)
 
 func (c *Config) validate() error {
 	var bad []error
@@ -266,7 +279,7 @@ func (c *Config) validate() error {
 		check(err == nil && q.Sign() > 0, key, "a positive size like 10Gi")
 	}
 	check(natsURL(c.NATSURL), "nats_url",
-		"tls://<host>[:<port>], or nats:// to a Service in this cluster (<name>.svc[.cluster.local]), without credentials")
+		"tls://<host>[:<port>], or nats:// to a Service in this cluster by its full name (<name>.<namespace>.svc.cluster.local: lanes can't resolve a bare .svc), without credentials")
 	check(filepath.IsAbs(c.NATSTokenFile) && filepath.Clean(c.NATSTokenFile) == c.NATSTokenFile, "nats_token_file", "a clean absolute path")
 	check(subjectToken.MatchString(c.Org), "org", "a subject token: no '.', '*', '>' or whitespace")
 	check(subjectToken.MatchString(c.RunnerID), "runner_id", "a subject token: no '.', '*', '>' or whitespace")

@@ -13,10 +13,11 @@ app.kubernetes.io/name: {{ .name | quote }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name | quote }}
 {{- end -}}
 
-{{/* The NATS URL the api, the relay and the runner connect to. */}}
+{{/* The NATS URL the api, the relay and the runner connect to, and the runner gives the lanes: fully qualified,
+     since a lane resolves only exact names (ndots 1). */}}
 {{- define "rangelight.natsUrl" -}}
 {{- if .Values.nats.enabled -}}
-{{ printf "nats://%s.%s.svc:4222" .Values.nats.fullnameOverride .Release.Namespace }}
+{{ printf "nats://%s.%s.svc.cluster.local:4222" .Values.nats.fullnameOverride .Release.Namespace }}
 {{- else -}}
 {{ .Values.nats.external.url }}
 {{- end -}}

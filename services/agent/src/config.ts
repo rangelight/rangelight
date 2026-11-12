@@ -12,17 +12,17 @@ const absolute = z.string().regex(/^\/[A-Za-z0-9._/-]*$/, "an absolute path of [
 // The same rule as rl_domain::subject::token: a token can't widen or split a subject.
 const subjectToken = z.string().regex(/^[^.*>\s\p{Cc}]+$/u, "a NATS subject token");
 // The same rule as rl_nats::check_url: the lane's token travels only over TLS, or in clear text
-// only to a Service in this cluster or to loopback. One server, no credentials, no path.
+// only to a Service in this cluster by its full name (the lane resolves only exact names) or to
+// loopback. One server, no credentials, no path.
 const natsUrl = z.url({ protocol: /^(nats|tls)$/ }).refine((u) => {
   const url = URL.parse(u);
   if (!url || url.username || url.password || !["", "/"].includes(url.pathname)) return false;
   const host = url.hostname;
-  if (!/^[A-Za-z0-9.-]+$|^\[::1\]$/.test(host) || url.search || url.hash) return false;
+  if (!/^[A-Za-z0-9.-]+$|^\[::1\]$/.test(host) || /[,?#]/.test(u) || url.port === "0") return false;
   const local =
-    /^[^.]+(\..+)?\.svc(\.cluster\.local)?$/.test(host) ||
-    ["localhost", "127.0.0.1", "[::1]"].includes(host);
+    /^.+\.svc\.cluster\.local$/.test(host) || ["localhost", "127.0.0.1", "[::1]"].includes(host);
   return url.protocol === "tls:" || local;
-}, "tls://<host>[:<port>], or nats:// to a host in this cluster (<name>.svc) or on loopback, without credentials");
+}, "tls://<host>[:<port>], or nats:// to a Service in this cluster by its full name (<name>.<namespace>.svc.cluster.local: a lane can't resolve a bare .svc) or on loopback, without credentials");
 
 const schema = z
   .object({

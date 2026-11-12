@@ -11,13 +11,16 @@ use async_nats::{Auth, AuthError, ConnectOptions};
 /// A NATS URL a token may not be sent to.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error(
-    "nats_url must be tls://<host>[:<port>], or nats:// to a host in this cluster (<name>.svc, \
-     <name>.svc.cluster.local) or on loopback, without credentials"
+    "nats_url must be tls://<host>[:<port>], or nats:// to a Service in this cluster by its full name \
+     (<name>.<namespace>.svc.cluster.local: lanes can't resolve a bare .svc) or on loopback, without \
+     credentials"
 )]
 pub struct UrlError;
 
 /// Checks a NATS URL a token travels to: `tls://`, or `nats://` only to a cluster-local Service
-/// or loopback, so the token never crosses a network in clear text. One server, no credentials.
+/// by its full name (`<name>.<namespace>.svc.cluster.local`) or loopback, so the token never crosses
+/// a network in clear text. Not a bare `.svc`: it is the URL the lanes get too, and they resolve only
+/// exact names. One server, no credentials.
 ///
 /// # Errors
 /// [`UrlError`] otherwise.
@@ -32,14 +35,13 @@ pub fn check_url(url: &str) -> Result<(), UrlError> {
         return Err(UrlError);
     }
     let host = match authority.rsplit_once(':') {
-        Some((host, port)) if port.parse::<u16>().is_ok() => host,
+        Some((host, port)) if port.parse::<u16>().is_ok_and(|p| p != 0) => host,
         Some(_) => return Err(UrlError),
         None => authority,
     };
-    let service = host.ends_with(".svc.cluster.local")
-        || host
-            .rsplit_once('.')
-            .is_some_and(|(name, last)| !name.is_empty() && last == "svc");
+    let service = host
+        .strip_suffix(".svc.cluster.local")
+        .is_some_and(|name| !name.is_empty());
     let local = service || matches!(host, "localhost" | "127.0.0.1" | "[::1]");
     if host.is_empty() || !(tls || local) {
         return Err(UrlError);
@@ -75,7 +77,7 @@ mod tests {
         for good in [
             "tls://nats.example.com:4222",
             "tls://nats.example.com",
-            "nats://rangelight-nats.rangelight-system.svc:4222",
+            "nats://rangelight-nats.rangelight-system.svc.cluster.local:4222",
             "nats://nats.ns.svc.cluster.local:4222/",
             "nats://127.0.0.1:4222",
             "nats://localhost:4222",
@@ -86,6 +88,10 @@ mod tests {
             "nats://nats.example.com:4222",
             "nats://10.0.0.7:4222",
             "nats://evil.svc.example.com:4222",
+            // A lane can't resolve it (ndots 1).
+            "nats://rangelight-nats.rangelight-system.svc:4222",
+            "nats://.svc.cluster.local:4222",
+            "nats://nats.ns.svc.cluster.local:0",
             "tls://user:pass@nats.example.com",
             "tls://a:4222,tls://b:4222",
             "tls://nats.example.com:port",

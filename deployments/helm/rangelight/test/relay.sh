@@ -31,7 +31,7 @@ test_relay_settings_are_its_config_keys() {
   render "${SERVE[@]}" --show-only templates/relay/deployment.yaml --set api.streamReplicas=3
   expect_ok
   expect_line '              value: "secret://rangelight-pg-app#uri"'
-  expect_line '              value: "nats://rangelight-nats.rangelight-system.svc:4222"'
+  expect_line '              value: "nats://rangelight-nats.rangelight-system.svc.cluster.local:4222"'
   expect_line '              value: "3"'
   expect_line '                      path: "rangelight-pg-app/uri"'
   [[ "$(grep -c '^ *- secret:$' <<<"${OUT}")" -eq 1 ]] || fail "the relay mounts more than the database Secret"

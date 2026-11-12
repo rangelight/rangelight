@@ -120,7 +120,16 @@ test_refuses_a_token_in_clear_text_or_your_own_nats_without_keys() {
   expect_refused "/nats/auth/existingSecret"
   render --set nats.enabled=false --set nats.external.url=nats://nats.example.com:4222 --set nats.auth.existingSecret=k
   expect_refused "/nats/external/url"
+  # RAN-66: a bare .svc, which the lanes can't resolve (they look names up as given).
   render --set nats.enabled=false --set nats.external.url=nats://nats.messaging.svc:4222 --set nats.auth.existingSecret=k
+  expect_refused "/nats/external/url"
+  # RAN-66 security review M1: one server, no query, a real port.
+  # The comma is escaped: helm --set would split it.
+  for url in "nats://evil.com\,x.svc.cluster.local" "nats://x.ns.svc.cluster.local?x" "nats://x.ns.svc.cluster.local:0"; do
+    render --set nats.enabled=false --set "nats.external.url=${url}" --set nats.auth.existingSecret=k
+    expect_refused "/nats/external/url"
+  done
+  render --set nats.enabled=false --set nats.external.url=nats://nats.messaging.svc.cluster.local:4222 --set nats.auth.existingSecret=k
   expect_ok
   render --set nats.auth.account=ACCOUNT
   expect_refused "/nats/auth/account"

@@ -68,7 +68,7 @@ test_bundled_exposes_cnpg_secret_and_nats_service() {
   render --show-only templates/api/configmap.yaml
   expect_ok
   expect_line '  RANGELIGHT_API_DATABASE_URL: "secret://rangelight-pg-app#uri"'
-  expect_line '  RANGELIGHT_API_NATS_URL: "nats://rangelight-nats.rangelight-system.svc:4222"'
+  expect_line '  RANGELIGHT_API_NATS_URL: "nats://rangelight-nats.rangelight-system.svc.cluster.local:4222"'
 }
 
 # RAN-35: the api's real keys (configs/api.default.toml), every required one set from values.

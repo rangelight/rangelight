@@ -40,7 +40,7 @@ case "\$*" in
   "config get-contexts -o name") printf 'dev\n' ;;
   *" apply -f -"*) cat >>"${DIR}/applied" ;;
   *" get namespace "*) exit 1 ;;
-  *" get configmap rangelight-api "*) printf 'secret://rangelight-pg-app#uri nats://rangelight-nats.rangelight-system.svc:4222' ;;
+  *" get configmap rangelight-api "*) printf 'secret://rangelight-pg-app#uri nats://rangelight-nats.rangelight-system.svc.cluster.local:4222' ;;
   *" get pod "*) printf 'Succeeded' ;;
   *" logs "*) printf 'nats: error: no responders\n' ;;
 esac
@@ -265,12 +265,12 @@ test_smoke_runs_psql_and_jetstream_from_restricted_pods() {
   expect_status 0
   expect_out "PASS  namespace rangelight-system exists"
   expect_out "PASS  psql 'select 1' with the Secret rangelight-pg-app"
-  expect_out "PASS  NATS refuses an anonymous client on nats://rangelight-nats.rangelight-system.svc:4222"
+  expect_out "PASS  NATS refuses an anonymous client on nats://rangelight-nats.rangelight-system.svc.cluster.local:4222"
   [[ "$(grep -c '^kind: "Pod"$' "${DIR}/applied")" -eq 2 ]] || fail "smoke did not create two pods"
   grep -qF -e "command: [\"sh\", \"-c\", \"[ \$(psql \$POSTGRES_URL -tAc 'select 1') = 1 ]\"]" "${DIR}/applied" ||
     fail "the psql pod does not run select 1"
   grep -qxF -e '              name: "rangelight-pg-app"' "${DIR}/applied" || fail "psql does not read the CNPG Secret"
-  grep -qxF -e '          value: "nats://rangelight-nats.rangelight-system.svc:4222"' "${DIR}/applied" || fail "nats pod without NATS_URL"
+  grep -qxF -e '          value: "nats://rangelight-nats.rangelight-system.svc.cluster.local:4222"' "${DIR}/applied" || fail "nats pod without NATS_URL"
   [[ "$(grep -cxF -e '    app.kubernetes.io/part-of: "rangelight"' "${DIR}/applied")" -eq 2 ]] ||
     fail "a smoke pod without the part-of label the NetworkPolicies allow"
   [[ "$(grep -cxF -e '    runAsNonRoot: true' "${DIR}/applied")" -eq 2 ]] || fail "a smoke pod that is not restricted"

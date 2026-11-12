@@ -100,3 +100,31 @@ async function untilAsync(ready: () => Promise<boolean>, ms: number): Promise<vo
     await sleep(200);
   }
 }
+
+test("terminal: RAN-66 each failed first connect is logged with its reason, then it connects", async () => {
+  const port = await freePort();
+  const tokenFile = join(mkdtempSync(join(tmpdir(), "rl-agent-sign-in-")), "token");
+  writeFileSync(tokenFile, "lane-token\n");
+  const logs: string[] = [];
+  const sizes: [number, number][] = [];
+  terminal = startTerminal({
+    natsUrl: `nats://127.0.0.1:${String(port)}`,
+    natsTokenFile: tokenFile,
+    org: ORG,
+    sessionId: SESSION,
+    pty: {
+      write: () => undefined,
+      resize: (cols, rows) => {
+        sizes.push([cols, rows]);
+        return Promise.resolve();
+      },
+    },
+    log: (l) => logs.push(l),
+  });
+  // Nothing listens: every try (every 2 s) says why, and only that.
+  await until(() => logs.length >= 2, 10_000);
+  for (const l of logs) expect(l).toMatch(/^terminal: no NATS, trying again: \S/);
+  expect(logs.join("\n")).not.toContain("lane-token");
+  server = await natsServer(port, "lane-token");
+  await untilAsync(() => reaches(port, "lane-token", sizes), 15_000);
+}, 30_000);

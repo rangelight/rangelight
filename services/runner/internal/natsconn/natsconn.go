@@ -29,6 +29,9 @@ func Options(tokenFile, runner string) []nats.Option {
 		// A refused sign-in (the api's callout restarting, a token not yet rotated) is retried like any
 		// other failure: by default nats.go stops reconnecting for good after two in a row.
 		nats.IgnoreAuthErrorAbort(),
+		// Only the configured URL was checked (config's natsURL), and the token goes wherever the
+		// client dials: never to an address the server advertises in INFO's connect_urls (RAN-80).
+		nats.IgnoreDiscoveredServers(),
 	}
 }
 

@@ -33,6 +33,7 @@ uuid.workspace = true
 futures-util.workspace = true
 rl-app.workspace = true
 rl-testkit.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

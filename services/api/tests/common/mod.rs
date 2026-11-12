@@ -67,7 +67,7 @@ pub(crate) async fn served_with(
     let nats = Nats {
         reports: rl_testkit::nats().await,
         viewers: rl_testkit::nats().await,
-        terminals: terminals_client(&rl_testkit::nats_url(), async_nats::ConnectOptions::new())
+        terminals: terminals_client(&rl_testkit::nats_url(), async_nats::ConnectOptions::new)
             .await
             .unwrap(),
     };

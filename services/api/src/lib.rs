@@ -93,11 +93,13 @@ pub async fn connect_nats(
     let task = tokio::spawn(std::sync::Arc::new(callout).serve(requests, cancel));
     let options = || rl_nats::options(config.nats_token_file.clone(), "api");
     let nats = |e: async_nats::ConnectError| CalloutError::Nats(e.to_string());
-    let reports = options().connect(&config.nats_url).await.map_err(nats)?;
-    let viewers = viewers_client(&config.nats_url, options())
+    let reports = rl_nats::connect(options, &config.nats_url)
         .await
         .map_err(nats)?;
-    let terminals = terminals_client(&config.nats_url, options())
+    let viewers = viewers_client(&config.nats_url, options)
+        .await
+        .map_err(nats)?;
+    let terminals = terminals_client(&config.nats_url, options)
         .await
         .map_err(nats)?;
     Ok((

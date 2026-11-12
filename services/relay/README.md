@@ -24,7 +24,8 @@ what's there (`Relay::reseed`). Then the outbox carries on with what's newer.
 
 It signs in to NATS as the relay (ADR 0021 amendment, `rl-nats`): its projected token, `nats_token_file`, read
 at every connect, and replies under `_INBOX_relay`. It may only publish desired state and session events and own
-its stream.
+its stream. At start it waits for a NATS it can't reach, trying again up to every 5 s and logging each try
+(`rl_nats::connect`); a refused sign-in or any other start failure still stops it.
 
 Config: `configs/relay.default.toml`, then `/etc/rangelight/relay.toml`, then
 `RANGELIGHT_RELAY_*`. `database_url` is a secret reference. `GET /healthz` on `listen` (8080) answers 200 once

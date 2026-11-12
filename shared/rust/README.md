@@ -11,7 +11,7 @@ point inward: binaries → adapters → application → domain.
 | `auth` (`rl-auth`) | OIDC sign-in, a trust boundary: authorization code with PKCE, ID token verified by `openidconnect` (signature via discovery, issuer, audience, expiry, nonce); the sign-in in progress sealed in its cookie (AES-256-GCM, HKDF of the client secret). |
 | `chain` (`rl-chain`) | Canonical event payloads and the hash chain: `sha256(prev_hash ‖ event id ‖ at µs ‖ payload)`, verified with proptest. |
 | `config` (`rl-config`) | The config loader (defaults → mounted file → `RANGELIGHT_<SVC>_*`) and `secret://` references. The only env reader. |
-| `nats` (`rl-nats`) | A workload's NATS connection as itself: its projected token, read at every connect, its own inbox prefix, and the URL rule (`tls://`, or `nats://` inside the cluster). |
+| `nats` (`rl-nats`) | A workload's NATS connection as itself: its projected token, read at every connect, its own inbox prefix, the URL rule (`tls://`, or `nats://` inside the cluster), and `connect`, which waits for a NATS it can't reach yet (up to every 5 s, each try logged) and returns any other error. |
 | `telemetry` (`rl-telemetry`) | JSON logs through `tracing`. |
 | `proto` (`rl-proto`) | Code generated from `api/proto` at build time (needs `buf`). |
 | `tickets-linear` (`rl-tickets-linear`) | The Linear `TicketSource`. |

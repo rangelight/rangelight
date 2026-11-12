@@ -77,6 +77,8 @@ The control plane's front door (ADR 0031, ADR 0033):
   runner reported Starting or Running, one connection each, its sign-ins one at a time: `lane.rs`), and answers with a user JWT signed by the issuer nkey (`jwt.rs`) holding exactly that identity's
   subjects and limits (`permissions.rs`), for at most an hour. Anything else gets a refusal with a reason; the
   token never reaches a log. Its own connection signs in with the `auth_user` nkey seed (or `.creds` file).
+  At start the api waits for a NATS it can't reach, trying again up to every 5 s and logging each try
+  (`rl_nats::connect`); a refused sign-in or any other start failure still stops it.
 - **HTTP/1.1 only** (Connect and the terminal WebSocket need nothing else). A client gets 10
   seconds to send a request's headers, from connecting and between requests on a kept-alive
   connection; a connection that sends nothing is closed.

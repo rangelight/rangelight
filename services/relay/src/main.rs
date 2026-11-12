@@ -16,10 +16,13 @@ async fn main() -> anyhow::Result<()> {
     let store = Store::connect(&config.database_url.read()?)
         .await
         .context("postgres")?;
-    let nats = rl_nats::options(config.nats_token_file, "relay")
-        .connect(&config.nats_url)
-        .await
-        .context("nats")?;
+    let token_file = config.nats_token_file;
+    let nats = rl_nats::connect(
+        || rl_nats::options(token_file.clone(), "relay"),
+        &config.nats_url,
+    )
+    .await
+    .context("nats")?;
     let relay = Relay::new(
         store,
         nats,

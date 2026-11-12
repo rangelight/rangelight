@@ -5,8 +5,9 @@
 #![deny(missing_docs)]
 
 use std::path::PathBuf;
+use std::time::Duration;
 
-use async_nats::{Auth, AuthError, ConnectOptions};
+use async_nats::{Auth, AuthError, Client, ConnectError, ConnectErrorKind, ConnectOptions};
 
 /// A NATS URL a token may not be sent to.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -68,7 +69,75 @@ pub fn options(token_file: PathBuf, id: &str) -> ConnectOptions {
     .custom_inbox_prefix(rl_domain::subject::inbox(id))
 }
 
+/// The longest pause between two tries to reach NATS at start.
+pub const MAX_RETRY: Duration = Duration::from_secs(5);
+
+/// The pause after `failures` tries that couldn't reach NATS: 100 ms, doubling, at most [`MAX_RETRY`].
+#[must_use]
+pub fn retry_pause(failures: u32) -> Duration {
+    Duration::from_millis(100)
+        .saturating_mul(2u32.saturating_pow(failures))
+        .min(MAX_RETRY)
+}
+
+/// Connects to `url` with the options `options` makes, trying again while NATS can't be reached
+/// (DNS, I/O, a timeout): every failed try is logged, with [`retry_pause`] between tries. Any other
+/// error (a refused sign-in, a bad URL, a failed TLS handshake or certificate) is returned at once. Once connected, the client
+/// reconnects by itself. async-nats' own `retry_on_initial_connect` isn't used: it returns before
+/// the connection is up and retries a refused sign-in forever.
+///
+/// # Errors
+/// The first [`ConnectError`] that isn't NATS being unreachable.
+pub async fn connect(
+    options: impl Fn() -> ConnectOptions,
+    url: &str,
+) -> Result<Client, ConnectError> {
+    let mut failures = 0;
+    loop {
+        match options().connect(url).await {
+            Ok(client) => return Ok(client),
+            Err(error) if unreachable(&error) => {
+                let pause = retry_pause(failures);
+                tracing::warn!(%error, retry_in_ms = pause.as_millis(), "nats: not reachable, trying again");
+                tokio::time::sleep(pause).await;
+                failures = failures.saturating_add(1);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+/// Whether `error` means NATS couldn't be reached (worth another try), not that it was reached and
+/// refused, or that the client's own setup is wrong.
+fn unreachable(error: &ConnectError) -> bool {
+    match error.kind() {
+        ConnectErrorKind::Dns | ConnectErrorKind::TimedOut => true,
+        // async-nats reports a failed TLS handshake, a bad certificate included, as I/O too:
+        // tokio-rustls wraps the rustls error in an io::Error.
+        ConnectErrorKind::Io => !tls_failure(error),
+        _ => false,
+    }
+}
+
+/// Whether a rustls error is anywhere in `error`'s sources.
+fn tls_failure(error: &ConnectError) -> bool {
+    let mut source = std::error::Error::source(error);
+    while let Some(e) = source {
+        // An io::Error's own source() skips the error it wraps, so look inside it.
+        let wrapped = e
+            .downcast_ref::<std::io::Error>()
+            .and_then(std::io::Error::get_ref)
+            .is_some_and(<dyn std::error::Error + Send + Sync>::is::<async_nats::rustls::Error>);
+        if wrapped || e.is::<async_nats::rustls::Error>() {
+            return true;
+        }
+        source = e.source();
+    }
+    false
+}
+
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -101,5 +170,86 @@ mod tests {
         ] {
             assert_eq!(check_url(bad), Err(UrlError), "{bad}");
         }
+    }
+
+    #[test]
+    fn the_retry_pause_doubles_up_to_five_seconds() {
+        assert_eq!(retry_pause(0), Duration::from_millis(100));
+        assert_eq!(retry_pause(1), Duration::from_millis(200));
+        assert_eq!(retry_pause(5), Duration::from_millis(3200));
+        assert_eq!(retry_pause(6), MAX_RETRY);
+        assert_eq!(retry_pause(u32::MAX), MAX_RETRY);
+    }
+
+    /// A NATS that is away is waited for; one that refuses the sign-in is not.
+    #[tokio::test]
+    async fn connect_waits_for_nats_but_not_for_a_refusal() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let url = format!("nats://127.0.0.1:{port}");
+        let waiting = tokio::spawn({
+            let url = url.clone();
+            async move { connect(ConnectOptions::new, &url).await }
+        });
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(!waiting.is_finished());
+        let mut server = std::process::Command::new("nats-server")
+            .args([
+                "-a",
+                "127.0.0.1",
+                "-p",
+                &port.to_string(),
+                "--auth",
+                "right",
+            ])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .expect("nats-server: run the tests via scripts/test/services.sh");
+        // The waiting client has no token: once the server is up it is refused, and that ends it.
+        let refused = tokio::time::timeout(MAX_RETRY + Duration::from_secs(2), waiting).await;
+        let signed_in = connect(|| ConnectOptions::new().token("right".into()), &url).await;
+        let _ = server.kill();
+        let _ = server.wait();
+        let refused = refused.unwrap().unwrap();
+        assert!(
+            matches!(&refused, Err(e) if matches!(e.kind(), ConnectErrorKind::AuthorizationViolation)),
+            "{:?}",
+            refused.err()
+        );
+        assert!(signed_in.is_ok());
+    }
+
+    /// RAN-79 review: a failed TLS handshake (here, a server that answers TLS with bytes that
+    /// aren't TLS; a bad certificate fails the same way) is returned at once, not retried as
+    /// "not reachable".
+    #[tokio::test]
+    async fn a_failed_tls_handshake_is_not_retried() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                socket
+                    .write_all(b"INFO {\"server_id\":\"x\",\"version\":\"2.15.2\",\"proto\":1,\"max_payload\":1048576,\"tls_required\":true}\r\n")
+                    .await
+                    .unwrap();
+                let mut hello = [0; 512];
+                let _ = socket.read(&mut hello).await;
+                let _ = socket.write_all(b"this is not TLS\r\n\r\n").await;
+            }
+        });
+        let url = format!("tls://localhost:{port}");
+        let result =
+            tokio::time::timeout(Duration::from_secs(2), connect(ConnectOptions::new, &url)).await;
+        server.abort();
+        let error = result
+            .expect("returned at once, not retried")
+            .err()
+            .unwrap();
+        assert!(tls_failure(&error), "{error:?}");
     }
 }

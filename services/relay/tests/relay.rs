@@ -122,12 +122,14 @@ async fn a_restart_between_publish_and_mark_is_seen_once() {
         (
             ticket.key.as_str(),
             ticket.title.as_str(),
-            ticket.criteria.as_slice()
+            ticket.criteria.as_slice(),
+            ticket.url.as_str()
         ),
         (
             "RAN-1",
             "Ticket 1",
-            ["AC1 one".to_owned(), "AC2 two".to_owned()].as_slice()
+            ["AC1 one".to_owned(), "AC2 two".to_owned()].as_slice(),
+            "https://linear.app/example/issue/RAN-1"
         )
     );
     let worktree = &whole.worktrees[0];

@@ -30,6 +30,8 @@ pub struct Unsent {
     pub description: String,
     /// Its session's acceptance criteria, in order.
     pub criteria: Vec<String>,
+    /// Its session's ticket page in the tracker.
+    pub ticket_url: String,
     /// Its session's repo, by its git mirror name.
     pub repo: String,
     /// Its session's base branch.
@@ -51,6 +53,7 @@ struct Row {
     title: String,
     description: String,
     criteria: Vec<String>,
+    ticket_url: String,
     repo: String,
     base_ref: String,
     member: String,
@@ -72,6 +75,7 @@ impl TryFrom<Row> for Unsent {
             title: row.title,
             description: row.description,
             criteria: row.criteria,
+            ticket_url: row.ticket_url,
             repo: row.repo,
             base_ref: row.base_ref,
             member: row.member,

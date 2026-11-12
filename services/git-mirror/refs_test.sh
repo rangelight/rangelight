@@ -153,11 +153,11 @@ start_nginx() {
   : >"${ng}/resolver.conf"
   sed -e "s|/opt/git-mirror/|${HERE}/|g" -e "s|/srv/git|${SRV}|g" \
     -e "s|listen 8080;|listen 127.0.0.1:${port}; set_real_ip_from 127.0.0.1; real_ip_header X-Test-Client-IP;|" \
-    -e "s|http://runner.rangelight-runner.svc.cluster.local:8080/|http://127.0.0.1:${auth}/|" \
+    -e "s|include /tmp/runner.conf;|set \$rl_runner 127.0.0.1:${auth};|" \
     -e "s|# No checkpoint receiver yet.*|fastcgi_param RANGELIGHT_EVENTS_URL http://127.0.0.1:${auth}/events;|" \
     "${HERE}/nginx.conf" >"${ng}/nginx.conf"
   check "nginx.conf was fully rendered for the test" \
-    "! grep -qE '/srv/git|/opt/|cluster\.local' '${ng}/nginx.conf' && grep -q RANGELIGHT_EVENTS_URL '${ng}/nginx.conf'"
+    "! grep -qE '/srv/git|/opt/|runner\.conf' '${ng}/nginx.conf' && grep -q RANGELIGHT_EVENTS_URL '${ng}/nginx.conf'"
   ok "nginx -t accepts nginx.conf" docker run --rm -v "${ng}:/tmp" "${IN_MIRROR[@]}" nginx -e stderr -c /tmp/nginx.conf -t
   stale_socket "${ng}/nginx-inner.sock"
   stale_socket "${ng}/fcgiwrap/fcgiwrap.sock"
@@ -170,6 +170,8 @@ start_nginx() {
   BASE="http://127.0.0.1:${port}"
   # A request before fcgiwrap listens would get a 502.
   wait_for "curl -sf '${BASE}/healthz' >/dev/null && live_socket '${ng}/fcgiwrap/fcgiwrap.sock'"
+  check "the image's CMD names the runner in its default namespace" \
+    "[[ \$(<'${ng}/runner.conf') == 'set \$rl_runner \"runner.rangelight-runner.svc.cluster.local:8080\";' ]]"
 }
 
 # --- fixtures -----------------------------------------------------------------------
@@ -210,6 +212,7 @@ suite() {
   t8_t9_ac5_runner_reads_and_never_pushes
   test_big_push_goes_chunked
   test_ac6_sync_keeps_session_refs
+  test_publish_copies_only_the_work_branch
   [[ "${MODE}" != nginx ]] || test_limits_hold_back_one_identity_and_one_address
 }
 

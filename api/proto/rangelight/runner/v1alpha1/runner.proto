@@ -100,6 +100,7 @@ message Ticket {
   string title = 2;
   string description = 3;
   repeated string criteria = 4; // AC1..ACn, in order
+  string url = 5; // the ticket's page in the tracker; the PR body links it (never in the lane's ticket.json)
 }
 
 message Worktree {

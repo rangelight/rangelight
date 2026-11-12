@@ -66,6 +66,16 @@ test_git_mirror_ingress_only_from_lanes_and_the_runner() {
   expect_line '              kubernetes.io/metadata.name: "rangelight-runner"'
   expect_line '          port: 8080'
   expect_no_match 'ipBlock|podSelector: \{\}'
+  render "${GIT_MIRROR[@]}" --show-only templates/git-mirror/networkpolicy.yaml --set runner.namespace=rl-runner-test
+  expect_line '              kubernetes.io/metadata.name: "rl-runner-test"'
+}
+
+# RAN-55: nginx asks the runner in runner.namespace (the image's CMD writes its host from this variable).
+test_git_mirror_nginx_names_the_runner_namespace() {
+  render "${GIT_MIRROR[@]}" --show-only templates/git-mirror/deployment.yaml --set runner.namespace=rl-runner-test
+  expect_ok
+  expect_line '            - name: "RANGELIGHT_RUNNER_NAMESPACE"'
+  expect_line '              value: "rl-runner-test"'
 }
 
 test_refuses_git_mirror_without_an_image() {

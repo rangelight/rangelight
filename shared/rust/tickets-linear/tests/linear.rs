@@ -255,3 +255,22 @@ async fn a_graphql_error_refuses_a_link_and_a_5xx_is_unavailable() {
         "{error:?}"
     );
 }
+
+/// RAN-55: a URL that isn't a Linear page drops the link, never the ticket, so the runner's Session
+/// (whose schema only takes Linear pages) is never refused over it.
+#[tokio::test]
+async fn a_url_that_isnt_linear_drops_the_link_not_the_ticket() {
+    let node = |id: &str, url: &str| serde_json::json!({ "id": id, "identifier": "RAN-1", "title": "t", "description": "Acceptance\n- AC1 it works", "url": url });
+    let answer = serde_json::json!({ "data": { "issues": {
+        "nodes": [
+            node("issue-1", "https://evil.example/x"),
+            node("issue-2", "https://linear.app/example/issue/RAN-1"),
+        ],
+        "pageInfo": { "hasNextPage": false, "endCursor": null },
+    } } });
+    let stub = LinearStub::start(Reply::Answer(answer)).await;
+    let key = key_file();
+    let tickets = linear(&stub, &key).tickets().await.unwrap();
+    let urls: Vec<_> = tickets.iter().map(|t| t.url().to_owned()).collect();
+    assert_eq!(urls, ["", "https://linear.app/example/issue/RAN-1"]);
+}

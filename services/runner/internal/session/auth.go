@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	authnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -33,6 +35,8 @@ type GitAuth struct {
 	Client client.Client
 	// Cache holds lane namespaces, lane pods and Sessions (NewManager).
 	Cache client.Reader
+	// Reader reads past the cache: a push report updates the Session as the API server has it.
+	Reader client.Reader
 	// Namespace is the runner's own namespace.
 	Namespace string
 }
@@ -40,11 +44,12 @@ type GitAuth struct {
 // runnerAccount is the runner's ServiceAccount in its namespace (the chart's templates/runner/rbac.yaml).
 const runnerAccount = "runner"
 
-// NewServer serves /auth/git and /healthz, with timeouts and a header cap: every request on it is
-// either the mirror's auth subrequest or a probe.
+// NewServer serves /auth/git, /git/pushed and /healthz, with timeouts and a header cap: every
+// request on it is the mirror's auth subrequest, its push hook, or a probe.
 func NewServer(addr string, auth *GitAuth) *http.Server {
 	mux := http.NewServeMux()
 	mux.Handle("GET /auth/git", auth)
+	mux.HandleFunc("POST /git/pushed", auth.pushed)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	return &http.Server{
 		Addr: addr, Handler: mux, MaxHeaderBytes: 16 << 10,
@@ -63,6 +68,69 @@ func (a *GitAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-Remote-User", id)
 	w.WriteHeader(http.StatusOK)
+}
+
+// commitID is a SHA-1 or SHA-256 object id.
+var commitID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
+
+// pushed is the git mirror's post-receive hook telling the runner that a session pushed its work
+// branch. The hook forwards the pushing session's own token, which is identified exactly as for
+// /auth/git: the session is that identity's, and the request may only confirm it. It records the
+// commit as the Session's status.workCommit, which makes the reconciler publish the branch, so a
+// publish that is due survives a restart. 202: recorded.
+func (a *GitAuth) pushed(w http.ResponseWriter, r *http.Request) {
+	id, err := a.identify(r.Context(), r)
+	if err != nil {
+		slog.InfoContext(r.Context(), "git push report refused", "reason", err.Error())
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	session, ok := strings.CutPrefix(id, "session-")
+	if !ok {
+		http.Error(w, "only a session pushes", http.StatusForbidden)
+		return
+	}
+	var push struct{ Session, Ref, Commit string }
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&push); err != nil {
+		http.Error(w, "want {session, ref, commit}", http.StatusBadRequest)
+		return
+	}
+	if push.Session != session || push.Ref != "refs/heads/"+workBranch(session) || !commitID.MatchString(push.Commit) {
+		slog.InfoContext(r.Context(), "git push report refused", "session_id", session, "reason", "not this session's work branch")
+		http.Error(w, "only your own work branch", http.StatusForbidden)
+		return
+	}
+	if err := a.recordPush(r.Context(), session, push.Commit); err != nil {
+		slog.WarnContext(r.Context(), "git push report not recorded", "session_id", session, "error", err.Error())
+		http.Error(w, "not recorded", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// recordPush sets the Session's workCommit and counts the push (status.pushes), optimistically
+// locked so two reports at once both count: each push, even of a commit seen before, is published.
+// The cache finds the Session; every read of it for the update is the API server's, so a retry
+// after a conflict never sees the stale copy again.
+func (a *GitAuth) recordPush(ctx context.Context, id, commit string) error {
+	cached, err := byID(ctx, a.Cache, id)
+	if err != nil || cached == nil {
+		return fmt.Errorf("session %s: not found", id)
+	}
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var s Session
+		if err := a.Reader.Get(ctx, client.ObjectKeyFromObject(cached), &s); err != nil {
+			return fmt.Errorf("session %s: %w", id, err)
+		}
+		before := s.DeepCopy()
+		s.Status.WorkCommit = commit
+		s.Status.Pushes++
+		return a.Client.Status().Patch(ctx, &s, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{}))
+	})
+	if err != nil {
+		return fmt.Errorf("push report: %w", err)
+	}
+	return nil
 }
 
 func (a *GitAuth) identify(ctx context.Context, r *http.Request) (string, error) {

@@ -2,9 +2,12 @@ package session
 
 import (
 	"fmt"
+	"strings"
+
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"strings"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // agentPod is the lane's agent (ADR 0015): non-root, read-only root filesystem, no capabilities,
@@ -128,4 +131,72 @@ func podReady(p *corev1.Pod) bool {
 		}
 	}
 	return false
+}
+
+// newPublishJob is the Job that publishes s's last pushed commit (publish.go): suspended until the
+// runner has put its token Secret beside it; the git mirror's image running publish.sh as its
+// non-root user, read-only root, no capabilities. It is the runner at the mirror through its own
+// projected token (audience rangelight-git-mirror only, so it can't call the API server), with no
+// automounted token. A refusal GitHub would repeat (exit publishGaveUp) fails it at once; any other
+// failure is retried publishRetries times with Kubernetes' backoff.
+func newPublishJob(s *Session, o Options, upstream string) *batchv1.Job {
+	no, yes := false, true
+	uid, expiry := int64(publishUID), int64(tokenSeconds)
+	deadline, ttl, retries := int64(publishDeadline), int32(publishTTL), int32(publishRetries)
+	name := fmt.Sprintf("publish-%s-%d", s.Spec.ID, s.Status.Pushes)
+	meta := objectMeta(name, s.Namespace, s.Spec.ID)
+	meta.Labels["app.kubernetes.io/component"] = "publish"
+	tmp := resource.MustParse("2Gi")
+	return &batchv1.Job{
+		ObjectMeta: meta,
+		Spec: batchv1.JobSpec{
+			Suspend: &yes, BackoffLimit: &retries, ActiveDeadlineSeconds: &deadline, TTLSecondsAfterFinished: &ttl,
+			PodFailurePolicy: &batchv1.PodFailurePolicy{Rules: []batchv1.PodFailurePolicyRule{{
+				Action:      batchv1.PodFailurePolicyActionFailJob,
+				OnExitCodes: &batchv1.PodFailurePolicyOnExitCodesRequirement{Operator: batchv1.PodFailurePolicyOnExitCodesOpIn, Values: []int32{publishGaveUp}},
+			}}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: meta.Labels},
+				Spec: corev1.PodSpec{
+					RestartPolicy: corev1.RestartPolicyNever,
+					// ponytail: the runner's identity (read-only at the mirror, no API token); ceiling: a git
+					// pack-parsing RCE in this pod could read other sessions' repos. Upgrade: a per-session
+					// publisher identity at the mirror.
+					ServiceAccountName: runnerAccount, AutomountServiceAccountToken: &no, EnableServiceLinks: &no,
+					SecurityContext: &corev1.PodSecurityContext{
+						RunAsNonRoot: &yes, RunAsUser: &uid, RunAsGroup: &uid,
+						SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+					},
+					Containers: []corev1.Container{{
+						Name:    "publish",
+						Image:   o.PublishImage,
+						Command: []string{"/opt/git-mirror/publish.sh", s.Spec.ID, o.MirrorURL, upstream},
+						Env:     []corev1.EnvVar{{Name: "HOME", Value: "/tmp"}},
+						SecurityContext: &corev1.SecurityContext{
+							RunAsNonRoot: &yes, AllowPrivilegeEscalation: &no, ReadOnlyRootFilesystem: &yes,
+							Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m"), corev1.ResourceMemory: resource.MustParse("64Mi")},
+							Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+						},
+						VolumeMounts: []corev1.VolumeMount{
+							{Name: "tmp", MountPath: "/tmp"},
+							{Name: "token", MountPath: publishTokenDir, ReadOnly: true},
+							{Name: "git-mirror-token", MountPath: tokenDir, ReadOnly: true},
+						},
+					}},
+					Volumes: []corev1.Volume{
+						{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &tmp}}},
+						{Name: "token", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name}}},
+						{Name: "git-mirror-token", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
+							Sources: []corev1.VolumeProjection{{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+								Audience: MirrorAudience, ExpirationSeconds: &expiry, Path: "token",
+							}}},
+						}}},
+					},
+				},
+			},
+		},
+	}
 }

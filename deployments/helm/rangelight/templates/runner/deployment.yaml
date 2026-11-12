@@ -1,5 +1,8 @@
 {{- if .Values.runner.enabled }}
 ---
+{{- $app := .Values.githubApp.secretRef.name }}
+{{- $upstreams := list -}}
+{{- range .Values.gitMirror.repos }}{{ $upstreams = append $upstreams (printf "%s=%s" .name .upstream) }}{{ end }}
 # The runner (ADR 0018): one replica, so no leader election. Its config is the defaults plus these
 # RANGELIGHT_RUNNER_* variables (configs/runner.default.toml).
 apiVersion: "apps/v1"
@@ -50,6 +53,18 @@ spec:
             # The runner protocol (ADR 0021); lanes keep running while NATS is unreachable.
             - name: "RANGELIGHT_RUNNER_NATS_URL"
               value: {{ include "rangelight.natsUrl" . | quote }}
+            {{- if $app }}
+            # Publishing (githubApp): the App's two keys as files, and where each repo's work branches go.
+            - name: "RANGELIGHT_RUNNER_GITHUB_APP_ID"
+              value: {{ printf "secret://%s#app-id" $app | quote }}
+            - name: "RANGELIGHT_RUNNER_GITHUB_APP_PRIVATE_KEY"
+              value: {{ printf "secret://%s#private-key" $app | quote }}
+            - name: "RANGELIGHT_RUNNER_UPSTREAMS"
+              value: {{ join " " $upstreams | quote }}
+            # The publish Job runs publish.sh from the git mirror's image, which has git.
+            - name: "RANGELIGHT_RUNNER_PUBLISH_IMAGE"
+              value: {{ required "githubApp needs gitMirror.image" .Values.gitMirror.image | quote }}
+            {{- end }}
           ports:
             - name: "http"
               containerPort: 8080
@@ -80,6 +95,11 @@ spec:
             - name: "nats-token"
               mountPath: "/var/run/secrets/rangelight/nats"
               readOnly: true
+            {{- if $app }}
+            - name: "secrets"
+              mountPath: "/var/run/rangelight/secrets"
+              readOnly: true
+            {{- end }}
       volumes:
         - name: "tmp"
           emptyDir:
@@ -92,4 +112,7 @@ spec:
                   expirationSeconds: 600
                   path: "token"
         {{- include "rangelight.natsTokenVolume" . | nindent 8 }}
+        {{- if $app }}
+        {{- include "rangelight.secretsVolume" (list (printf "%s#app-id" $app) (printf "%s#private-key" $app)) | nindent 8 }}
+        {{- end }}
 {{- end }}

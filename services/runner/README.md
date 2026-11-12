@@ -2,7 +2,8 @@
 
 The only Kubernetes-aware part of Rangelight (ADR 0018), in Go with controller-runtime. It runs
 `Session` resources (`rangelight.dev/v1alpha1`, `deployments/helm/rangelight/files/crds/session.yaml`),
-which live in the runner's own namespace, and answers the git mirror's `/auth/git`.
+which live in the runner's own namespace, answers the git mirror's `/auth/git`, and publishes each
+session's work branch to GitHub.
 
 **The runner protocol** (`api/README.md`, ADR 0021). A durable JetStream pull consumer
 (`runner-<runner_id>`) of `rl.<org>.runner.<runner_id>.desired.*`, one subject per session, from the
@@ -39,6 +40,23 @@ TokenReview accepts for `rangelight-git-mirror`, bound to a pod. 200 with `X-Rem
 for the runner's own ServiceAccount (it reads profiles with that token; the mirror lets `runner`
 only read), or `session-<id>` for the agent pod of the live Session `<id>`'s lane; else 401.
 
+**Publishing** (ADR 0011, ADR 0040 §3; on with `github_app_id` and `github_app_private_key`). The
+mirror's `post-receive` POSTs each push of `refs/heads/rangelight/<id>/work` to `/git/pushed` with the
+pushing lane's own token, which the runner identifies as for `/auth/git`: only `session-<id>`, naming its
+own work branch, is recorded (`status.workCommit`, 202); anything else is 401 or 403 and records nothing.
+While `status.pushes` (each push counted, a commit seen before too) differs from `status.publishedPush`, the reconciler (never waiting on git) creates the
+Job `publish-<id>-<n>` (the n-th push) in its namespace, owned by the Session and suspended; mints an installation
+token (an App JWT, RS256, 9 minutes; the token only for the repo of `upstreams`, contents and pull requests
+write) into a Secret the Job owns; and releases the Job. The Job runs `services/git-mirror/publish.sh` in
+the git mirror's image (`publish_image`) as the runner at the mirror (its projected token, no automounted
+API token): it fetches `rangelight/<id>/work` from `/sessions/<id>.git` and pushes that one ref, the tokens
+only in Authorization headers. One Job per session runs at a time. When it completes, the runner finds the
+branch's open pull request or opens one against `baseRef` (`status.pullRequestUrl`, reported as
+`SessionStatus.pull_request_url`) and revokes the token. A failed Job, a missing upstream or a refused
+workflow change ends that commit's publish with the reason in `status.publishMessage` (reported after the
+status message) until the next push; a failing GitHub call retries with backoff (0.5 s to 30 s). The due
+publish is in the Session's status, so a restart loses nothing.
+
 **Permissions.** The chart's ClusterRole lists only what a lane needs, and its
 ValidatingAdmissionPolicy confines every write of the runner's ServiceAccount to lane namespaces
 (`rl-*`, labelled `rangelight.dev/lane=true`), its Sessions to its own namespace, and lane pods to
@@ -56,10 +74,12 @@ projected token (`nats_token_file`, audience `rangelight-nats`) is read at every
 under `_INBOX_runner-<runner_id>`, so it may consume only its own sessions and report only its own status.
 `nats_url` is `tls://`, or `nats://` to a Service in the same cluster: a remote runner needs TLS. Each lane's agent
 container gets a projected token of its own for NATS, which lets it reach only its own terminal.
+`github_app_id` and `github_app_private_key` are `secret://<name>#<key>` references (files under
+`/var/run/rangelight/secrets/`), `upstreams` is `<repo>=<https URL> ...`, and `github_api_url` the API.
 It sets the lane's disk sizes and `workers` (Sessions reconciled at once; a profile read is a
 depth-1 clone on the runner's `/tmp` for up to 30 seconds, so `/tmp` holds up to `workers` of them).
 Code: `main.go` (wiring), `internal/config/`, `internal/session/` (`protocol.go`, `desired.go`,
-`status.go`: the runner protocol). Deployed by the chart
+`status.go`: the runner protocol; `publish.go` and `publishing.go`, its Job in `pod.go`), `internal/github/` (the App's token and pull requests). Deployed by the chart
 (`templates/runner/`); image `build/package/docker/runner/Dockerfile`.
 
 ```sh

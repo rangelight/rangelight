@@ -3,7 +3,8 @@
 cgi  <backend> <root> <portfile> <dir>   plays nginx + fcgiwrap: HTTP in, backend.sh as CGI.
 auth <portfile> <dir>                     plays the runner's /auth/git, behind a real nginx.
 
-Both record checkpoint events POSTed to /events in <dir>/events; auth also logs each of its calls
+Both record checkpoint events POSTed to /events in <dir>/events, and work-branch pushes POSTed to
+/git/pushed in <dir>/pushed (the Authorization header, then the body); auth also logs each of its calls
 in <dir>/auth-calls. The stub identity is the X-Stub-User header: a -> session-a, b -> session-b,
 r -> runner, "deny" -> 401, anything else is passed on as it is, no header -> no identity.
 A Basic password, when there is one, is the stub user instead, the way the runner reads a token.
@@ -57,6 +58,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with open(DIR + "/events", "ab") as f:
                 f.write(data + b"\n")
             return self.answer(204, [], b"")
+        if path == "/git/pushed":
+            with open(DIR + "/pushed", "ab") as f:
+                f.write(self.headers.get("Authorization", "").encode() + b" " + data + b"\n")
+            return self.answer(202, [], b"")
         status, user = identity(self.headers)
         if MODE == "auth":
             with open(DIR + "/auth-calls", "a") as f:
@@ -73,7 +78,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                "QUERY_STRING": query, "CONTENT_TYPE": self.headers.get("Content-Type", ""),
                "CONTENT_LENGTH": length, "REMOTE_USER": user, "GIT_PROJECT_ROOT": ROOT,
                "GIT_HTTP_EXPORT_ALL": "1",
-               "RANGELIGHT_EVENTS_URL": "http://127.0.0.1:%d/events" % self.server.server_port}
+               "RANGELIGHT_EVENTS_URL": "http://127.0.0.1:%d/events" % self.server.server_port,
+               "RANGELIGHT_PUSHED_URL": "http://127.0.0.1:%d/git/pushed" % self.server.server_port}
         for key, value in self.headers.items():
             if key.lower() not in ("content-type", "content-length", "x-stub-user"):
                 env["HTTP_" + key.upper().replace("-", "_")] = value

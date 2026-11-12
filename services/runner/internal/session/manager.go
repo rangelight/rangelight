@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -51,6 +52,7 @@ func NewManager(cfg *rest.Config, namespace string) (manager.Manager, error) {
 			&corev1.ConfigMap{}:             inLane,
 			&corev1.PersistentVolumeClaim{}: inLane,
 			&networkingv1.NetworkPolicy{}:   inLane,
+			&batchv1.Job{}:                  {Namespaces: map[string]cache.Config{namespace: {}}},
 		}},
 	})
 	if err != nil {
@@ -79,6 +81,7 @@ func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
 	if r.profiles, err = newProfiles(r.MirrorURL, r.MirrorTokenFile); err != nil {
 		return err
 	}
+	r.pub = newPublishing()
 	toSession := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		s, err := byID(ctx, r.Client, o.GetLabels()[LabelSession])
 		if err != nil || s == nil {
@@ -88,6 +91,7 @@ func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
 	})
 	b := ctrl.NewControllerManagedBy(mgr).For(&Session{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.Workers}).
+		Owns(&batchv1.Job{}).
 		Watches(&corev1.Pod{}, toSession).
 		Watches(&corev1.ConfigMap{}, toSession).
 		Watches(&corev1.PersistentVolumeClaim{}, toSession).

@@ -17,6 +17,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/rangelight/rangelight/services/runner/internal/github"
 )
 
 const messageMax = 2000
@@ -33,6 +35,12 @@ type Options struct {
 	Workspace, Tmp, EphemeralStorage resource.Quantity
 	// DNS selects the cluster DNS pods, the lane's only DNS server.
 	DNS DNS
+	// GitHub, if set, publishes each session's work branch to Upstreams[Spec.Repo], a git URL
+	// whose path is /<owner>/<repo>.git, and opens its pull request.
+	GitHub    *github.App
+	Upstreams map[string]string
+	// PublishImage is the git mirror's image, whose publish.sh each publish Job runs.
+	PublishImage string
 	// Workers is how many Sessions reconcile at once, so one slow mirror fetch stalls only one.
 	Workers int
 }
@@ -48,6 +56,7 @@ type Reconciler struct {
 	Options
 	mirrorHost string
 	profiles   *profiles
+	pub        *publishing
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -82,14 +91,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	} else if phase != "" {
 		s.Status.Phase = phase
 	}
+	var wait time.Duration
+	if err == nil && s.Status.Phase != PhaseFailed {
+		wait = r.publishDue(ctx, &s)
+	}
 	result, uerr := r.settle(ctx, &s, before)
+	if wait > 0 && result.RequeueAfter == 0 {
+		result.RequeueAfter = wait
+	}
 	return result, errors.Join(err, uerr)
 }
 
 // settle writes s's status if it changed from before, with a new phase id for a new phase or
-// message (so the api learns why a lane is stuck), and reports it. Optimistically locked: a stale read must not mint a second id for one phase change.
+// message (so the api learns why a lane is stuck) or pull request, and reports it. Optimistically locked: a stale read must not mint a second id for one phase change.
 func (r *Reconciler) settle(ctx context.Context, s, before *Session) (ctrl.Result, error) {
-	if s.Status.Phase != before.Status.Phase || s.Status.Message != before.Status.Message || s.Status.PhaseID == "" {
+	if s.Status.Phase != before.Status.Phase || s.Status.Message != before.Status.Message ||
+		s.Status.PullRequestURL != before.Status.PullRequestURL || s.Status.PublishMessage != before.Status.PublishMessage ||
+		s.Status.PhaseID == "" {
 		id, err := uuid.NewV7()
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("session %s: phase id: %w", s.Spec.ID, err)
@@ -152,7 +170,9 @@ func (r *Reconciler) converge(ctx context.Context, s *Session) (Phase, error) {
 
 // laneConfig is the lane's ConfigMap: the ticket, and the profile read once from the base branch.
 func (r *Reconciler) laneConfig(ctx context.Context, s *Session) (*corev1.ConfigMap, error) {
-	ticket, err := json.Marshal(s.Spec.Ticket)
+	t := s.Spec.Ticket
+	t.URL = "" // the agent doesn't need it
+	ticket, err := json.Marshal(t)
 	if err != nil {
 		return nil, fmt.Errorf("session %s: ticket: %w", s.Spec.ID, err)
 	}
@@ -248,6 +268,9 @@ func (r *Reconciler) remove(ctx context.Context, s *Session) error {
 		if err := r.Delete(ctx, &ns); client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf("lane %s: delete namespace: %w", Namespace(s), err)
 		}
+	}
+	if err := r.revokeRunning(ctx, s); err != nil {
+		return err
 	}
 	controllerutil.RemoveFinalizer(s, finalizer)
 	if err := r.Update(ctx, s); err != nil {

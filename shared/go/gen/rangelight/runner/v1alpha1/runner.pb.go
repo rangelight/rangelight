@@ -1001,6 +1001,7 @@ type Ticket struct {
 	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	Criteria      []string               `protobuf:"bytes,4,rep,name=criteria,proto3" json:"criteria,omitempty"` // AC1..ACn, in order
+	Url           string                 `protobuf:"bytes,5,opt,name=url,proto3" json:"url,omitempty"`           // the ticket's page in the tracker; the PR body links it (never in the lane's ticket.json)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1061,6 +1062,13 @@ func (x *Ticket) GetCriteria() []string {
 		return x.Criteria
 	}
 	return nil
+}
+
+func (x *Ticket) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
 }
 
 type Worktree struct {
@@ -2034,12 +2042,13 @@ const file_rangelight_runner_v1alpha1_runner_proto_rawDesc = "" +
 	"\x06member\x18\x12 \x01(\tR\x06member\x1aA\n" +
 	"\x13CredentialRefsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"n\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x80\x01\n" +
 	"\x06Ticket\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1a\n" +
-	"\bcriteria\x18\x04 \x03(\tR\bcriteria\"\xb4\x01\n" +
+	"\bcriteria\x18\x04 \x03(\tR\bcriteria\x12\x10\n" +
+	"\x03url\x18\x05 \x01(\tR\x03url\"\xb4\x01\n" +
 	"\bWorktree\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x19\n" +
 	"\bbase_sha\x18\x02 \x01(\tR\abaseSha\x12\x16\n" +

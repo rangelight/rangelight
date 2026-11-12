@@ -70,6 +70,8 @@ type Ticket struct {
 	Title       string   `json:"title"`
 	Description string   `json:"description"`
 	Criteria    []string `json:"criteria"`
+	// URL is the ticket's page in Linear, which the pull request links; never in the lane's ticket.json.
+	URL string `json:"url,omitempty"`
 }
 
 // Status is what the runner observed.
@@ -85,6 +87,21 @@ type Status struct {
 	// PhaseID is the message_id of the SessionStatus that reports this phase: a new UUIDv7 at each
 	// phase change, so a report sent again (after a restart, say) is the same message.
 	PhaseID string `json:"phaseId,omitempty"`
+	// WorkCommit is the commit the session last pushed to its work branch, as the git mirror
+	// reported it; PublishedCommit is the WorkCommit whose branch was last published upstream. They
+	// differ while a publish is due, which a restart doesn't lose.
+	WorkCommit      string `json:"workCommit,omitempty"`
+	PublishedCommit string `json:"publishedCommit,omitempty"`
+	// Pushes counts the work-branch pushes reported; PublishedPush is the count whose publish
+	// ended (published or given up). A publish is due while they differ, so a push of a commit seen
+	// before (A, B, then A again) is published too. Each push's Job is publish-<id>-<Pushes>.
+	Pushes        int64 `json:"pushes,omitempty"`
+	PublishedPush int64 `json:"publishedPush,omitempty"`
+	// PullRequestURL is the open pull request of the session's work branch.
+	PullRequestURL string `json:"pullRequestUrl,omitempty"`
+	// PublishMessage says why the last push isn't published: retrying, or given up until the next
+	// push. The status the api gets carries it after Message.
+	PublishMessage string `json:"publishMessage,omitempty"`
 }
 
 // Phase is where a session's pod is: Pending, then Starting once its namespace exists, then Hot

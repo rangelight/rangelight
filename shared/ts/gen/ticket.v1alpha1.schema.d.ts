@@ -17,4 +17,8 @@ export interface RangelightTicketV1Alpha1 {
    * @maxItems 50
    */
   criteria: [string, ...string[]];
+  /**
+   * The ticket's page in Linear, which the session's pull request links. The runner keeps it out of the lane's ticket.json.
+   */
+  url?: string;
 }

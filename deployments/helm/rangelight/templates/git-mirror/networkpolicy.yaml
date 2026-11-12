@@ -22,7 +22,7 @@ spec:
               rangelight.dev/lane: "true"
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: "rangelight-runner"
+              kubernetes.io/metadata.name: {{ .Values.runner.namespace | quote }}
       ports:
         - protocol: "TCP"
           port: 8080

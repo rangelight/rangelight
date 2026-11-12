@@ -165,6 +165,54 @@ at start: after changing `publicUrl`, `dex.github.org` or `oidc.clientId`, run
   so a flaw in them would run with the Workbench's origin (the login cookie stays HttpOnly). Serving Dex on
   its own host is a later option.
 
+## Publishing to GitHub
+
+With `githubApp.secretRef.name` set, the runner publishes each session's work: when a lane pushes
+`rangelight/<session id>/work` to the git mirror, a Job in `runner.namespace` (the git mirror's image, its
+`publish.sh`) pushes that one branch to the repo's `gitMirror.repos` upstream as your GitHub App, with an
+installation token for that repository only, revoked once used. The runner then opens a pull request against
+the session's base branch (`api.baseRef`), titled `<ticket key>: <ticket title>`, linking the Linear ticket.
+Later pushes update the same pull request. A failed push is retried by its Job twice; then, and for anything
+GitHub refuses for good, the session's status message says why and the next push tries again. Without the
+value nothing is published. Each upstream must be `https://github.com/<owner>/<repo>.git`. The mirror refuses
+any file over 100 MiB, which GitHub would refuse too.
+
+**Lane branches run your CI.** A pushed `rangelight/*` branch and its pull request trigger the repo's `push` and
+`pull_request` workflows, with the branch's code: a lane can change any script your CI runs (for example a
+`check.sh` the workflow calls). Before you install the App:
+
+- Never expose deploy or release secrets to workflows that run on `pull_request` or on `rangelight/**` branches.
+  Keep them in [environments](https://docs.github.com/en/actions/deployment/targeting-different-environments)
+  with required reviewers, or limited to `main`.
+- The App has no Workflows permission, so a lane can't change `.github/workflows`: GitHub refuses such a push,
+  the runner doesn't retry it, and the session's status message says so. Ask for the workflow change in the PR
+  instead, or make it by hand.
+
+1. Create the App under the account that owns the repo: GitHub → Settings → Developer settings → GitHub Apps →
+   **New GitHub App** (for an organization's repo: the organization's Settings → Developer settings → GitHub Apps).
+   - **GitHub App name**: anything, for example `rangelight-<your org>`. **Homepage URL**: your `publicUrl`.
+   - **Webhook**: clear **Active** (Rangelight needs no webhook yet).
+   - **Repository permissions**: **Contents: Read and write**, **Pull requests: Read and write**,
+     **Metadata: Read-only** (GitHub sets it). Nothing else, and no organization or account permissions.
+   - **Where can this GitHub App be installed?**: **Only on this account**. Then **Create GitHub App**.
+2. On the App's page, note the **App ID**, then **Generate a private key**: your browser downloads a `.pem` file.
+3. **Install App** (left menu) → your account or organization → **Only select repositories** → the repo of
+   `gitMirror.repos` → **Install**. The runner asks for a token per publish, for that one repository only, with
+   contents and pull requests write.
+4. Create the Secret in `runner.namespace`, with exactly these two keys:
+
+   ```sh
+   kubectl -n rangelight-runner create secret generic rangelight-github-app \
+     --from-literal=app-id=<App ID> \
+     --from-file=private-key=<path to the downloaded .pem>
+   ```
+
+5. Set `githubApp.secretRef.name: "rangelight-github-app"` in your values and upgrade:
+   `helm upgrade --install rangelight deployments/helm/rangelight --namespace rangelight-system --values <your values.yaml> --wait`.
+   The runner restarts with the App's id and key mounted as files under `/var/run/rangelight/secrets/`; it reads
+   them at each publish, so a new private key in the Secret takes effect without a restart. Delete the `.pem`
+   file once the Secret exists.
+
 ## Ingress
 
 `ingress.enabled` renders one `networking.k8s.io/v1` Ingress `rangelight` for the host of `publicUrl`, with

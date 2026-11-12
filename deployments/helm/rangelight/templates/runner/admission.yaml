@@ -34,7 +34,11 @@ spec:
         {'/namespaces': ['CREATE', 'DELETE'], '/pods': ['CREATE'], '/persistentvolumeclaims': ['CREATE'],
         '/configmaps': ['CREATE', 'UPDATE'], 'networking.k8s.io/networkpolicies': ['CREATE', 'UPDATE'],
         'cilium.io/ciliumnetworkpolicies': ['CREATE', 'UPDATE'], 'authentication.k8s.io/tokenreviews': ['CREATE'],
-        'rangelight.dev/sessions': ['CREATE', 'UPDATE', 'DELETE'], 'rangelight.dev/sessions/status': ['UPDATE']}
+        'rangelight.dev/sessions': ['CREATE', 'UPDATE', 'DELETE'], 'rangelight.dev/sessions/status': ['UPDATE'],
+        'batch/jobs': ['CREATE', 'UPDATE', 'DELETE'], '/secrets': ['CREATE']}
+    # The publish Job and its token Secret live in the runner's own namespace, nowhere else.
+    - name: "publishing"
+      expression: "variables.kind in ['batch/jobs', '/secrets']"
     - name: "target"
       expression: "request.operation == 'DELETE' ? oldObject : object"
     - name: "isLane"
@@ -52,10 +56,25 @@ spec:
       message: "the runner may create or delete only lane namespaces: rl-*, labelled rangelight.dev/lane=true"
     - expression: >-
         variables.kind in ['/namespaces', 'authentication.k8s.io/tokenreviews'] || variables.kind.startsWith('rangelight.dev/sessions') ||
-        variables.inLane
+        variables.publishing || variables.inLane
       message: "the runner writes only in lane namespaces (labelled rangelight.dev/lane=true)"
     - expression: {{ printf "!variables.kind.startsWith('rangelight.dev/sessions') || request.namespace == '%s'" .Values.runner.namespace | quote }}
       message: "the runner's Sessions live only in its own namespace"
+    - expression: {{ printf "!variables.publishing || request.namespace == '%s'" .Values.runner.namespace | quote }}
+      message: "the runner's publish Jobs and their Secrets live only in its own namespace"
+    # A publish pod has the runner's identity at the git mirror only: no automounted API token.
+    - expression: >-
+        variables.kind != 'batch/jobs' || request.operation == 'DELETE' || (has(object.spec.template.spec.serviceAccountName) &&
+        object.spec.template.spec.serviceAccountName == 'runner' && has(object.spec.template.spec.automountServiceAccountToken) &&
+        !object.spec.template.spec.automountServiceAccountToken)
+      message: "a publish Job runs as the runner's ServiceAccount, with no automounted token"
+    # The runner deletes only its own publish Jobs (a superseded one), never another Job of its namespace.
+    - expression: >-
+        variables.kind != 'batch/jobs' || request.operation != 'DELETE' || (has(oldObject.metadata.labels) &&
+        'app.kubernetes.io/component' in oldObject.metadata.labels && oldObject.metadata.labels['app.kubernetes.io/component'] == 'publish' &&
+        'app.kubernetes.io/managed-by' in oldObject.metadata.labels && oldObject.metadata.labels['app.kubernetes.io/managed-by'] == 'rangelight-runner' &&
+        'rangelight.dev/session' in oldObject.metadata.labels)
+      message: "the runner deletes only its own publish Jobs"
     - expression: >-
         variables.kind != '/pods' || (has(object.spec.serviceAccountName) && object.spec.serviceAccountName == 'default' &&
         has(object.spec.automountServiceAccountToken) && !object.spec.automountServiceAccountToken)

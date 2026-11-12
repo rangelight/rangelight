@@ -147,7 +147,7 @@ nats:
         pvc:
           # Size of the JetStream volume.
           size: "10Gi"
-    # files/nats/auth.conf, mounted from the ConfigMap rangelight-nats-auth-config: the accounts, the auth callout
+    # templates/nats/_auth.conf.tpl, mounted from the ConfigMap rangelight-nats-auth-config: the accounts, the auth callout
     # and max_payload.
     merge:
       00$include: "../nats-auth/auth.conf"
@@ -155,6 +155,11 @@ nats:
   podTemplate:
     configChecksumAnnotation: true
     merge:
+      # The upstream checksum covers only its own nats.conf: this one rolls the server when our auth.conf changes.
+      metadata:
+        annotations:
+          checksum/auth:
+            $tplYaml: "{{ include \"rangelight.natsAuthConf\" . | sha256sum | quote }}"
       spec:
         securityContext:
           runAsNonRoot: true
@@ -163,8 +168,7 @@ nats:
           fsGroup: 1000
           seccompProfile:
             type: "RuntimeDefault"
-    # auth.conf at /etc/nats-auth. A changed auth.conf reaches the server at its next restart (see the README's
-    # upgrade notes).
+    # auth.conf at /etc/nats-auth; a changed one rolls the server (checksum/auth above).
     patch:
       - op: "add"
         path: "/spec/volumes/-"

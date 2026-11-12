@@ -103,5 +103,5 @@ Code: `src/lib.rs` (server, NATS start), `src/intake.rs` (intake, link and comme
 terminal), `src/auth.rs` (sign-in; `src/auth/recheck.rs`, long-lived responses), `src/status.rs` (runner status),
 `src/nats_auth/` (the NATS auth callout), `src/config.rs`, `src/main.rs` (wiring). Tests: `tests/api.rs`, end to end
 through a Linear stub, the relay and a real Connect client; `tests/auth.rs`, sign-in through the test Dex;
-`tests/nats_auth/`, every identity's permissions on a nats-server running the chart's `files/nats/auth.conf`;
+`tests/nats_auth/`, every identity's permissions on a nats-server running the chart's `templates/nats/_auth.conf.tpl`;
 `tests/terminal/`, a real WebSocket client and NATS.

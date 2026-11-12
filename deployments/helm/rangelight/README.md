@@ -101,7 +101,7 @@ clients included. Find your cluster's issuer with `kubectl get --raw /.well-know
   `kubectl -n rangelight-system rollout restart statefulset rangelight-nats deployment rangelight-api`. Clients
   sign in again on their own. ServiceAccount tokens rotate by themselves: the kubelet renews them.
 - **Your own NATS** (`nats.enabled=false`) runs in operator mode, the callout on account RL and the lanes in an
-  account of their own (`files/nats/auth.conf` is the same layout in config mode). With `nsc`:
+  account of their own (`templates/nats/_auth.conf.tpl` is the same layout in config mode). With `nsc`:
   1. `nsc add account RL`, `nsc edit account RL --js-enable 1 --sk generate`: that signing key's seed is
      `issuer-seed`. `nsc add account LANE`, `nsc edit account LANE --conns 1024 --subscriptions 1 --payload 131072
      --sk generate`: its seed is `lane-issuer-seed`.
@@ -122,8 +122,13 @@ clients included. Find your cluster's issuer with `kubectl get --raw /.well-know
   on the volume, unused. At every start the relay puts back each session's last published desired state from
   Postgres wherever the desired stream lacks it, before it publishes anything newer, so runners lose nothing.
   Status reports the api hadn't recorded yet are lost; each runner reports again at a session's next phase
-  change. A changed `auth.conf` reaches the server at its next restart: `kubectl -n rangelight-system rollout
-  restart statefulset rangelight-nats`.
+  change.
+- **NATS restarts when its sign-in config changes.** The server's pod carries `checksum/auth`, the sha256 of the
+  `auth.conf` it includes (`templates/nats/_auth.conf.tpl`), beside the upstream chart's `checksum/config` for its
+  own `nats.conf`. An upgrade that changes either rolls the server. Clients reconnect and sign in again on their
+  own; core NATS messages in flight while it restarts (terminal output, session fan-out) are lost, and JetStream
+  keeps the rest. New keys in the Secrets don't change the pod: restart NATS after a rotation (above). The first
+  upgrade to this version restarts NATS once, because the pod gains the `checksum/auth` annotation.
 - **Close every live session before upgrading to this version.** The runner now marks each lane namespace with
   its Session's UID (`rangelight.dev/session-uid`) and never adopts a namespace without that mark, so nobody can
   make one in advance and take over its lane. Namespaces from earlier versions lack it: after the upgrade their

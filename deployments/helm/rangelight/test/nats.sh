@@ -39,7 +39,13 @@ test_keys_job_reads_only_its_two_secrets() {
     fail "the Role: $(awk '/^rules:/ { on = 1; next } /^---/ { on = 0 } on' <<<"${OUT}")"
 }
 
-# The bundled server includes auth.conf from its ConfigMap, exactly files/nats/auth.conf, and reads its public keys from
+# auth_conf [chart]: the auth.conf text in templates/nats/_auth.conf.tpl, between its define and end lines.
+auth_conf() {
+  awk '/^\{\{- define "rangelight.natsAuthConf"/ { on = 1; next } /^\{\{ end \}\}$/ { on = 0 } on' \
+    "${1:-${CHART}}/templates/nats/_auth.conf.tpl"
+}
+
+# The bundled server includes auth.conf from its ConfigMap, exactly templates/nats/_auth.conf.tpl's, and reads its public keys from
 # the keys Job's Secret.
 test_the_bundled_server_includes_the_sign_in_config() {
   render "${NATS[@]}" --show-only templates/nats/auth.yaml
@@ -50,7 +56,35 @@ test_the_bundled_server_includes_the_sign_in_config() {
   grep -qE -e '^ +(- )?mountPath: /etc/nats-auth$' <<<"${OUT}" || fail "auth.conf isn't mounted at /etc/nats-auth"
   grep -qE -e '^ +name: rangelight-nats-auth-config$' <<<"${OUT}" || fail "the server doesn't mount the ConfigMap"
   [[ "$(awk '/^  auth.conf: \|$/ { on = 1; next } on { sub(/^    /, ""); print }' <<<"${OUT}")" == \
-    "$(cat "${CHART}/files/nats/auth.conf")" ]] || fail "the ConfigMap isn't files/nats/auth.conf"
+    "$(auth_conf)" ]] || fail "the ConfigMap isn't templates/nats/_auth.conf.tpl's auth.conf"
+}
+
+# auth_checksum: the rendered NATS pod's checksum/auth annotation, from OUT.
+auth_checksum() { awk '/^ +checksum\/auth: / { print $2 }' <<<"${OUT}"; }
+
+# checksum_of <chart>: auth_checksum of the NATS pod that chart renders.
+checksum_of() {
+  local CHART="$1"
+  render --show-only charts/nats/templates/stateful-set.yaml
+  auth_checksum
+}
+
+# RAN-70: the NATS pod carries the sha256 of the auth.conf its ConfigMap holds, so a changed auth.conf rolls the server
+# on upgrade; the same auth.conf, the same annotation.
+test_a_changed_auth_conf_rolls_the_server() {
+  local first copy changed
+  render --show-only charts/nats/templates/stateful-set.yaml
+  expect_ok
+  first="$(auth_checksum)"
+  [[ "${first}" == "$(auth_conf | sha256sum | cut -d' ' -f1)" ]] || fail "checksum/auth isn't auth.conf's sha256: ${first}"
+  render --show-only charts/nats/templates/stateful-set.yaml
+  [[ "$(auth_checksum)" == "${first}" ]] || fail "checksum/auth changes between two renders of the same chart"
+  copy="$(mktemp -d /tmp/rl-chart-auth.XXXXXX)"
+  cp -r "${CHART}/." "${copy}"
+  sed -i 's/^max_payload: 131072$/max_payload: 65536/' "${copy}/templates/nats/_auth.conf.tpl"
+  changed="$(checksum_of "${copy}")"
+  rm -rf "${copy}"
+  [[ -n "${changed}" && "${changed}" != "${first}" ]] || fail "a changed auth.conf keeps checksum/auth: ${changed}"
 }
 
 # GitOps or `helm template`: your Secret, no Job; the server and the api read it.

@@ -84,7 +84,7 @@
   has no per-user publish rate limit: the api limits what it relays.
 - **The bundled server:** config-mode accounts `RL` (JetStream) and `SYS`, `max_payload` 128 KiB, an account
   connection limit, and the callout's own static nkey user with only the callout's subjects
-  (`deployments/helm/rangelight/files/nats/auth.conf`). A hook Job makes the keys once. No operator, no account
+  (`deployments/helm/rangelight/templates/nats/_auth.conf.tpl`). A hook Job makes the keys once. No operator, no account
   server, no new image or service. **Your own server:** operator mode, with `nsc edit authcallout` on one account;
   the api's code is the same.
 - **Not yet:** xkey encryption of the callout's requests. Add it when they leave the cluster (the hosted profile).

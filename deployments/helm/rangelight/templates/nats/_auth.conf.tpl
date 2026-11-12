@@ -1,5 +1,11 @@
+{{- /*
+The bundled NATS server's sign-in config, included by its nats.conf (ADR 0021 amendment). A named template, not
+a file under files/, so the nats subchart can hash it too (the pod's checksum/auth annotation, values.yaml): a
+change rolls the server. The api's tests run nats-server with this text (rl-testkit, between the define and end lines).
+*/ -}}
+{{- define "rangelight.natsAuthConf" -}}
 # Who may connect to the bundled NATS server (ADR 0021 amendment). Included by the server's
-# nats.conf; the api's tests run nats-server with this same file. $RL_NATS_ISSUER and
+# nats.conf; the api's tests run nats-server with this same text. $RL_NATS_ISSUER and
 # $RL_NATS_AUTH_USER are public keys, from the environment (the Secret rangelight-nats-auth).
 
 # The largest message any client may send.
@@ -68,3 +74,4 @@ authorization {
     account: RL
   }
 }
+{{ end }}

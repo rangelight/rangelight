@@ -1,5 +1,5 @@
 //! NATS sign-in for tests: a nats-server running the bundled chart's sign-in config
-//! (`deployments/helm/rangelight/files/nats/auth.conf`) with fresh keys, and a stand-in for a
+//! (`deployments/helm/rangelight/templates/nats/_auth.conf.tpl`) with fresh keys, and a stand-in for a
 //! cluster's ServiceAccount token issuer (an ES256 key, its JWKS over HTTP, the tokens it signs).
 
 use std::process::{Child, Command, Stdio};
@@ -15,9 +15,26 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-/// The bundled server's sign-in config.
-const AUTH_CONF: &str =
-    include_str!("../../../../deployments/helm/rangelight/files/nats/auth.conf");
+/// The chart's template holding the bundled server's sign-in config, between its `define` and
+/// `end` lines.
+const AUTH_TEMPLATE: &str =
+    include_str!("../../../../deployments/helm/rangelight/templates/nats/_auth.conf.tpl");
+
+/// The bundled server's sign-in config: the text the chart renders into its `ConfigMap`.
+fn auth_conf() -> String {
+    let lines = AUTH_TEMPLATE.lines();
+    let body = lines
+        .skip_while(|line| !line.starts_with("{{- define \"rangelight.natsAuthConf\""))
+        .skip(1)
+        .take_while(|line| *line != "{{ end }}");
+    let conf: String = body.flat_map(|line| [line, "\n"]).collect();
+    // A renamed define would leave nothing, and nats-server would start with no sign-in at all.
+    assert!(
+        conf.contains("auth_callout"),
+        "no auth.conf with an auth_callout in templates/nats/_auth.conf.tpl"
+    );
+    conf
+}
 
 /// A nats-server with the bundled sign-in config. It stops when dropped.
 #[derive(Debug)]
@@ -38,7 +55,7 @@ impl AuthNats {
         let dir = tempfile::tempdir().unwrap();
         let issuer = nkeys::KeyPair::new_account();
         let auth_user = nkeys::KeyPair::new_user();
-        std::fs::write(dir.path().join("auth.conf"), AUTH_CONF).unwrap();
+        std::fs::write(dir.path().join("auth.conf"), auth_conf()).unwrap();
         let conf = format!(
             "listen: \"127.0.0.1:-1\"\nports_file_dir: \"{dir}\"\njetstream {{ store_dir: \"{dir}/js\" }}\ninclude \"auth.conf\"\n",
             dir = dir.path().display(),

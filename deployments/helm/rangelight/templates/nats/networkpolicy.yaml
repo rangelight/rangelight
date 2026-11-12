@@ -17,7 +17,7 @@ spec:
   ingress:
     # Only NATS's clients, on the client port: the api and the relay in rangelight-system, and the
     # runner in its own namespace (the runner protocol). Nothing else, the git mirror included. Each
-    # signs in with its own identity (files/nats/auth.conf).
+    # signs in with its own identity (templates/nats/_auth.conf.tpl).
     - from:
         - podSelector:
             matchLabels:

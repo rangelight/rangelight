@@ -24,6 +24,10 @@ use crate::Auth;
 /// The most sessions `ListSessions` and a `WatchSessions` snapshot return.
 const LIST_LIMIT: u16 = 1000;
 
+/// How long a watch stays quiet before it sends an empty message: proxies (Traefik, say) hold a
+/// stream's headers until its first body byte, and drop idle ones.
+const KEEPALIVE: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// How many events a viewer's stream may fall behind before it ends with ABORTED: the subscription
 /// capacity of the viewers' NATS client.
 const VIEWER_CAPACITY: usize = 1024;
@@ -212,13 +216,17 @@ impl SessionService for SessionApi {
             .subscribe(subject::session_events(&self.org, id), span)
             .await?;
         // The stream starts with the next event, whatever its seq: there is nothing to check it
-        // against until one arrives.
+        // against until one arrives. An empty message first says it is open (subscribed), and
+        // another after each quiet KEEPALIVE.
         let events = ordered(subscription, HashMap::new(), None).map(|event| {
             event.map(|event| WatchSessionResponse {
                 event: event.into(),
                 ..Default::default()
             })
         });
+        let empty = WatchSessionResponse::default();
+        let events = futures_util::stream::iter([Ok(empty.clone())])
+            .chain(keepalive(events, KEEPALIVE, empty));
         Response::stream_ok(self.auth.while_signed_in(&ctx, events)?)
     }
 
@@ -256,6 +264,8 @@ impl SessionService for SessionApi {
                     ..Default::default()
                 })
             });
+            // After a quiet KEEPALIVE, a message with no kind.
+            let changes = keepalive(changes, KEEPALIVE, WatchSessionsResponse::default());
             Box::pin(futures_util::stream::iter([Ok(first)]).chain(changes)) as Changes
         })
         .flatten();
@@ -342,6 +352,25 @@ fn ordered(
             }
         }
         None
+    })
+}
+
+/// `stream`, with `idle` sent whenever it is quiet for `every`; its own items keep their order.
+fn keepalive<T: Clone + Send + 'static>(
+    stream: impl Stream<Item = Result<T, ConnectError>> + Send + 'static,
+    every: std::time::Duration,
+    idle: T,
+) -> impl Stream<Item = Result<T, ConnectError>> + Send + 'static {
+    futures_util::stream::unfold(Box::pin(stream), move |mut stream| {
+        let idle = idle.clone();
+        async move {
+            // Cancel-safe: a `next` that times out loses nothing.
+            match tokio::time::timeout(every, stream.next()).await {
+                Ok(Some(item)) => Some((item, stream)),
+                Ok(None) => None,
+                Err(_) => Some((Ok(idle), stream)),
+            }
+        }
     })
 }
 

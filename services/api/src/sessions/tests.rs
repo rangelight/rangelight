@@ -110,3 +110,23 @@ async fn a_viewer_past_its_capacity_ends_with_aborted() {
     assert_eq!(ended, ErrorCode::Aborted, "after {seqs:?}");
     assert_eq!(seqs, [1, 2]);
 }
+
+/// RAN-72 AC3: a quiet watch gets an empty message every `every`, and its own messages keep their
+/// order and its end.
+#[tokio::test]
+async fn a_quiet_watch_gets_keepalives_and_keeps_its_order() {
+    let every = std::time::Duration::from_millis(20);
+    let quiet = futures_util::stream::iter([Ok(1), Ok(2)]).chain(futures_util::stream::pending());
+    let got: Vec<u32> = keepalive(quiet, every, 0)
+        .take(4)
+        .map(Result::unwrap)
+        .collect()
+        .await;
+    assert_eq!(got, [1, 2, 0, 0]);
+    let ends = futures_util::stream::iter([Ok::<u32, ConnectError>(1), Ok(2)]);
+    let got: Vec<u32> = keepalive(ends, every, 0)
+        .map(Result::unwrap)
+        .collect()
+        .await;
+    assert_eq!(got, [1, 2], "it ends with its stream");
+}

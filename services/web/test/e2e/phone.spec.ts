@@ -311,3 +311,15 @@ test("RAN-71 a signed-out visit on a phone ends at sign-in; the loop guard's not
   await touchTargets(page);
   await axe(page);
 });
+
+test("RAN-72 while the session loads, the phone shows its frame and tabs", async ({ page }) => {
+  await stub(page, "reset", { sessions: SESSIONS, hold: true });
+  await page.goto(SESSION);
+  await expect(page.locator("header")).toContainText("Loading the session…");
+  await expect(page.getByRole("tab", { name: "Terminal" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByRole("tab", { name: "Feed" })).toBeVisible();
+  await expect(() => fitsTheWidth(page)).toPass({ timeout: 5_000 });
+});

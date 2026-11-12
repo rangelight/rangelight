@@ -22,12 +22,6 @@ import { Terminal } from "./Terminal";
 export function SessionView({ id }: { id: string }) {
   const { state, feed, watch, reconnect } = useSession(id);
   switch (state.status) {
-    case "loading":
-      return (
-        <p className="px-6 py-6 text-[12.5px] text-dim" role="status">
-          Loading the session…
-        </p>
-      );
     case "missing":
       return (
         <Notice icon={SearchX} title="No such session" action={<BackLink />}>
@@ -50,14 +44,21 @@ export function SessionView({ id }: { id: string }) {
           The session didn't load. <span className="font-mono text-[12px]">{state.reason}</span>
         </Notice>
       );
+    // While it loads, the frame is already there: the panes (the same ones, so the terminal isn't
+    // started again once the session comes) under a header that says it is loading.
+    case "loading":
     case "ready":
       return (
         // A narrow touch screen with the terminal focused (the soft keyboard up): the header yields its
         // rows to the terminal.
         <div className="flex h-full min-w-0 flex-col max-lg:pointer-coarse:[&:has(.xterm:focus-within)>header]:hidden">
-          <Header session={state.session}>
-            <LiveStatus paused={watch === "watching" ? null : watch} onReconnect={reconnect} />
-          </Header>
+          {state.status === "ready" ? (
+            <Header session={state.session}>
+              <LiveStatus paused={watch === "watching" ? null : watch} onReconnect={reconnect} />
+            </Header>
+          ) : (
+            <LoadingHeader />
+          )}
           <Panes feed={<Feed events={feed} />} terminal={<Terminal sessionId={id} />} />
         </div>
       );
@@ -152,6 +153,25 @@ function BackLink() {
     >
       <ArrowLeft className="size-3.5" aria-hidden /> Sessions
     </AppLink>
+  );
+}
+
+/** The header's place while the session loads: its back link and a placeholder for the rest. */
+function LoadingHeader() {
+  return (
+    <ViewHeader
+      title={<span className="text-dim">Loading the session…</span>}
+      sub={
+        <span role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <BackLink />
+          <span
+            aria-hidden
+            className="h-3.5 w-40 max-w-full animate-pulse rounded-sm bg-surface-2"
+          />
+          <span className="sr-only">Loading the session</span>
+        </span>
+      }
+    />
   );
 }
 

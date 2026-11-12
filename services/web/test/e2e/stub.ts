@@ -36,6 +36,8 @@ const Reset = z.object({
   sessions: z.array(StubSessionSchema).default([]),
   fail: z.boolean().default(false),
   signedOut: z.boolean().default(false),
+  /** GetSession never answers: the session view stays loading (RAN-72). */
+  hold: z.boolean().default(false),
 });
 const Emit = z.object({
   sessionId: z.string(),
@@ -61,6 +63,7 @@ const world: {
   fail: boolean;
   /** No live login: every api call and terminal upgrade gets 401, as the api's login gate answers. */
   signedOut: boolean;
+  hold: boolean;
   watchers: Map<string, Set<Watcher>>;
   lastResize: { cols: number; rows: number } | null;
   /** Every byte the terminal sent since the reset, as UTF-8. */
@@ -69,6 +72,7 @@ const world: {
   sessions: [],
   fail: false,
   signedOut: false,
+  hold: false,
   watchers: new Map(),
   lastResize: null,
   input: "",
@@ -228,7 +232,11 @@ async function* watchAll(signal: AbortSignal): AsyncGenerator<WatchSessionsRespo
 const handler = connectNodeAdapter({
   routes: (router) => {
     router.service(SessionService, {
-      getSession: (req) => {
+      getSession: async (req, ctx) => {
+        if (world.hold)
+          await new Promise((resolve) => {
+            ctx.signal.addEventListener("abort", resolve);
+          });
         if (world.fail) throw new ConnectError("store_unavailable", Code.Unavailable);
         const session = world.sessions.find((s) => s.id === req.sessionId);
         if (!session) throw new ConnectError("session_not_found", Code.NotFound);
@@ -259,9 +267,10 @@ async function body(req: IncomingMessage): Promise<unknown> {
 function command(name: string, b: unknown): unknown {
   switch (name) {
     case "reset": {
-      const { sessions, fail, signedOut } = Reset.parse(b);
+      const { sessions, fail, signedOut, hold } = Reset.parse(b);
       world.fail = fail;
       world.signedOut = signedOut;
+      world.hold = hold;
       world.sessions = sessions.map(toSession);
       world.lastResize = null;
       world.input = "";

@@ -113,6 +113,15 @@ test("RAN-63 an ask shows waiting for you live, on the row and in the session vi
   );
 });
 
+test("RAN-72 while the session loads, its view's frame is already there", async ({ page }) => {
+  await stub(page, "reset", { sessions: SESSIONS, hold: true });
+  await page.goto(`/sessions/${FIRST}`);
+  await expect(page.locator("header")).toContainText("Loading the session…");
+  await expect(page.locator("header").getByRole("link", { name: "Sessions" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Feed" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Terminal" })).toBeVisible();
+});
+
 test("AC1 a session created after the page loaded shows up without a reload", async ({ page }) => {
   await page.goto("/");
   await expect(row(page, "RAN-101")).toBeVisible();

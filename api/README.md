@@ -92,6 +92,12 @@ event also fans out, as a `rangelight.session.v1alpha1.Event` on the core NATS s
 Postgres, so a client that reads after the stream opens misses nothing. A viewer may fall at most
 1024 events behind (the api's NATS subscription capacity); past that, events are dropped and its
 stream ends with `ABORTED`, the same reconnect path as any gap.
+A `WatchSession` stream's first message is an empty `WatchSessionResponse` (no `event`), sent as
+soon as it has subscribed: the stream is open, and a read of the session after it misses nothing.
+Proxies such as Traefik hold a stream's response headers until its first body byte, so a client
+takes the headers or that message, whichever comes first, as the open. After 30 seconds without a
+message, both streams send an empty one (`WatchSessions`: no `kind`), which receivers ignore, so a
+quiet stream isn't cut as idle (RAN-72).
 
 **Who may use which subject** (ADR 0021 amendment): every client signs in through the api's auth callout and gets
 exactly its own subjects, listed once in `rl_domain::subject` and pinned by `test/nats-permissions.json`. A

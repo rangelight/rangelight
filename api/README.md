@@ -97,17 +97,22 @@ runners on protocol N-1 and N (ADR 0027).
 ## Terminal
 
 The api serves the WebSocket at `GET /v1alpha1/sessions/<session>/terminal` with the subprotocol
-`terminal.v1alpha1.rangelight.dev`, behind the same sign-in and Cedar check as every stream
-(ADR 0040 §1, §4). Each text frame is one message of `jsonschema/terminal.v1alpha1.schema.json`:
+`terminal.v1alpha1.rangelight.dev`, behind the same sign-in as every stream (ADR 0040 §1): no live
+login is 401, an `Origin` other than the public URL is 403, another member's session is 403, more
+than 4 open terminals for one login is 429, and the socket closes when the login ends. Each text frame is one message of `jsonschema/terminal.v1alpha1.schema.json`, and the api
+bridges it, unchanged, to the lane agent's PTY over core NATS:
 
 | Message | Direction | NATS |
 |---|---|---|
-| `{"type": "input", "data": <base64>}` | browser → api | `rl.<org>.pty.<session>.in` |
-| `{"type": "output", "data": <base64>}` | api → browser | `rl.<org>.pty.<session>.out` |
-| `{"type": "resize", "cols": n, "rows": n}` | browser → api | `rl.<org>.pty.<session>.in` |
+| `{"type": "input", "data": <base64>}` | browser → api → agent | `rl.<org>.pty.<session>.in` |
+| `{"type": "output", "data": <base64>}` | agent → api → browser | `rl.<org>.pty.<session>.out` |
+| `{"type": "resize", "cols": n, "rows": n}` | browser → api → agent | `rl.<org>.pty.<session>.in` |
 
-The api closes the socket with code 1008 on a frame that doesn't validate. A client that doesn't
-offer the subprotocol is refused.
+The api closes the socket with code 1008 on a frame that doesn't validate, binary frames included,
+and with 1011 when the browser hasn't taken a frame within 10 seconds.
+A client that doesn't offer the subprotocol is refused. Core NATS, never JetStream: a terminal is
+live, no stream captures `rl.<org>.pty.>`, and neither the api nor the agent logs a frame's
+contents, so what it carries (a `/login` code included) is never stored (ADR 0046 §3 step 4).
 
 ## Versioning
 

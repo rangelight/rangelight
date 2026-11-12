@@ -179,6 +179,25 @@ test("RAN-57 a narrow desktop window keeps its header while the terminal has foc
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 });
 
+// RAN-41 AC6: Claude Code's keys reach the PTY as a local terminal sends them; the browser keeps none.
+test("AC3 Escape, Tab, Shift+Tab, Ctrl+C and the arrows reach the terminal's socket", async ({
+  page,
+}) => {
+  await page.goto(`/sessions/${FIRST}`);
+  await expect(page.getByRole("region", { name: "Terminal" }).getByRole("status")).toHaveText(
+    "Connected",
+  );
+  await page.getByTestId("terminal").click();
+  for (const key of ["Escape", "Tab", "Shift+Tab", "Control+C", "ArrowUp", "ArrowDown", "Enter"]) {
+    await page.keyboard.press(key);
+  }
+  // ESC, TAB, CSI Z, ETX, CSI A, CSI B, CR: in order, nothing lost to focus moves or the page.
+  await expect
+    .poll(async () => (await stubState(page)).input)
+    .toBe("\x1b\t\x1b[Z\x03\x1b[A\x1b[B\r");
+  await expect(page.getByTestId("terminal").locator("textarea")).toBeFocused();
+});
+
 test("AC5 the terminal renders in Geist Mono, not a fallback", async ({ page }) => {
   await page.goto(`/sessions/${FIRST}`);
   await page.getByTestId("terminal").click();

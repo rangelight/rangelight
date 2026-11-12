@@ -398,7 +398,9 @@ api:
   repo: ""
   # The repo's approved base branch: lanes start there, and the profile is read there (ADR 0041).
   baseRef: "main"
-  # Whose Claude home the lanes mount (ADR 0046 amendment): a DNS label. Required.
+  # The member the sessions work for: their login (oidc.memberClaim, the GitHub login through Dex),
+  # lowercased. Lanes mount that member's Claude home (ADR 0046 amendment), and only that login may open
+  # a session's terminal. Required.
   member: ""
   # JetStream replicas of the control plane's streams (the runners' status, which the api reads, and the sessions'
   # desired state, which the relay writes): 1 for a single NATS server, 3 for a cluster.

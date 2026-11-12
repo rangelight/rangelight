@@ -27,6 +27,8 @@ pub struct SessionRow {
     pub namespace: String,
     /// The git mirror repo it works in.
     pub repo: String,
+    /// The member it works for (ADR 0004): only they may open its terminal.
+    pub member: String,
     /// The desired state.
     pub state: State,
     /// The phase its runner last reported, if it has.
@@ -200,71 +202,6 @@ impl Store {
         Ok(true)
     }
 
-    /// The sessions whose pull request is still to link (neither linked nor refused), the least
-    /// recently tried first, at most `limit`.
-    ///
-    /// # Errors
-    /// [`StoreError::Db`], or [`StoreError::Domain`] for a stored state or phase that isn't one.
-    pub async fn unlinked_pull_requests(&self, limit: u16) -> Result<Vec<SessionRow>, StoreError> {
-        sqlx::query_file_as!(
-            Record,
-            "../../../db/queries/sessions/unlinked.sql",
-            i64::from(limit)
-        )
-        .fetch_all(&self.pool)
-        .await?
-        .into_iter()
-        .map(SessionRow::try_from)
-        .collect()
-    }
-
-    /// Records that the session's ticket links its pull request `url` since `at`; a no-op when
-    /// the session's pull request isn't `url`.
-    ///
-    /// # Errors
-    /// [`StoreError::Db`] or [`StoreError::Timeout`].
-    pub async fn pull_request_linked(
-        &self,
-        session: SessionId,
-        url: &str,
-        at: SystemTime,
-    ) -> Result<(), StoreError> {
-        sqlx::query_file!(
-            "../../../db/queries/sessions/linked.sql",
-            session.0,
-            url,
-            timestamp(rl_chain::micros(at)),
-        )
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
-    /// Records that linking the session's pull request `url` failed at `at`, for good when
-    /// `refused`: a refused one is never listed again, another is listed after those tried
-    /// longer ago. A no-op when the session's pull request isn't `url`.
-    ///
-    /// # Errors
-    /// [`StoreError::Db`] or [`StoreError::Timeout`].
-    pub async fn pull_request_link_failed(
-        &self,
-        session: SessionId,
-        url: &str,
-        at: SystemTime,
-        refused: bool,
-    ) -> Result<(), StoreError> {
-        sqlx::query_file!(
-            "../../../db/queries/sessions/link_failed.sql",
-            session.0,
-            url,
-            timestamp(rl_chain::micros(at)),
-            refused,
-        )
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
     /// The newest sessions first, at most `limit`.
     ///
     /// # Errors
@@ -368,6 +305,7 @@ struct Record {
     ticket_url: String,
     namespace: String,
     repo: String,
+    member: String,
     state: String,
     phase: Option<String>,
     pull_request_url: Option<String>,
@@ -388,6 +326,7 @@ impl TryFrom<Record> for SessionRow {
             ticket_url: row.ticket_url,
             namespace: row.namespace,
             repo: row.repo,
+            member: row.member,
             state: State::parse(&row.state)?,
             phase: row.phase.as_deref().map(Phase::parse).transpose()?,
             pull_request_url: row.pull_request_url,
@@ -396,3 +335,5 @@ impl TryFrom<Record> for SessionRow {
         })
     }
 }
+
+mod pull_requests;

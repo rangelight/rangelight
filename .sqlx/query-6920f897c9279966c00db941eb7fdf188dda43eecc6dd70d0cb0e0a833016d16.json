@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- The newest sessions first.\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, state, phase,\n  pull_request_url, generation, created_at\nFROM sessions\nORDER BY created_at DESC, id DESC\nLIMIT $1\n",
+  "query": "-- The sessions whose pull request is still to link: neither linked nor refused, the least recently\n-- tried first (never tried before all).\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, member, state, phase,\n  pull_request_url, generation, created_at\nFROM sessions\nWHERE pull_request_url IS NOT NULL AND pull_request_linked_at IS NULL\n  AND pull_request_link_refused_at IS NULL\nORDER BY pull_request_link_tried_at NULLS FIRST, created_at, id\nLIMIT $1\n",
   "describe": {
     "columns": [
       {
@@ -93,6 +93,17 @@
       },
       {
         "ordinal": 8,
+        "name": "member",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "member"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
         "name": "state",
         "type_info": "Text",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "phase",
         "type_info": "Text",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "pull_request_url",
         "type_info": "Text",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "generation",
         "type_info": "Int8",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -162,11 +173,12 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "891fffdd1246b57f0e5a88cac4c12a64c3666551f06e88ac47e22f36fe9976dc"
+  "hash": "6920f897c9279966c00db941eb7fdf188dda43eecc6dd70d0cb0e0a833016d16"
 }

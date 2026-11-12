@@ -9,6 +9,20 @@ const PREFIX = "RANGELIGHT_AGENT_";
 
 const uuidv7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const absolute = z.string().regex(/^\/[A-Za-z0-9._/-]*$/, "an absolute path of [A-Za-z0-9._/-]");
+// The same rule as rl_domain::subject::token: a token can't widen or split a subject.
+const subjectToken = z.string().regex(/^[^.*>\s\p{Cc}]+$/u, "a NATS subject token");
+// The same rule as rl_nats::check_url: the lane's token travels only over TLS, or in clear text
+// only to a Service in this cluster or to loopback. One server, no credentials, no path.
+const natsUrl = z.url({ protocol: /^(nats|tls)$/ }).refine((u) => {
+  const url = URL.parse(u);
+  if (!url || url.username || url.password || !["", "/"].includes(url.pathname)) return false;
+  const host = url.hostname;
+  if (!/^[A-Za-z0-9.-]+$|^\[::1\]$/.test(host) || url.search || url.hash) return false;
+  const local =
+    /^[^.]+(\..+)?\.svc(\.cluster\.local)?$/.test(host) ||
+    ["localhost", "127.0.0.1", "[::1]"].includes(host);
+  return url.protocol === "tls:" || local;
+}, "tls://<host>[:<port>], or nats:// to a host in this cluster (<name>.svc) or on loopback, without credentials");
 
 const schema = z
   .object({
@@ -21,6 +35,9 @@ const schema = z
     profile_file: absolute,
     ticket_file: absolute,
     under_change: z.array(z.string().min(1)),
+    nats_url: natsUrl,
+    nats_token_file: absolute,
+    org: subjectToken,
     CLAUDE_CONFIG_DIR: absolute,
   })
   .strict()
@@ -35,6 +52,9 @@ const schema = z
     profileFile: c.profile_file,
     ticketFile: c.ticket_file,
     underChange: c.under_change,
+    natsUrl: c.nats_url,
+    natsTokenFile: c.nats_token_file,
+    org: c.org,
     claudeConfigDir: c.CLAUDE_CONFIG_DIR,
   }));
 
@@ -92,4 +112,11 @@ export function childEnv(env: Env = process.env): ChildEnv {
     HOME: env.HOME ?? "/home/node",
     LANG: env.LANG ?? "C.UTF-8",
   };
+}
+
+/** The real nats-server of a test run: `scripts/test/services.sh run` starts it and sets this. */
+export function testNatsUrl(env: Env = process.env): string {
+  const url = env.RANGELIGHT_TESTKIT_NATS_URL;
+  if (url === undefined) throw new ConfigError("run the tests under scripts/test/services.sh run");
+  return url;
 }

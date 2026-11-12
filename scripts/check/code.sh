@@ -64,7 +64,7 @@ ts() {
   pnpm exec eslint --max-warnings 0 .
   pnpm -r --if-present run typecheck
   ts_browser
-  pnpm -r --if-present run test
+  bash scripts/test/services.sh run pnpm -r --if-present run test # the agent's terminal needs NATS
   pnpm audit --prod
   ok ts
 }

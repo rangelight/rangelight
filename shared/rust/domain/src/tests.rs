@@ -341,6 +341,19 @@ fn new_session_is_hot_in_its_ticket_namespace() {
 }
 
 #[test]
+fn the_terminal_subjects_are_api_readme_s() {
+    let readme = include_str!("../../../../api/README.md");
+    let session = SessionId(uuid::Uuid::nil());
+    for subject in [
+        subject::pty_in("<org>", session),
+        subject::pty_out("<org>", session),
+    ] {
+        let documented = subject.replace(&session.0.to_string(), "<session>");
+        assert!(readme.contains(&format!("`{documented}`")), "{documented}");
+    }
+}
+
+#[test]
 fn subject_tokens_cant_widen_a_subject() {
     assert_eq!(subject::token("acme-1"), Ok("acme-1"));
     for bad in ["", "a.b", "*", ">", "a b", "a\n"] {

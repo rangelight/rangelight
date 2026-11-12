@@ -56,6 +56,7 @@ func run() error {
 		Workspace: workspace, Tmp: tmp, EphemeralStorage: ephemeral, Workers: cfg.Workers,
 		DNS:    session.DNS{Namespace: cfg.DNSNamespace, LabelKey: dnsKey, LabelValue: dnsValue},
 		GitHub: app, Upstreams: cfg.UpstreamURLs(), PublishImage: cfg.PublishImage,
+		NATSURL: cfg.NATSURL, Org: cfg.Org,
 	}}
 	if err := r.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("session: %w", err)

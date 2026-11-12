@@ -44,30 +44,54 @@ pub async fn viewers_client(
         .await
 }
 
+/// How many messages a lane terminal's output may queue in the api: past it, output is dropped
+/// (the subscription capacity of the terminals' NATS client), so a lane that writes faster than
+/// its browser reads can't pin the api's memory.
+const TERMINAL_CAPACITY: usize = 64;
+
+/// The NATS client for lane terminals, separate from the viewers' one: its subscription capacity
+/// bounds what a terminal may queue ([`TERMINAL_CAPACITY`]). `options` sign it in.
+///
+/// # Errors
+/// NATS's, when it can't connect.
+pub async fn terminals_client(
+    url: &str,
+    options: async_nats::ConnectOptions,
+) -> Result<async_nats::Client, async_nats::ConnectError> {
+    options
+        .subscription_capacity(TERMINAL_CAPACITY)
+        .connect(url)
+        .await
+}
+
 /// The session API: reads from Postgres, streams from NATS fan-out.
 #[derive(Debug, Clone)]
 pub struct SessionApi {
     store: Store,
     nats: async_nats::Client,
+    terminals: async_nats::Client,
+    open: terminal::Open,
     org: String,
     auth: Auth,
     cancel: CancellationToken,
 }
 
 impl SessionApi {
-    /// The API for one org. Open streams end when `cancel` fires, or when their login is gone
-    /// (`auth`). `nats` should come from [`viewers_client`].
+    /// The API for one org, on the api's `viewers` and `terminals` clients. Open streams end when
+    /// `cancel` fires, or when their login is gone (`auth`).
     #[must_use]
     pub fn new(
         store: Store,
-        nats: async_nats::Client,
+        nats: &crate::Nats,
         org: String,
         auth: Auth,
         cancel: CancellationToken,
     ) -> SessionApi {
         SessionApi {
             store,
-            nats,
+            nats: nats.viewers.clone(),
+            terminals: nats.terminals.clone(),
+            open: terminal::Open::default(),
             org,
             auth,
             cancel,
@@ -320,5 +344,6 @@ fn ordered(
     })
 }
 
+pub(crate) mod terminal;
 #[cfg(test)]
 mod tests;

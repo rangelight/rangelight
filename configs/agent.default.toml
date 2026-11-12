@@ -16,3 +16,10 @@ profile_file = "/etc/rangelight/profile.json"
 ticket_file = "/etc/rangelight/ticket.json"
 # Names of the profile's services under change; the agent runs each one's dev command once.
 under_change = []
+# The control plane's NATS server (core NATS: the lane terminal is live, never stored); the runner sets it.
+nats_url = ""
+# The lane's projected ServiceAccount token for NATS: it signs the lane in to its own terminal only
+# (ADR 0045 amendment). Read again at every connect, never logged.
+nats_token_file = "/var/run/secrets/rangelight/nats/token"
+# The org's subject token: the lane terminal is rl.<org>.pty.<session>.in and .out.
+org = "default"

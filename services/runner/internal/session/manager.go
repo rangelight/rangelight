@@ -78,6 +78,11 @@ func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
 		return fmt.Errorf("mirror url: %w", err)
 	}
 	r.mirrorHost = u.Hostname()
+	n, err := url.Parse(r.NATSURL)
+	if err != nil {
+		return fmt.Errorf("nats url: %w", err)
+	}
+	r.natsHost, r.natsPort = natsAddr(n)
 	if r.profiles, err = newProfiles(r.MirrorURL, r.MirrorTokenFile); err != nil {
 		return err
 	}

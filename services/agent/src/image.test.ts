@@ -1,4 +1,5 @@
 // Static checks of the image definition; the image itself is built by .github/workflows/images.yaml.
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 
@@ -15,4 +16,13 @@ test("every downloaded binary is pinned by its sha256", () => {
   const adds = dockerfile.match(/^ADD .*/gm) ?? [];
   expect(adds.length).toBeGreaterThanOrEqual(4);
   for (const add of adds) expect(add).toMatch(/--checksum=sha256:[0-9a-f]{64} /);
+});
+
+test("every contract schema the agent imports is in the image", () => {
+  const sources = execFileSync("grep", ["-rhoE", "api/jsonschema/[a-z0-9.-]+\\.json", "src"], {
+    cwd: new URL("..", import.meta.url),
+    encoding: "utf8",
+  });
+  const copy = /^COPY (api\/jsonschema\/.*)$/m.exec(dockerfile)?.[1] ?? "";
+  for (const schema of new Set(sources.trim().split("\n"))) expect(copy).toContain(`${schema} `);
 });

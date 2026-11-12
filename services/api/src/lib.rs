@@ -26,7 +26,7 @@ use tokio_util::task::TaskTracker;
 use tracing::Instrument;
 
 pub use auth::Auth;
-pub use sessions::{SessionApi, viewers_client};
+pub use sessions::{SessionApi, terminals_client, viewers_client};
 
 use config::Config;
 use nats_auth::{Callout, CalloutError, Settings, Verifier};
@@ -188,13 +188,16 @@ async fn every_poll<F: Future<Output = ()>>(
 }
 
 /// The api's own NATS clients, each signed in as the api: `reports` consumes the runners'
-/// status, `viewers` follows sessions for the Workbench (`viewers_client`).
+/// status, `viewers` follows sessions for the Workbench (`viewers_client`), `terminals` bridges
+/// the lane terminals (`terminals_client`).
 #[derive(Debug, Clone)]
 pub struct Nats {
     /// For the status consumer.
     pub reports: async_nats::Client,
     /// For the session streams.
     pub viewers: async_nats::Client,
+    /// For the lane terminals.
+    pub terminals: async_nats::Client,
 }
 
 /// Starts the NATS auth callout, which answers until `cancel`, then signs the api's own clients
@@ -231,10 +234,21 @@ pub async fn connect_nats(
     let viewers = viewers_client(&config.nats_url, options())
         .await
         .map_err(nats)?;
-    Ok((Nats { reports, viewers }, task))
+    let terminals = terminals_client(&config.nats_url, options())
+        .await
+        .map_err(nats)?;
+    Ok((
+        Nats {
+            reports,
+            viewers,
+            terminals,
+        },
+        task,
+    ))
 }
 
-/// Serves sign-in and, behind it, the session and auth APIs (Connect, and gRPC-Web) over HTTP/1.1
+/// Serves sign-in and, behind it, the session and auth APIs (Connect, and gRPC-Web) and the lane
+/// terminal's WebSocket over HTTP/1.1
 /// on `listener` until `cancel`, then lets open connections finish for up to 10 seconds.
 /// `GET /healthz` answers 200 without a login: the api is ready once it serves, after its
 /// migrations, Postgres and NATS.
@@ -243,10 +257,12 @@ pub async fn connect_nats(
 /// nothing speaks HTTP/2 to the api. A client gets 10 seconds to send a request's headers, from
 /// the moment it connects and between requests on a kept-alive connection; a silent one is closed.
 pub async fn serve(listener: TcpListener, api: SessionApi, auth: Auth, cancel: CancellationToken) {
+    let terminal = sessions::terminal::router(api.clone());
     let rpc = connectrpc::Router::new()
         .add_service(Arc::new(api))
         .add_service(Arc::new(auth::WhoAmI))
-        .into_axum_router();
+        .into_axum_router()
+        .merge(terminal);
     let app = axum::Router::new()
         .route("/healthz", axum::routing::get(|| async { "ok" }))
         .merge(auth::router(auth, rpc));

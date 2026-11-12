@@ -60,7 +60,8 @@ pub struct Config {
     pub upstream: String,
     /// That repo's approved base branch.
     pub base_ref: String,
-    /// Whose Claude home the team's lanes mount.
+    /// The member the team's sessions work for: their login, lowercased. Their lanes mount that
+    /// member's Claude home, and only that login may open a session's terminal.
     pub member: String,
     /// A PEM bundle of CA certificates the api's HTTPS (the issuer, Linear) trusts beside the
     /// platform's roots: for an issuer or a Linear proxy behind your own CA.

@@ -7,10 +7,9 @@ use super::{Auth, IDLE, LoginHash};
 use rl_store::StoreError;
 
 impl Auth {
-    /// Ends `stream` with UNAUTHENTICATED once the login of the request in `ctx` is gone
-    /// (signed out, expired, idle, deleted), checked every the `recheck` of [`Auth::new`]; with UNAVAILABLE
-    /// if Postgres can't say. Every long-lived response goes through here (the terminal WebSocket
-    /// too, RAN-41).
+    /// Ends `stream` with UNAUTHENTICATED once the login of the request in `ctx` is gone, or with
+    /// UNAVAILABLE if Postgres can't say ([`Auth::ended`]). Every long-lived Connect response goes
+    /// through here; the terminal WebSocket waits on [`Auth::ended`] itself.
     ///
     /// # Errors
     /// UNAUTHENTICATED if `ctx` carries no login (`require_login` didn't run).
@@ -23,27 +22,30 @@ impl Auth {
             .extensions()
             .get::<LoginHash>()
             .ok_or_else(|| ConnectError::unauthenticated("unauthenticated"))?;
-        let every = self.0.recheck;
-        let checks = tokio::time::interval_at(tokio::time::Instant::now() + every, every);
-        let state = (Box::pin(stream), checks, self.clone(), login);
+        let state = (Box::pin(stream), Box::pin(self.clone().ended(login)));
         Ok(futures_util::stream::unfold(
             Some(state),
             |state| async move {
-                let (mut stream, mut checks, auth, login) = state?;
-                loop {
-                    tokio::select! {
-                        item = stream.next() => {
-                            return item.map(|item| (item, Some((stream, checks, auth, login))));
-                        }
-                        _ = checks.tick() => {
-                            if let Err(gone) = auth.still_signed_in(login).await {
-                                return Some((Err(gone), None));
-                            }
-                        }
-                    }
+                let (mut stream, mut ended) = state?;
+                tokio::select! {
+                    item = stream.next() => item.map(|item| (item, Some((stream, ended)))),
+                    gone = &mut ended => Some((Err(gone), None)),
                 }
             },
         ))
+    }
+
+    /// Resolves once `login` is gone (signed out, expired, idle, deleted), checked every `recheck`
+    /// of [`Auth::new`]: with UNAUTHENTICATED, or UNAVAILABLE if Postgres can't say.
+    pub(crate) async fn ended(self, login: LoginHash) -> ConnectError {
+        let every = self.0.recheck;
+        let mut checks = tokio::time::interval_at(tokio::time::Instant::now() + every, every);
+        loop {
+            checks.tick().await;
+            if let Err(gone) = self.still_signed_in(login).await {
+                return gone;
+            }
+        }
     }
 
     async fn still_signed_in(&self, login: LoginHash) -> Result<(), ConnectError> {

@@ -29,8 +29,9 @@ rl-tickets-linear = { path = "shared/rust/tickets-linear" }
 relay = { path = "services/relay" }
 
 anyhow = "1.0.104"
-# Only the server pieces the api uses: Connect routes are mounted beside the sign-in routes.
-axum = { version = "0.8.9", default-features = false, features = ["query"] }
+# Only the server pieces the api uses: Connect routes are mounted beside the sign-in routes, and
+# the lane terminal's WebSocket (ws).
+axum = { version = "0.8.9", default-features = false, features = ["query", "ws"] }
 # nkeys: the api's auth callout signs in with one (RAN-43). No KV, object store or websockets
 # until a ticket needs them.
 async-nats = { version = "0.52.0", default-features = false, features = ["jetstream", "nkeys", "ring"] }
@@ -72,6 +73,8 @@ tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "t
 # The TLS test server (rl-testkit only), on the rustls reqwest already uses.
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
 tokio-util = { version = "0.7.20", features = ["rt"] }
+# The api tests' WebSocket client: the version axum's ws feature already brings.
+tokio-tungstenite = "0.29.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter"] }
 uuid = "1.29.1"

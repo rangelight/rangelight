@@ -200,6 +200,7 @@ func startRunner(ctx context.Context, cfg *rest.Config) error {
 	}
 	options = Options{
 		AgentImage: testImage, MirrorURL: mirror.URL, MirrorTokenFile: token, Workers: 4,
+		NATSURL: "nats://rangelight-nats.rangelight-system.svc:4222", Org: "acme",
 		DNS:       DNS{Namespace: "kube-system", LabelKey: "k8s-app", LabelValue: "coredns"},
 		Workspace: resource.MustParse("10Gi"), Tmp: resource.MustParse("1Gi"), EphemeralStorage: resource.MustParse("12Gi"),
 		Upstreams:    map[string]string{publishedRepo: "file://" + upstreamDir()},

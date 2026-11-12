@@ -48,6 +48,7 @@ relay.workspace = true
 rl-testkit.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+tokio-tungstenite.workspace = true
 tracing-subscriber.workspace = true
 
 [lints]

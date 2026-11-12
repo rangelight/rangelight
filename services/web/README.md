@@ -25,6 +25,14 @@ The Workbench: every session as a row, and each session's live event feed and te
   (`src/features/sessions/lanes.ts` says which is which): a tile per live lane (its pod started and
   isn't gone), with its state, phase, last activity and a waiting-for-you mark; and the sessions with
   no lane yet (no runner report, or queued; not torn down), oldest first.
+- **Preview facade** (`src/preview/`): the mock-up's views that the api can't feed yet read their
+  data only through one typed hook per view (`architect.ts`, `decisions.ts`, `reviews.ts`,
+  `coordinator.ts`), each returning data and its actions. A hook mixes in what the api already has
+  (sessions, phase, state, questions, PR links) and fills the rest from one live sample world
+  (`world.ts`; `engine.ts` runs its actions and moves its lanes on). Every sample item is flagged
+  `sample` and shown with `PreviewMark`; an action changes the sample world only and says so.
+  A new view adds its own hook file (types in `types.ts`); a real implementation replaces a hook
+  without touching its view.
 - **Look**: tokens only from `src/styles/tokens.css`, primitives in `src/components/ui`, product
   components in `src/components/rl`, one folder per feature in `src/features/`.
 - **Phones** are a first-class target: below 1024 px the session view shows its terminal and feed

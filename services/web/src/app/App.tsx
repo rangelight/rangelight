@@ -1,7 +1,11 @@
 import { SearchX } from "lucide-react";
 import { AppLink } from "@/components/rl/app-link";
 import { Notice } from "@/components/rl/notice";
+import { ArchitectHome } from "@/features/architect/ArchitectHome";
+import { Coordinator } from "@/features/coordinator/Coordinator";
+import { DecisionsInbox } from "@/features/decisions/DecisionsInbox";
 import { FleetWall } from "@/features/fleet-wall/FleetWall";
+import { Reviews } from "@/features/reviews/Reviews";
 import { SessionView } from "@/features/session/SessionView";
 import { SessionsView } from "@/features/sessions/SessionsView";
 import { Shell } from "@/features/shell/Shell";
@@ -13,6 +17,10 @@ export function App() {
   return (
     <Shell>
       {route.page === "sessions" && <SessionsView />}
+      {route.page === "architect" && <ArchitectHome />}
+      {route.page === "decisions" && <DecisionsInbox />}
+      {route.page === "reviews" && <Reviews />}
+      {route.page === "coordinator" && <Coordinator />}
       {route.page === "wall" && <FleetWall />}
       {route.page === "upnext" && <UpNext />}
       {route.page === "session" && <SessionView key={route.id} id={route.id} />}

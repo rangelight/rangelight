@@ -36,12 +36,20 @@ test("AC1 the Fleet wall: a tile per live lane, its state, phase, activity and w
   isMobile,
 }) => {
   await page.goto("/");
-  await press(nav(page).getByRole("link", { name: "Fleet wall" }), isMobile);
+  if (isMobile) {
+    // A phone's bottom bar keeps three views; More opens the palette with all of them (RAN-83).
+    await nav(page).getByRole("button", { name: "More views" }).tap();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: /Fleet wall/ })
+      .tap();
+  } else await nav(page).getByRole("link", { name: "Fleet wall" }).click();
   await expect(page).toHaveURL(/\/wall$/);
-  await expect(nav(page).getByRole("link", { name: "Fleet wall" })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
+  if (!isMobile)
+    await expect(nav(page).getByRole("link", { name: "Fleet wall" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   await expect(page.getByRole("heading", { name: "No lane is running" })).toBeVisible();
   await fleet(page);
   const tiles = page.getByRole("main").getByRole("listitem");

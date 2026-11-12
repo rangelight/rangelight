@@ -1,7 +1,7 @@
 // The command palette (jump to a view or a session) and the cheat sheet of the keys there are.
 import { Search, SquareTerminal, PanelsTopLeft } from "lucide-react";
 import { useState } from "react";
-import { navigate, sessionPath, UP_NEXT, WALL } from "@/app/route";
+import { navigate, sessionPath, VIEWS } from "@/app/route";
 import { Dialog } from "@/components/ui/dialog";
 import { useSessions } from "@/features/sessions/store";
 
@@ -35,9 +35,7 @@ function Targets({ onClose }: { onClose: () => void }) {
   const { state } = useSessions();
   const [query, setQuery] = useState("");
   const all: Target[] = [
-    { label: "Sessions", detail: "View", href: "/", session: false },
-    { label: "Fleet wall", detail: "View", href: WALL, session: false },
-    { label: "Up next", detail: "View", href: UP_NEXT, session: false },
+    ...VIEWS.map((v) => ({ label: v.label, detail: "View", href: v.path, session: false })),
     ...(state.status === "ready" ? state.sessions : []).map((s) => ({
       label: `${s.ticketKey} ${s.title}`,
       detail: s.repo || "Session",

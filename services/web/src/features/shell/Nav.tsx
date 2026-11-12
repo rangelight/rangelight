@@ -1,8 +1,18 @@
 // The Workbench's views: a rail on wider screens, a bottom bar on phones. A view gets an icon here
-// when it exists, never before: today the Sessions list and the session last opened.
-import { Keyboard, List, Moon, PanelsTopLeft, SquareTerminal, Sun } from "lucide-react";
+// when it exists, never before: the Sessions list, the Fleet wall, Up next, and the session last
+// opened.
+import {
+  Keyboard,
+  LayoutGrid,
+  List,
+  ListTodo,
+  Moon,
+  PanelsTopLeft,
+  SquareTerminal,
+  Sun,
+} from "lucide-react";
 import type { ReactNode } from "react";
-import { sessionPath, useRoute } from "@/app/route";
+import { sessionPath, UP_NEXT, useRoute, WALL } from "@/app/route";
 import { AppLink } from "@/components/rl/app-link";
 import { cn } from "@/lib/utils";
 import { toggleTheme, useTheme } from "@/theme/theme";
@@ -82,6 +92,12 @@ export function Nav({
     >
       <View href="/" label="Sessions" current={route.page === "sessions"}>
         <PanelsTopLeft aria-hidden />
+      </View>
+      <View href={WALL} label="Fleet wall" current={route.page === "wall"}>
+        <LayoutGrid aria-hidden />
+      </View>
+      <View href={UP_NEXT} label="Up next" current={route.page === "upnext"}>
+        <ListTodo aria-hidden />
       </View>
       {session && (
         <View

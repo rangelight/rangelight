@@ -6,7 +6,7 @@ import { phaseLabel } from "@/components/rl/state-badge";
 import { cn } from "@/lib/utils";
 
 /** The stages, each with the phases it stands for; the current one shows the phase's own name. */
-const STAGES: { label: string; phases: Phase[] }[] = [
+export const STAGES: { label: string; phases: Phase[] }[] = [
   { label: "Queued", phases: [Phase.QUEUED] },
   { label: "Starting", phases: [Phase.STARTING] },
   { label: "Running", phases: [Phase.RUNNING] },
@@ -14,8 +14,11 @@ const STAGES: { label: string; phases: Phase[] }[] = [
   { label: "Gone", phases: [Phase.TERMINATING, Phase.GONE] },
 ];
 
+/** The stage the phase is in, or -1 (not reported, or failed). */
+export const stageOf = (phase: Phase): number => STAGES.findIndex((s) => s.phases.includes(phase));
+
 export function StageStrip({ phase }: { phase: Phase }) {
-  const at = STAGES.findIndex((s) => s.phases.includes(phase));
+  const at = stageOf(phase);
   const failed = phase === Phase.FAILED;
   return (
     <ol

@@ -78,7 +78,13 @@ function Current() {
     route.page === "session" && state.status === "ready"
       ? state.sessions.find((s) => s.id === route.id)
       : undefined;
-  const view = { sessions: "Sessions", session: "Session", missing: "Not found" }[route.page];
+  const view = {
+    sessions: "Sessions",
+    wall: "Fleet wall",
+    upnext: "Up next",
+    session: "Session",
+    missing: "Not found",
+  }[route.page];
   return (
     <p className="flex min-w-0 flex-1 items-baseline gap-2 text-[12.5px]" aria-label="Current view">
       <span className="shrink-0 font-medium text-foreground">{view}</span>

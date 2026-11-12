@@ -67,6 +67,8 @@ the relay gets the database's the same way. No secret is ever an environment val
   `RANGELIGHT_API_OIDC_CLIENT_ID`, `RANGELIGHT_API_OIDC_MEMBER_CLAIM`, and `RANGELIGHT_API_OIDC_CLIENT_SECRET` as a reference to
   `oidc.clientSecretRef`.
 - `RANGELIGHT_API_LINEAR_TEAM` and `RANGELIGHT_API_LINEAR_API_KEY` (a reference to `linear.apiKeySecretRef`).
+- `RANGELIGHT_API_EXTRA_CA_FILE`, only with `tls.extraCaSecretRef.name`: that Secret's key, mounted like the
+  others (see Sign-in).
 - `RANGELIGHT_API_REPO`, `_BASE_REF`, `_MEMBER`, `_STREAM_REPLICAS` from `api.repo` (required), `api.baseRef`,
   `api.member` (required) and `api.streamReplicas`: where the sessions work, and for whom.
 
@@ -96,6 +98,12 @@ at start: after changing `publicUrl`, `dex.github.org` or `oidc.clientId`, run
   issuer and subject that first signed in as it, so every existing member is refused afterwards. Dex's
   subjects don't change with the URL; rebind them in Postgres before anyone signs in again:
   `UPDATE members SET issuer = '<new publicUrl>/dex' WHERE issuer = '<old publicUrl>/dex';`
+- **An issuer behind your own CA.** The api fetches the issuer over HTTPS: with bundled Dex through the
+  Ingress at `<publicUrl>/dex`, so with whatever certificate serves `publicUrl`. If that certificate (or your own
+  provider's, or a proxy's in front of Linear) comes from your own CA, the api refuses it and sign-in answers 503.
+  Put the CA's PEM bundle in a Secret in `rangelight-system` and name it in `tls.extraCaSecretRef` (key `ca.crt`
+  by default): the api then trusts the platform's roots plus every certificate in it, for the issuer and Linear.
+  A bundle without a certificate, or with one that doesn't parse, stops the api at start.
 - **Dex is served on the Workbench's origin** (`<publicUrl>/dex`): one host, one certificate, and the
   issuer is where the browser already is. The trade-off: Dex's pages share the origin with the Workbench,
   so a flaw in them would run with the Workbench's origin (the login cookie stays HttpOnly). Serving Dex on

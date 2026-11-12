@@ -49,10 +49,13 @@ pub(crate) async fn served_with(
     let dex = dex();
     let provider = Provider::new(
         dex.issuer,
-        "rangelight-api".into(),
-        dex.secret,
-        dex.redirect,
+        rl_auth::Registration {
+            client_id: "rangelight-api".into(),
+            client_secret: dex.secret,
+            redirect: dex.redirect,
+        },
         member_claim.into(),
+        &[],
     )
     .unwrap();
     let auth = Auth::new(

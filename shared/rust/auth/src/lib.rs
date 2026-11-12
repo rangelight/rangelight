@@ -24,6 +24,7 @@ use openidconnect::{
     Scope, SignatureVerificationError, TokenResponse,
 };
 use rl_config::SecretRef;
+use rustls::pki_types::CertificateDer;
 use secrecy::{ExposeSecret, SecretString};
 use tokio::sync::Mutex;
 
@@ -107,6 +108,17 @@ pub fn random_token() -> SecretString {
     CsrfToken::new_random_len(32).into_secret().into()
 }
 
+/// This client's registration at a provider.
+#[derive(Debug, Clone)]
+pub struct Registration {
+    /// The client id.
+    pub client_id: String,
+    /// The file holding the client secret.
+    pub client_secret: SecretRef,
+    /// Where the provider sends the browser back: `<public_url>/auth/callback`.
+    pub redirect: Url,
+}
+
 /// An OIDC provider and this client's registration with it.
 pub struct Provider {
     http: Http,
@@ -128,24 +140,28 @@ impl std::fmt::Debug for Provider {
 }
 
 impl Provider {
-    /// The provider at `issuer`, for the client `client_id` whose secret is in `client_secret`,
-    /// with the browser coming back to `redirect`; `member_claim` names the ID-token claim that
-    /// names the member (`preferred_username` for Dex with GitHub). Nothing is fetched until the
-    /// first sign-in.
+    /// The provider at `issuer`, for the client `registration`; `member_claim` names the ID-token
+    /// claim that names the member (`preferred_username` for Dex with GitHub). HTTPS trusts the
+    /// platform's roots and `extra_roots`. Nothing is fetched until the first sign-in.
     ///
     /// # Errors
     /// [`AuthError::Unavailable`] if the HTTP client can't be built.
     pub fn new(
         issuer: Url,
-        client_id: String,
-        client_secret: SecretRef,
-        redirect: Url,
+        registration: Registration,
         member_claim: String,
+        extra_roots: &[CertificateDer<'static>],
     ) -> Result<Provider, AuthError> {
         // reqwest's TLS needs a process-wide rustls provider; an Err means one is installed.
         let _ = rustls::crypto::ring::default_provider().install_default();
+        let extra_roots = extra_roots
+            .iter()
+            .map(|der| reqwest::Certificate::from_der(der))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AuthError::Unavailable(chain(&e)))?;
         let client = reqwest::Client::builder()
             .timeout(TIMEOUT)
+            .tls_certs_merge(extra_roots)
             // A provider must not bounce the api's requests elsewhere (openidconnect's SSRF advice).
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -153,9 +169,9 @@ impl Provider {
         Ok(Provider {
             http: Http(client),
             issuer: IssuerUrl::from_url(issuer),
-            client_id: ClientId::new(client_id),
-            client_secret,
-            redirect: RedirectUrl::from_url(redirect),
+            client_id: ClientId::new(registration.client_id),
+            client_secret: registration.client_secret,
+            redirect: RedirectUrl::from_url(registration.redirect),
             member_claim,
             discovery: Mutex::new(None),
         })

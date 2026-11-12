@@ -480,6 +480,7 @@ async fn secrets_are_never_logged() {
     let writer = logs.clone();
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
+        .with_ansi(false)
         .with_writer(move || writer.clone())
         .init();
     let (_db, served) = app("api::auth_logs").await;
@@ -488,11 +489,33 @@ async fn secrets_are_never_logged() {
     let state = browser.cookies["__Host-rl_login"].clone();
     assert_eq!(browser.get(&callback).await.status, StatusCode::SEE_OTHER);
     let login = browser.cookies["__Host-rl_session"].clone();
+    let cookie = browser.cookie_header();
     served.browser().sign_in("impostor@example.com").await;
     browser.post("/auth/logout").await;
+    // RAN-81 AC4: a call with the dead login is refused, and its log line says so, without it.
+    let refused = served
+        .auth(&cookie)
+        .who_am_i(WhoAmIRequest::default())
+        .await;
+    assert_eq!(
+        refused.err().map(|e| e.code),
+        Some(ErrorCode::Unauthenticated)
+    );
 
     let logs = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
     assert!(logs.contains("signed in"), "logging works: {logs}");
+    let line = logs
+        .lines()
+        .find(|l| l.contains("refused a request") && l.contains("WhoAmI"));
+    let line = line.expect("a refusal line for WhoAmI");
+    for part in [
+        "status=401",
+        "reason=\"unauthenticated\"",
+        "AuthService/WhoAmI",
+    ] {
+        assert!(line.contains(part), "{part} in {line}");
+    }
+    assert!(!line.contains("rl_session"), "the cookie in {line}");
     let secret = rl_testkit::dex().secret.read().unwrap();
     let code = callback
         .split_once("code=")
@@ -609,4 +632,50 @@ async fn sign_in_takes_only_prompt_consent() {
             .await;
         assert_eq!(page.status, StatusCode::BAD_REQUEST, "{other}");
     }
+}
+
+/// RAN-81 review L1: a stream whose login expires logs its end with the reason its client got,
+/// unauthenticated, not that the client went away.
+#[tokio::test]
+async fn a_stream_s_end_line_says_its_login_expired() {
+    let logs = Logs::default();
+    let writer = logs.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let db = Database::new("api::auth_stream_end_line").await;
+    let recheck = Duration::from_millis(500);
+    let served =
+        common::served_with(&db.store().await, &org(), "preferred_username", recheck).await;
+    let browser = served.signed_in(KILGORE).await;
+    let client = served.sessions(&browser.cookie_header());
+    let mut watch = client
+        .watch_sessions(WatchSessionsRequest::default())
+        .await
+        .unwrap();
+    let snapshot = tokio::time::timeout(Duration::from_secs(5), watch.message()).await;
+    assert!(snapshot.unwrap().unwrap().is_some(), "open");
+    db.execute(include_str!("expire_logins.sql")).await;
+    let error = tokio::time::timeout(Duration::from_secs(5), watch.message())
+        .await
+        .expect("the stream ended")
+        .expect_err("with an error");
+    assert_eq!(error.code, ErrorCode::Unauthenticated);
+    let mut line = None;
+    for _ in 0..50 {
+        let text = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+        line = text
+            .lines()
+            .find(|l| l.contains("stream ended") && l.contains("WatchSessions"))
+            .map(str::to_owned);
+        if line.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let line = line.expect("an end line for WatchSessions");
+    assert!(line.contains("reason=\"unauthenticated\""), "{line}");
+    assert!(line.contains("member=\"kilgore\""), "{line}");
 }

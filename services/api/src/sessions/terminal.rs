@@ -26,6 +26,7 @@ use rl_domain::{Member, SessionId, subject};
 use serde::Deserialize;
 
 use super::{SessionApi, session_id};
+use crate::access::Access;
 use crate::auth::LoginHash;
 
 /// The WebSocket subprotocol of the terminal protocol; a client must offer it.
@@ -129,8 +130,12 @@ pub(crate) fn router(api: SessionApi) -> axum::Router {
 async fn open(
     State(api): State<SessionApi>,
     Path(id): Path<String>,
-    Extension(login): Extension<LoginHash>,
-    Extension(member): Extension<Member>,
+    // What the login check and the access log put on the request.
+    (Extension(login), Extension(member), Extension(access)): (
+        Extension<LoginHash>,
+        Extension<Member>,
+        Extension<Access>,
+    ),
     ws: WebSocketUpgrade,
 ) -> Response {
     let ws = ws
@@ -167,8 +172,14 @@ async fn open(
         Err(error) => return super::internal("nats_unavailable", &error).into_response(),
     };
     ws.on_upgrade(move |socket| async move {
-        bridge(api, session, login, output, socket).await;
+        if let Some(left_out) = access.allow() {
+            tracing::info!(session = %session.0, member = member.as_str(), client = access.client, left_out, "terminal opened");
+        }
+        let reason = bridge(api, session, login, output, socket).await;
         drop(slot);
+        if let Some(left_out) = access.allow() {
+            tracing::info!(session = %session.0, client = access.client, left_out, reason, "terminal closed");
+        }
     })
 }
 
@@ -176,22 +187,22 @@ async fn open(
 type Closed = (u16, &'static str);
 
 /// Carries frames both ways until either side ends, the login ends, or the api shuts down, then
-/// closes with why. Logs the session and the reason only.
+/// closes with why, and returns why: the only thing logged about it.
 async fn bridge(
     api: SessionApi,
     session: SessionId,
     login: LoginHash,
     output: async_nats::Subscriber,
     mut socket: WebSocket,
-) {
+) -> &'static str {
     let (code, reason) = relay(&api, session, login, output, &mut socket).await;
-    tracing::info!(session = %session.0, reason, "terminal closed");
     let close = CloseFrame {
         code,
         reason: Utf8Bytes::from_static(reason),
     };
     // Bounded too: a browser that stopped reading never takes it.
     let _ = tokio::time::timeout(SEND_TIMEOUT, socket.send(Message::Close(Some(close)))).await;
+    reason
 }
 
 /// The frames of [`bridge`], until why it closes.

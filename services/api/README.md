@@ -82,6 +82,16 @@ The control plane's front door (ADR 0031, ADR 0033):
   token never reaches a log. Its own connection signs in with the `auth_user` nkey seed (or `.creds` file).
   At start the api waits for a NATS it can't reach, trying again up to every 5 s and logging each try
   (`rl_nats::connect`); a refused sign-in or any other start failure still stops it.
+- **Access log** (RAN-81, `src/access.rs`): one `info` line per refused request, any response of 400 or
+  more, an RPC or a terminal upgrade: `refused a request` with its method, path, status, reason (the
+  Connect error's code, like `unauthenticated` or `cross_origin`), member when signed in, and client.
+  One line when each stream (`WatchSession`, `WatchSessions`, the terminal) opens and one when it
+  ends, with why (`completed`, `client_gone`, an error's code, or the terminal's close reason). Never
+  a cookie, a token, a body or a terminal frame. Each client (the last `X-Forwarded-For` hop, or the
+  TCP peer) logs at most 30 lines a minute; the next line after says how many were `left_out`. That
+  hop is trusted as the client only because the api's NetworkPolicy lets in nothing but the ingress
+  controller, which sets it. Behind an L4 load balancer without the PROXY protocol, every client
+  shares one rate-limit bucket.
 - **HTTP/1.1 only** (Connect and the terminal WebSocket need nothing else). A client gets 10
   seconds to send a request's headers, from connecting and between requests on a kept-alive
   connection; a connection that sends nothing is closed.

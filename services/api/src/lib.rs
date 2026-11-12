@@ -6,6 +6,7 @@
 // connectrpc's generated traits return `impl Encodable<M>`; handlers name the concrete message.
 #![allow(refining_impl_trait_internal, refining_impl_trait_reachable)]
 
+mod access;
 pub mod agent_events;
 pub mod auth;
 pub mod config;
@@ -130,14 +131,19 @@ pub async fn serve(listener: TcpListener, api: SessionApi, auth: Auth, cancel: C
         .merge(terminal);
     let app = axum::Router::new()
         .route("/healthz", axum::routing::get(|| async { "ok" }))
-        .merge(auth::router(auth, rpc));
+        .merge(auth::router(auth, rpc))
+        .layer(axum::middleware::from_fn_with_state(
+            access::Lines::default(),
+            access::log_refusals,
+        ));
     let mut http = http1::Builder::new();
     http.timer(TokioTimer::new())
         .header_read_timeout(CLIENT_TIMEOUT)
         .keep_alive(true);
     let connections = TaskTracker::new();
-    while let Some(stream) = cancel.run_until_cancelled(accept(&listener)).await {
-        let service = TowerToHyperService::new(app.clone());
+    while let Some((stream, peer)) = cancel.run_until_cancelled(accept(&listener)).await {
+        let service =
+            TowerToHyperService::new(app.clone().layer(axum::Extension(access::Peer(peer))));
         let connection = http
             .serve_connection(TokioIo::new(stream), service)
             .with_upgrades();
@@ -161,10 +167,10 @@ pub async fn serve(listener: TcpListener, api: SessionApi, auth: Auth, cancel: C
 
 /// The next connection. A failed accept (out of file descriptors, say) is logged and retried
 /// after a pause rather than spun on.
-async fn accept(listener: &TcpListener) -> TcpStream {
+async fn accept(listener: &TcpListener) -> (TcpStream, std::net::SocketAddr) {
     loop {
         match listener.accept().await {
-            Ok((stream, _)) => return stream,
+            Ok(accepted) => return accepted,
             Err(error) => tracing::warn!(%error, "accept failed"),
         }
         tokio::time::sleep(Duration::from_millis(100)).await;

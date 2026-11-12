@@ -89,7 +89,7 @@ async fn same_origin(State(auth): State<Auth>, request: Request, next: Next) -> 
         && !headers.contains_key(header::UPGRADE);
     let origin = headers.get(header::ORIGIN).map(HeaderValue::as_bytes);
     if !reads && origin != Some(auth.0.origin.as_bytes()) {
-        tracing::info!(method = %request.method(), path = request.uri().path(), "refused a cross-origin request");
+        // Its line comes from the access log (crate::access), rate-limited.
         return ConnectError::permission_denied("cross_origin").into_response();
     }
     next.run(request).await
@@ -108,9 +108,12 @@ async fn require_login(State(auth): State<Auth>, mut request: Request, next: Nex
     };
     match found {
         Ok(Some((member, login))) => {
-            request.extensions_mut().insert(member);
+            request.extensions_mut().insert(member.clone());
             request.extensions_mut().insert(login);
-            next.run(request).await
+            let mut response = next.run(request).await;
+            // For the access log's line, if the handler refuses it (crate::access).
+            response.extensions_mut().insert(member);
+            response
         }
         Ok(None) => unauthenticated(),
         Err(error) => store_unavailable(&error),

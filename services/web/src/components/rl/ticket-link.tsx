@@ -14,7 +14,7 @@ export function TicketLink({ session }: { session: Session }) {
       href={session.ticketUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 rounded-sm font-mono text-[12px] text-dim hover:text-rl"
+      className="inline-flex items-center gap-1 rounded-sm touch:min-h-11 font-mono text-[12px] text-dim hover:text-rl"
     >
       {session.ticketKey}
       <ExternalLink className="size-3" aria-hidden />

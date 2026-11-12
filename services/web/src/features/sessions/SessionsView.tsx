@@ -5,6 +5,7 @@ import { Notice } from "@/components/rl/notice";
 import { ViewHeader } from "@/components/rl/view-header";
 import { Button } from "@/components/ui/button";
 import { useNow } from "@/lib/time";
+import { cn } from "@/lib/utils";
 import { SessionRow } from "./SessionRow";
 import { useSessions, type SessionsState } from "./store";
 
@@ -64,7 +65,7 @@ function Body({ state, reload }: { state: SessionsState; reload: () => void }) {
 function Table({ sessions }: { sessions: Session[] }) {
   const now = useNow();
   return (
-    <table className="w-full border-separate border-spacing-0 text-left">
+    <table className="w-full border-separate max-lg:table-fixed border-spacing-0 text-left">
       <caption className="sr-only">Sessions, newest first</caption>
       <thead className="text-[11px] font-semibold tracking-[0.08em] text-faint uppercase">
         <tr>
@@ -72,7 +73,10 @@ function Table({ sessions }: { sessions: Session[] }) {
             <th
               key={h}
               scope="col"
-              className={i === 4 ? "px-6 py-2.5 text-right" : "px-3 py-2.5 first:pl-6"}
+              className={cn(
+                i === 4 ? "px-6 py-2.5 text-right" : "px-3 py-2.5 first:pl-6 max-lg:first:pl-4",
+                i > 0 && "max-lg:hidden",
+              )}
             >
               {h}
             </th>

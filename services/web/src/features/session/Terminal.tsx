@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { openTerminal } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/theme/theme";
+import { KeyBar } from "./KeyBar";
 import { inputFrames, outputBytes, resizeFrame } from "./terminal-protocol";
 
 type Status = "connecting" | "open" | "closed";
@@ -157,8 +158,9 @@ export function Terminal({ sessionId }: { sessionId: string }) {
       <div
         ref={el}
         data-testid="terminal"
-        className="min-h-0 flex-1 overflow-hidden bg-code px-3 py-2"
+        className="min-h-0 flex-1 overflow-hidden bg-code px-3 py-2 max-sm:px-1"
       />
+      <KeyBar terminal={() => term.current} />
     </section>
   );
 }

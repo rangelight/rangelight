@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- Whether a runner message already has its event.\nSELECT EXISTS (SELECT 1 FROM events WHERE message_id = $1) AS \"recorded!\"\n",
+  "query": "-- Whether the session already has an event for this message (a runner's or its agent's).\nSELECT EXISTS (SELECT 1 FROM events WHERE session_id = $1 AND message_id = $2) AS \"recorded!\"\n",
   "describe": {
     "columns": [
       {
@@ -12,6 +12,7 @@
     ],
     "parameters": {
       "Left": [
+        "Uuid",
         "Uuid"
       ]
     },
@@ -19,5 +20,5 @@
       null
     ]
   },
-  "hash": "9dd584cad7eb7cdfa15130b24436b36cc8217f9ef227eeb3d4f7366a0e89ef82"
+  "hash": "1d4fdae30f383fac5c52fab0fcceb3ee2238b41db030ba2cee17d00e5d427c61"
 }

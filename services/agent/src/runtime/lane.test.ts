@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import type { LaneEvent } from "../events/events.ts";
 import { SESSION, until } from "./contract.ts";
 import { FakeRuntime } from "./fake.ts";
-import { laneHandler } from "./lane.ts";
+import { laneHandler, TURN_NOTE } from "./lane.ts";
 
 test("every turn end and the exit push a checkpoint; lane events are emitted", async () => {
   const emitted: LaneEvent[] = [];
@@ -25,7 +25,19 @@ test("every turn end and the exit push a checkpoint; lane events are emitted", a
   await runtime.stop();
   await until(() => exited === 143);
   expect(saves).toBe(3);
-  expect(emitted.map((e) => e.type)).toEqual(["progress", "progress"]);
+  // Each turn: its start, then the fake's own progress.
+  expect(emitted.map((e) => e.type)).toEqual(["progress", "progress", "progress", "progress"]);
+});
+
+test("a turn start is a progress, so Rangelight closes the lane's open question", () => {
+  const emitted: LaneEvent[] = [];
+  const onEvent = laneHandler({
+    emit: (e) => emitted.push(e),
+    checkpoint: () => Promise.resolve(),
+    exit: () => undefined,
+  });
+  onEvent({ kind: "turn_start" });
+  expect(emitted).toEqual([{ type: "progress", payload: { stage: "turn", note: TURN_NOTE } }]);
 });
 
 test("a failed checkpoint is reported and the lane goes on", async () => {

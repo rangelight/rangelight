@@ -87,6 +87,28 @@ pub fn pty_out(org: &str, session: SessionId) -> String {
     format!("rl.{org}.pty.{}.out", session.0)
 }
 
+/// The core NATS subject a lane's agent sends its events on (agent-event.v1alpha1); the api's
+/// stream [`agent_stream`] captures it, so none is lost while the api is away.
+#[must_use]
+pub fn agent_events(org: &str, session: SessionId) -> String {
+    format!("rl.{org}.agent.{}.events", session.0)
+}
+
+/// Every lane's agent events in an org: what [`agent_stream`] captures.
+#[must_use]
+pub fn agents_events(org: &str) -> String {
+    format!("rl.{org}.agent.*.events")
+}
+
+/// The JetStream stream of every lane's agent events in an org; the api owns it.
+#[must_use]
+pub fn agent_stream(org: &str) -> String {
+    format!("rl-{org}-agent")
+}
+
+/// The api's durable consumer of the agent stream.
+pub const AGENT_CONSUMER: &str = "api";
+
 /// The inbox prefix of the NATS identity `id`: its replies arrive under `<prefix>.>`, which only
 /// it may subscribe to, so no client reads another's replies or pulled messages.
 #[must_use]
@@ -121,8 +143,8 @@ fn pull_consumer(stream: &str, durable: &str, filter: &str) -> [String; 4] {
     ]
 }
 
-/// The api: consumes every runner's status, follows every session's events, and bridges every
-/// lane's terminal.
+/// The api: consumes every runner's status and every lane's agent events, follows every
+/// session's events, and bridges every lane's terminal.
 #[must_use]
 pub fn api(org: &str) -> Permissions {
     let stream = status_stream(org);
@@ -132,6 +154,9 @@ pub fn api(org: &str) -> Permissions {
         STATUS_CONSUMER,
         &runners_status(org),
     ));
+    let agent = agent_stream(org);
+    publish.extend(owned_stream(&agent));
+    publish.extend(pull_consumer(&agent, AGENT_CONSUMER, &agents_events(org)));
     publish.push(format!("rl.{org}.pty.*.in"));
     Permissions {
         publish,
@@ -167,11 +192,12 @@ pub fn runner(org: &str, runner: &str) -> Permissions {
     }
 }
 
-/// The lane of `session`: its own terminal, nothing else. No inbox: a lane makes no requests.
+/// The lane of `session`: its own terminal and its own agent events, nothing else. No inbox: a
+/// lane makes no requests.
 #[must_use]
 pub fn lane(org: &str, session: SessionId) -> Permissions {
     Permissions {
-        publish: vec![pty_out(org, session)],
+        publish: vec![pty_out(org, session), agent_events(org, session)],
         subscribe: vec![pty_in(org, session)],
     }
 }

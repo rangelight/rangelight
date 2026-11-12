@@ -29,7 +29,10 @@ which is live and never stored or logged, so a `/login` code is never kept (ADR 
 Git gets the mirror token only for the mirror's URL.
 
 **Output.** stdout carries only events, one JSON object per line; dev command output and errors
-go to stderr.
+go to stderr. Each event also goes to Rangelight on `rl.<org>.agent.<session>.events`, over the
+lane's one NATS connection (the terminal's); events from before it is up (the sign-in `ask`) are
+held, up to 64, and sent once it is. Every turn start is a `progress` with stage `turn`, which
+ends the session's "waiting for you" (RAN-63).
 
 **Tests.** `scripts/test/services.sh run pnpm --filter agent test` (vitest against a real
 nats-server; needs git, curl and util-linux `script`), or the whole TypeScript gate with

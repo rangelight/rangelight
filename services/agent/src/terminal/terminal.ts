@@ -12,7 +12,9 @@ import type {
   RangelightTerminalMessageV1Alpha1 as Message,
   TerminalOutput,
 } from "../../../../shared/ts/gen/terminal.v1alpha1.schema.d.ts";
-import { ptyIn, ptyOut } from "../subjects.ts";
+import { createEmitter, type Emit } from "../events/events.ts";
+import { systemClock, uuidv7Ids } from "../events/ids.ts";
+import { agentEvents, ptyIn, ptyOut } from "../subjects.ts";
 
 /** The PTY a terminal drives: the cli runtime's. */
 export interface Pty {
@@ -32,11 +34,21 @@ export interface TerminalOptions {
   log: (line: string) => void;
 }
 
-/** The lane terminal: {@link Terminal.output} sends what the PTY wrote. */
+/** What {@link connectLane} needs of the agent's config. */
+export type LaneConfig = Omit<TerminalOptions, "pty" | "log">;
+
+/**
+ * The lane's NATS connection: {@link Terminal.output} sends what the PTY wrote, and
+ * {@link Terminal.event} one serialised lane event.
+ */
 export interface Terminal {
   output(chunk: Uint8Array): void;
+  event(line: string): void;
   close(): Promise<void>;
 }
+
+/** The most events held while the first connect is under way; later ones are dropped. */
+export const PENDING_EVENTS = 64;
 
 /** How long a refused or failed first connect waits before the next try. */
 const RETRY_MS = 2_000;
@@ -77,18 +89,9 @@ async function connectUntil(
   return undefined;
 }
 
-/**
- * Bridges the PTY to the lane terminal's core NATS subjects (ADR 0040 §1): `input` and `resize`
- * from `pty.<session>.in` go to the PTY, what the PTY writes goes out on `pty.<session>.out`. It
- * signs in as the lane, with its projected token: the auth callout lets it use exactly these two
- * subjects (ADR 0045 amendment). It connects in the background and never gives up, a refused
- * sign-in included (the callout restarting, a token not yet rotated): the lane runs without it,
- * and output while it is away is dropped (the screen redraws on the browser's next resize).
- */
-export function startTerminal(o: TerminalOptions): Terminal {
-  const out = ptyOut(o.org, o.sessionId);
-  let nc: NatsConnection | undefined;
-  let closed = false;
+/** The lane's connection: as the lane, with its token read again at every connect, retried for
+ * ever. */
+function connectionOptions(o: TerminalOptions): ConnectionOptions {
   const token = (): string => {
     try {
       return readFileSync(o.natsTokenFile, "utf8").trim();
@@ -97,7 +100,7 @@ export function startTerminal(o: TerminalOptions): Terminal {
       return "";
     }
   };
-  const options = {
+  return {
     servers: o.natsUrl,
     name: `rl-agent-${o.sessionId}`,
     authenticator: tokenAuthenticator(token),
@@ -106,13 +109,33 @@ export function startTerminal(o: TerminalOptions): Terminal {
     // By default two refused sign-ins in a row stop the client for good.
     ignoreAuthErrorAbort: true,
   };
-  void connectUntil(options, () => closed, o.log).then((c) => {
+}
+
+/**
+ * Bridges the PTY to the lane terminal's core NATS subjects (ADR 0040 §1): `input` and `resize`
+ * from `pty.<session>.in` go to the PTY, what the PTY writes goes out on `pty.<session>.out`; and
+ * sends the lane's events on `agent.<session>.events`, which the api's stream keeps (RAN-63). It
+ * signs in as the lane, with its projected token: the auth callout lets it use exactly these
+ * three subjects (ADR 0045 amendment). It connects in the background and never gives up, a refused
+ * sign-in included (the callout restarting, a token not yet rotated): the lane runs without it,
+ * and output while it is away is dropped (the screen redraws on the browser's next resize).
+ */
+export function startTerminal(o: TerminalOptions): Terminal {
+  const out = ptyOut(o.org, o.sessionId);
+  const events = agentEvents(o.org, o.sessionId);
+  // Events from before the first connect (the sign-in ask is one), sent once it is up. Once
+  // connected, the client itself holds what is sent while it reconnects.
+  const pending: string[] = [];
+  let nc: NatsConnection | undefined;
+  let closed = false;
+  void connectUntil(connectionOptions(o), () => closed, o.log).then((c) => {
     if (c === undefined) return;
     if (closed) {
       void c.close();
       return;
     }
     nc = c;
+    for (const line of pending.splice(0)) c.publish(events, line);
     c.subscribe(ptyIn(o.org, o.sessionId), {
       callback: (error, msg) => {
         if (error) {
@@ -137,9 +160,48 @@ export function startTerminal(o: TerminalOptions): Terminal {
         nc.publish(out, JSON.stringify({ type: "output", data } satisfies TerminalOutput));
       }
     },
+    event(line) {
+      if (nc) nc.publish(events, line);
+      else if (pending.length < PENDING_EVENTS) pending.push(line);
+      else o.log("terminal: dropped a lane event while NATS is away");
+    },
     async close() {
       closed = true;
       await nc?.close();
     },
   };
+}
+
+/**
+ * The lane's one NATS connection, up from the start so the first event (the sign-in ask, say)
+ * reaches Rangelight, and the emitter that writes each event to stdout (kubectl logs) and to it.
+ * The PTY is attached once claude runs.
+ */
+export function connectLane(config: LaneConfig): {
+  terminal: Terminal;
+  emit: Emit;
+  attach: (pty: Pty) => void;
+} {
+  const lane: { pty?: Pty } = {};
+  const terminal = startTerminal({
+    ...config,
+    pty: {
+      write: (bytes) => lane.pty?.write(bytes),
+      resize: (cols, rows) => lane.pty?.resize(cols, rows) ?? Promise.resolve(),
+    },
+    log: (line) => process.stderr.write(`agent: ${line}\n`),
+  });
+  const emit = createEmitter({
+    sessionId: config.sessionId,
+    clock: systemClock,
+    ids: uuidv7Ids(systemClock),
+    write: (line) => {
+      process.stdout.write(`${line}\n`);
+      terminal.event(line);
+    },
+  });
+  const attach = (pty: Pty): void => {
+    lane.pty = pty;
+  };
+  return { terminal, emit, attach };
 }

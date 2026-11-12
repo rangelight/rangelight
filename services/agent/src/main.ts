@@ -3,11 +3,9 @@
 import { brief, readTicket, resumeBrief } from "./brief/brief.ts";
 import { Checkpoints } from "./checkpoint/checkpoint.ts";
 import { childEnv, loadConfig } from "./config.ts";
-import { createEmitter } from "./events/events.ts";
-import { systemClock, uuidv7Ids } from "./events/ids.ts";
 import { CliRuntime } from "./runtime/cli.ts";
 import { laneHandler } from "./runtime/lane.ts";
-import { startTerminal } from "./terminal/terminal.ts";
+import { connectLane } from "./terminal/terminal.ts";
 import { devCommands, startDevCommands } from "./workspace/dev.ts";
 import { createGit } from "./workspace/git.ts";
 import { prepareWorkspace } from "./workspace/workspace.ts";
@@ -24,11 +22,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const env = childEnv();
   const git = createGit(env);
-  const emit = createEmitter({
-    sessionId: config.sessionId,
-    clock: systemClock,
-    ids: uuidv7Ids(systemClock),
-  });
+  const { terminal, emit, attach } = connectLane(config);
   // Both files are validated before anything is cloned or started.
   const ticket = readTicket(config.ticketFile);
   const dev = devCommands(config.profileFile, config.underChange, config.workdir);
@@ -56,12 +50,7 @@ async function main(): Promise<void> {
       exit: (code) => process.exit(code),
     }),
   });
-  // Output starts only once claude runs, after this line.
-  const terminal = startTerminal({
-    ...config,
-    pty: runtime,
-    log: (line) => process.stderr.write(`agent: ${line}\n`),
-  });
+  attach(runtime);
   onSigterm = () => {
     runtime.interrupt();
     void runtime.stop();

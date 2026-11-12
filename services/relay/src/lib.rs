@@ -260,7 +260,7 @@ fn decode(event: &Unsent) -> Result<(Change, Option<EnumValue<DesiredState>>), R
     let state = match &change.kind {
         Some(Kind::Created(created)) => Some(created.state),
         Some(Kind::StateChanged(changed)) => Some(changed.state),
-        Some(Kind::PhaseChanged(_)) => None,
+        Some(Kind::PhaseChanged(_) | Kind::AgentEvent(_)) => None,
         None => return Err(RelayError::Payload(event.event.0)),
     };
     Ok((change, state))

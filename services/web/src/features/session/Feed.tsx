@@ -1,6 +1,10 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import type { Change, Event } from "@gen/proto/rangelight/session/v1alpha1/session_pb.ts";
-import { ArrowRightLeft, Boxes, Radio, Sparkles } from "lucide-react";
+import type {
+  AgentEvent,
+  Change,
+  Event,
+} from "@gen/proto/rangelight/session/v1alpha1/session_pb.ts";
+import { ArrowRightLeft, Boxes, Bot, MessageCircleQuestion, Radio, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import { phaseLabel, stateLabel } from "@/components/rl/state-badge";
 
@@ -41,10 +45,38 @@ function said(kind: Change["kind"] | undefined): { icon: ReactNode; text: ReactN
           </>
         ),
       };
+    case "agentEvent":
+      return agentSaid(kind.value.kind);
     case undefined:
       return {
         icon: <Sparkles className="size-[15px] text-faint" aria-hidden />,
         text: <span className="text-dim">An event this Workbench doesn&apos;t know yet</span>,
+      };
+  }
+}
+
+/** The icon and words for one agent event: what the lane's agent said. */
+function agentSaid(kind: AgentEvent["kind"]): { icon: ReactNode; text: ReactNode } {
+  const bot = <Bot className="size-[15px] text-dim" aria-hidden />;
+  switch (kind.case) {
+    case "ask":
+      return {
+        icon: <MessageCircleQuestion className="size-[15px] text-warn" aria-hidden />,
+        text: <>The agent asks: {kind.value.question}</>,
+      };
+    case "progress":
+      return { icon: bot, text: <>{kind.value.note}</> };
+    case "workerDone":
+      return { icon: bot, text: <>The agent says it is done: {kind.value.summary}</> };
+    case "compacted":
+      return {
+        icon: bot,
+        text: <>The agent&apos;s context was compacted ({kind.value.trigger})</>,
+      };
+    case undefined:
+      return {
+        icon: bot,
+        text: <span className="text-dim">An agent event this Workbench doesn&apos;t know yet</span>,
       };
   }
 }
@@ -56,7 +88,7 @@ function Item({ event }: { event: Event }) {
   return (
     <li className="rl-in flex items-start gap-2.5 rounded-md px-1.5 py-1.5 text-[13px] leading-[1.45]">
       <span className="mt-[3px] shrink-0">{icon}</span>
-      <span className="min-w-0 flex-1 text-foreground">{text}</span>
+      <span className="min-w-0 flex-1 break-words text-foreground">{text}</span>
       <span className="shrink-0 font-mono text-[11px] text-faint tabular">
         #{event.seq.toString()}
         {at && <time dateTime={at.toISOString()}> · {clock.format(at)}</time>}

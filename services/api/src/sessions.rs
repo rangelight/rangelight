@@ -124,6 +124,7 @@ fn to_proto(row: SessionRow) -> Session {
         created_at: buffa_types::google::protobuf::Timestamp::from(row.created_at).into(),
         ticket_url: row.ticket_url,
         pull_request_url: row.pull_request_url.unwrap_or_default(),
+        question: row.question.unwrap_or_default(),
         ..Default::default()
     }
 }

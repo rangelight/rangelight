@@ -42,6 +42,7 @@ const Emit = z.object({
   atMs: z.number().optional(),
 });
 const Abort = z.object({ sessionId: z.string() });
+const Ask = z.object({ sessionId: z.string(), question: z.string() });
 const Report = z.object({
   sessionId: z.string(),
   phase: z.enum(Phase),
@@ -164,6 +165,17 @@ function report(sessionId: string, phase: Phase, message: string, pullRequestUrl
   );
 }
 
+/** A lane's agent event, recorded as the api records it: an ask opens the question, a turn's
+ * progress (question "") closes it. */
+function agent(sessionId: string, question: string): void {
+  const session = world.sessions.find((s) => s.id === sessionId);
+  if (session) session.question = question;
+  const kind = question
+    ? { case: "ask" as const, value: { question } }
+    : { case: "progress" as const, value: { stage: "turn", note: "Claude is working on a turn." } };
+  commit(sessionId, create(ChangeSchema, { kind: { case: "agentEvent", value: { kind } } }));
+}
+
 /** A session created now: listed, and announced to every watcher like the relay's fan-out. */
 function add(s: StubSession): void {
   const session = toSession(s);
@@ -257,6 +269,11 @@ function command(name: string, b: unknown): unknown {
       report(sessionId, phase, message, pullRequestUrl);
       return {};
     }
+    case "agent": {
+      const { sessionId, question } = Ask.parse(b);
+      agent(sessionId, question);
+      return {};
+    }
     case "abort":
       world.watchers.get(Abort.parse(b).sessionId)?.forEach((w) => {
         w.abort();
@@ -296,7 +313,9 @@ export function startStub(): Promise<Server> {
       p.has("terminal.v1alpha1.rangelight.dev") ? "terminal.v1alpha1.rangelight.dev" : false,
   });
   const server = createServer((req, res) => {
-    const name = /^\/__stub\/(reset|emit|create|report|abort|state)$/.exec(req.url ?? "")?.[1];
+    const name = /^\/__stub\/(reset|emit|create|report|agent|abort|state)$/.exec(
+      req.url ?? "",
+    )?.[1];
     if (name === undefined) {
       handler(req, res);
       return;

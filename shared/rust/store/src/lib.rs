@@ -21,7 +21,7 @@ mod skips;
 pub use auth::NewLogin;
 pub use events::ChainEvent;
 pub use outbox::Unsent;
-pub use sessions::{SessionRow, Snapshot};
+pub use sessions::{AgentEventRecorded, SessionRow, Snapshot};
 pub use skips::SkipRow;
 
 /// The schema, from `db/migrations/`.
@@ -49,6 +49,22 @@ pub enum StoreError {
     /// A stored number is out of range; the row is corrupt.
     #[error("stored {0} out of range")]
     OutOfRange(&'static str),
+}
+
+impl StoreError {
+    /// Whether Postgres refused the data itself (SQLSTATE class 22, a data exception such as a NUL
+    /// byte in text, or 23, a constraint): the same statement will fail again, so retrying
+    /// won't help.
+    #[must_use]
+    pub fn is_refused(&self) -> bool {
+        let StoreError::Db(error) = self else {
+            return false;
+        };
+        let code = error
+            .as_database_error()
+            .and_then(sqlx::error::DatabaseError::code);
+        code.is_some_and(|code| code.starts_with("22") || code.starts_with("23"))
+    }
 }
 
 impl From<sqlx::Error> for StoreError {

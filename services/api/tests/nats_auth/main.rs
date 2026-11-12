@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod control_plane;
+mod events;
 mod lane;
 mod runner;
 

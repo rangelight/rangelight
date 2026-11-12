@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- The session whose lane runs in a namespace: who a lane's token is (the NATS auth callout).\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, member, state, phase,\n  pull_request_url, generation, created_at\nFROM sessions\nWHERE namespace = $1\n",
+  "query": "-- The sessions whose pull request is still to link: neither linked nor refused, the least recently\n-- tried first (never tried before all).\nSELECT id, tracker, ticket_id, ticket_key, title, ticket_url, namespace, repo, member, state, phase,\n  pull_request_url, question, generation, created_at\nFROM sessions\nWHERE pull_request_url IS NOT NULL AND pull_request_linked_at IS NULL\n  AND pull_request_link_refused_at IS NULL\nORDER BY pull_request_link_tried_at NULLS FIRST, created_at, id\nLIMIT $1\n",
   "describe": {
     "columns": [
       {
@@ -137,6 +137,17 @@
       },
       {
         "ordinal": 12,
+        "name": "question",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "question"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
         "name": "generation",
         "type_info": "Int8",
         "origin": {
@@ -147,7 +158,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -160,7 +171,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
@@ -176,9 +187,10 @@
       false,
       true,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "42eb2fa03dcd6cb3349db43c235f26cc70ad3a58fe262e76bd1645fdd9b084ae"
+  "hash": "a7b3114f1b83fe3319eeccaeca19dd6ef410fde394e38a1412dcc5a84c91d82c"
 }

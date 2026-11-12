@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- An agent event's effect: when $2, the session's question becomes $3 (NULL: none). The\n-- generation always moves on.\nUPDATE sessions SET\n  question = CASE WHEN $2::boolean THEN $3::text ELSE question END,\n  generation = $4,\n  updated_at = $5\nWHERE id = $1\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Text",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6cde0663e85c345b82ebde85789833d53ecbe39c437fbdae7920969d514f8352"
+}

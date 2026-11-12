@@ -9,6 +9,7 @@ import { PullRequestLink } from "@/components/rl/pull-request-link";
 import { PhaseBadge, StateBadge } from "@/components/rl/state-badge";
 import { TicketLink } from "@/components/rl/ticket-link";
 import { ViewHeader } from "@/components/rl/view-header";
+import { Question } from "@/components/rl/waiting";
 import { Button } from "@/components/ui/button";
 import { elapsed, useNow } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -158,19 +159,22 @@ function Header({ session, children }: { session: Session; children: ReactNode }
     <ViewHeader
       title={session.title || session.ticketKey}
       sub={
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <BackLink />
-          <TicketLink session={session} />
-          <PullRequestLink session={session} />
-          <span className="font-mono text-[12px] text-t2">{session.repo || "no repo yet"}</span>
-          <PhaseBadge phase={session.phase} />
-          <StateBadge state={session.state} />
-          {created !== undefined && (
-            <span className="font-mono text-[12px] tabular">
-              started {elapsed(created, now)} ago
-            </span>
-          )}
-        </span>
+        <>
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <BackLink />
+            <TicketLink session={session} />
+            <PullRequestLink session={session} />
+            <span className="font-mono text-[12px] text-t2">{session.repo || "no repo yet"}</span>
+            <PhaseBadge phase={session.phase} />
+            <StateBadge state={session.state} />
+            {created !== undefined && (
+              <span className="font-mono text-[12px] tabular">
+                started {elapsed(created, now)} ago
+              </span>
+            )}
+          </span>
+          <Question session={session} />
+        </>
       }
     >
       {children}

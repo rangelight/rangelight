@@ -5,6 +5,7 @@ import { AppLink } from "@/components/rl/app-link";
 import { PullRequestLink } from "@/components/rl/pull-request-link";
 import { PhaseBadge, StateBadge } from "@/components/rl/state-badge";
 import { TicketLink } from "@/components/rl/ticket-link";
+import { WaitingBadge } from "@/components/rl/waiting";
 import { elapsed } from "@/lib/time";
 
 const cell = "border-b border-line px-3 py-3 align-middle";
@@ -28,6 +29,7 @@ export function SessionRow({ session, now }: { session: Session; now: number }) 
           <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
             <TicketLink session={session} />
             <PullRequestLink session={session} />
+            <WaitingBadge session={session} />
           </span>
           <AppLink
             href={sessionPath(session.id)}

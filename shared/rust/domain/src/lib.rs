@@ -1,8 +1,9 @@
 //! Rangelight's domain: session ids, the session state machine and phases, tickets, members,
-//! workspaces, pull requests and the commands that change sessions. Sync, no I/O, no clock, no environment
+//! workspaces, pull requests, lane agents' events and the commands that change sessions. Sync, no I/O, no clock, no environment
 //! (ADR 0049 §2.1).
 #![deny(missing_docs)]
 
+mod agent_event;
 mod member;
 mod pull_request;
 mod session;
@@ -10,6 +11,7 @@ pub mod subject;
 pub(crate) mod ticket;
 mod workspace;
 
+pub use agent_event::{AgentEvent, Question, ReportAgentEvent};
 pub use member::Member;
 pub use pull_request::{PullRequest, Upstream};
 pub use session::{

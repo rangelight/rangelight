@@ -78,9 +78,8 @@ function Current() {
     route.page === "session" && state.status === "ready"
       ? state.sessions.find((s) => s.id === route.id)
       : undefined;
-  const view =
-    VIEWS.find((v) => v.page === route.page)?.label ??
-    (route.page === "session" ? "Session" : "Not found");
+  const other: Partial<Record<string, string>> = { session: "Session", lane: "Sample lane" };
+  const view = VIEWS.find((v) => v.page === route.page)?.label ?? other[route.page] ?? "Not found";
   return (
     <p className="flex min-w-0 flex-1 items-baseline gap-2 text-[12.5px]" aria-label="Current view">
       <span className="shrink-0 font-medium text-foreground">{view}</span>

@@ -52,15 +52,15 @@ export const stubState = async (page: Page) => StubState.parse(await stub(page, 
 
 export const row = (page: Page, key: string) => page.getByRole("row").filter({ hasText: key });
 
-/** No horizontal page scroll, and nothing reaches past the screen's edge but the key bar's keys,
- * which scroll in their own strip. */
+/** No horizontal page scroll, and nothing reaches past the screen's edge but what scrolls in its own
+ * strip: the key bar's keys, and any `[data-scroll-x]` strip (the panel tabs, code). */
 export async function fitsTheWidth(page: Page): Promise<void> {
   const wide = await page.evaluate(() => {
     const scroller = document.scrollingElement;
     if (scroller && scroller.scrollWidth > innerWidth)
       return [`page ${String(scroller.scrollWidth)}`];
     return [...document.querySelectorAll("body *")]
-      .filter((el) => !el.closest('[aria-label="Terminal keys"]'))
+      .filter((el) => !el.closest('[aria-label="Terminal keys"], [data-scroll-x]'))
       .filter((el) => el.getBoundingClientRect().right > innerWidth + 0.5)
       .map((el) => el.outerHTML.slice(0, 80));
   });

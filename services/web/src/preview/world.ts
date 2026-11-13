@@ -39,6 +39,8 @@ export interface SampleLane {
   budget: { spent: number; cap: number };
   /** Ticks spent in the current stage. */
   ticks: number;
+  /** Whether its failing tests were re-run (and now pass). */
+  reran: boolean;
   feed: FeedEntry[];
 }
 
@@ -88,6 +90,7 @@ function lane(
     working,
     budget: { spent, cap: 8 },
     ticks: 0,
+    reran: false,
     feed,
   };
 }

@@ -3,7 +3,10 @@
 import {
   Bot,
   Ellipsis,
+  FolderGit2,
   GitPullRequest,
+  History,
+  House,
   Keyboard,
   LayoutGrid,
   List,
@@ -12,12 +15,13 @@ import {
   Moon,
   Network,
   PanelsTopLeft,
+  Settings2,
   Signpost,
   SquareTerminal,
   Sun,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { sessionPath, useRoute, type View, VIEWS } from "@/app/route";
+import { sessionPath, useRoute, VIEWS } from "@/app/route";
 import { AppLink } from "@/components/rl/app-link";
 import { cn } from "@/lib/utils";
 import { toggleTheme, useTheme } from "@/theme/theme";
@@ -78,7 +82,11 @@ function Action({
 }
 
 /** Each view's icon. */
-const ICONS: Record<View, LucideIcon> = {
+const ICONS: Record<Extract<(typeof VIEWS)[number], { rail: true }>["page"], LucideIcon> = {
+  home: House,
+  fork: History,
+  repos: FolderGit2,
+  settings: Settings2,
   sessions: PanelsTopLeft,
   architect: Network,
   decisions: Signpost,
@@ -110,7 +118,7 @@ export function Nav({
       data-chrome
       className="flex shrink-0 gap-1.5 border-line bg-rail max-sm:order-last max-sm:justify-around max-sm:border-t max-sm:px-2 max-sm:py-1 sm:h-full sm:w-[52px] sm:flex-col sm:items-center sm:border-r sm:py-2.5"
     >
-      {VIEWS.map((v) => {
+      {VIEWS.filter((v) => v.rail).map((v) => {
         const Icon = ICONS[v.page];
         return (
           <ViewLink

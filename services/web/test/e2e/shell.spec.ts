@@ -23,7 +23,7 @@ test("AC1 the rail has Sessions and the session last opened, and no dead links",
 }) => {
   await page.goto("/");
   // Every view of route.ts's VIEWS (a phone keeps 3; the rest are behind More); no session yet.
-  const views = isMobile ? 3 : 7;
+  const views = isMobile ? 3 : 11;
   await expect(nav(page).getByRole("link")).toHaveCount(views);
   await expect(nav(page).getByRole("link", { name: "Sessions" })).toHaveAttribute(
     "aria-current",

@@ -28,7 +28,7 @@ export function ArchitectStrip() {
           {needs.sessionId ? (
             <AppLink
               href={sessionPath(needs.sessionId)}
-              className="truncate text-foreground hover:underline"
+              className="truncate text-foreground hover:underline touch:flex touch:min-h-11 touch:items-center"
             >
               <span className="font-medium text-warn">{needs.lane} needs you:</span> {needs.title}
             </AppLink>

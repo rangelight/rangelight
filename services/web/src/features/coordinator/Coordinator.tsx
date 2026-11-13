@@ -2,7 +2,7 @@
 // A real session's header and open question are the api's; its feed here is a preview.
 import { ArrowUp, GitFork, Pause, Play } from "lucide-react";
 import { useState } from "react";
-import { sessionPath } from "@/app/route";
+import { lanePath, sessionPath } from "@/app/route";
 import { AppLink } from "@/components/rl/app-link";
 import { ViewHeader } from "@/components/rl/view-header";
 import { Button } from "@/components/ui/button";
@@ -80,6 +80,25 @@ function Entry({
   }
 }
 
+/** A sample lane's feed, as a list: each entry marked, its decisions decidable. */
+export function LaneFeed({
+  feed,
+  decision,
+  decide,
+}: {
+  feed: FeedEntry[];
+  decision: (id: string) => Decision | undefined;
+  decide: (id: string, key: 1 | 2 | 3) => void;
+}) {
+  return (
+    <ol aria-label="Feed" className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      {feed.map((e) => (
+        <Entry key={e.id} e={e} decision={decision} decide={decide} />
+      ))}
+    </ol>
+  );
+}
+
 /** The composer: a sample lane's, which answers from the sample world; on a real lane, disabled,
  * pointing at its terminal, where a word really reaches it. */
 function Composer({ lane, say }: { lane: CoordinatorLane; say: (text: string) => void }) {
@@ -147,6 +166,14 @@ function LaneBar({
       <span className="truncate font-medium text-foreground">{lane.title}</span>
       {lane.working && <span className="text-dim">· {lane.working}</span>}
       {lane.sample && <PreviewMark className="ml-auto" />}
+      {lane.sample && (
+        <AppLink
+          href={lanePath(lane.id)}
+          className="text-[12px] text-rl hover:underline touch:flex touch:min-h-11 touch:items-center"
+        >
+          Open its session view
+        </AppLink>
+      )}
       {lane.sample && lane.status !== "done" && (
         <>
           <Button onClick={pause}>

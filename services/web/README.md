@@ -33,6 +33,11 @@ The Workbench: every session as a row, and each session's live event feed and te
   `sample` and shown with `PreviewMark`; an action changes the sample world only and says so.
   A new view adds its own hook file (types in `types.ts`); a real implementation replaces a hook
   without touching its view.
+  The session panels (diff, tests, receipt, diagnosis, pod, preview, code, logs, services, history,
+  the full stage strip and the budget) each have a hook in `preview/panels/`, keyed by a sample
+  lane. A sample lane has its own session view (`/lanes/<key>`), where the panels act. A real
+  session's panels only show a marked example of what they will show (`PanelFrame`), with every
+  action off: sample data never appears under a real session's identity.
 - **Look**: tokens only from `src/styles/tokens.css`, primitives in `src/components/ui`, product
   components in `src/components/rl`, one folder per feature in `src/features/`.
 - **Phones** are a first-class target: below 1024 px the session view shows its terminal and feed

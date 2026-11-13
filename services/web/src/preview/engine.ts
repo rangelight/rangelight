@@ -12,6 +12,7 @@ export type Action =
   | { type: "pause"; lane: string }
   | { type: "resume"; lane: string }
   | { type: "fork"; lane: string }
+  | { type: "rerun"; lane: string }
   | { type: "undo" };
 
 /** A sample lane's feed. A real session has none here: sample text never speaks for a real lane. */
@@ -72,6 +73,24 @@ const approve = (w: SampleWorld, id: string): SampleWorld => {
   });
 };
 
+/** A second run of a sample lane from its latest checkpoint (once). */
+function fork(w: SampleWorld, lane: string): SampleWorld {
+  const from = w.lanes.find((l) => l.key === lane);
+  if (!from || w.lanes.some((l) => l.key === `${lane}·b`)) return w;
+  const id = `n${String(w.next)}`;
+  const second: SampleLane = {
+    ...from,
+    key: `${lane}·b`,
+    title: `${from.title} (fork)`,
+    status: "running",
+    working: "Trying the other approach",
+    ticks: 0,
+    budget: { spent: 0, cap: from.budget.cap },
+    feed: [{ kind: "outcome", id, text: `Forked from ${lane}'s latest checkpoint`, tone: "brand" }],
+  };
+  return { ...w, next: w.next + 1, lanes: [...w.lanes, second] };
+}
+
 /** The sample world after `a`. */
 export function reduce(w: SampleWorld, a: Action): SampleWorld {
   const id = `n${String(w.next)}`;
@@ -107,23 +126,21 @@ export function reduce(w: SampleWorld, a: Action): SampleWorld {
             }
           : l,
       );
-    case "fork": {
-      const from = w.lanes.find((l) => l.key === a.lane);
-      if (!from || w.lanes.some((l) => l.key === `${a.lane}·b`)) return w;
-      const fork: SampleLane = {
-        ...from,
-        key: `${a.lane}·b`,
-        title: `${from.title} (fork)`,
-        status: "running",
-        working: "Trying the other approach",
-        ticks: 0,
-        budget: { spent: 0, cap: from.budget.cap },
-        feed: [
-          { kind: "outcome", id, text: `Forked from ${a.lane}'s latest checkpoint`, tone: "brand" },
-        ],
-      };
-      return { ...next, lanes: [...next.lanes, fork] };
-    }
+    case "fork":
+      return fork(w, a.lane);
+    case "rerun":
+      return setLane(next, a.lane, (l) =>
+        l.reran
+          ? l
+          : {
+              ...l,
+              reran: true,
+              feed: [
+                ...l.feed,
+                { kind: "outcome", id, text: "Re-ran the failing tests: all pass", tone: "ok" },
+              ],
+            },
+      );
     case "undo":
       return { ...w, undone: !w.undone };
   }

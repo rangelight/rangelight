@@ -5,6 +5,7 @@ import { lanePath, navigate, sessionPath, VIEWS } from "@/app/route";
 import { useSample } from "@/preview/engine";
 import { Dialog } from "@/components/ui/dialog";
 import { useSessions } from "@/features/sessions/store";
+import { story } from "@/preview/story";
 
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
 
@@ -21,6 +22,8 @@ interface Target {
   detail: string;
   href: string;
   session: boolean;
+  /** Runs instead of going to `href`. */
+  run?: () => void;
 }
 
 export function Palette({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -31,6 +34,15 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
+/** The guided story: it drives the sample world only. */
+const STORY: Target = {
+  label: "Play the guided story",
+  detail: "Preview",
+  href: "#story",
+  session: false,
+  run: story.start,
+};
+
 /** Mounted with the dialog, so each opening starts with an empty query. */
 function Targets({ onClose }: { onClose: () => void }) {
   const { state } = useSessions();
@@ -38,6 +50,7 @@ function Targets({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const all: Target[] = [
     ...VIEWS.map((v) => ({ label: v.label, detail: "View", href: v.path, session: false })),
+    STORY,
     ...lanes.map((l) => ({
       label: `${l.key} ${l.title}`,
       detail: "Sample lane",
@@ -55,7 +68,8 @@ function Targets({ onClose }: { onClose: () => void }) {
   const shown = all.filter((t) => t.label.toLowerCase().includes(q));
   const go = (t: Target): void => {
     onClose();
-    navigate(t.href);
+    if (t.run) t.run();
+    else navigate(t.href);
   };
   return (
     <div className="flex max-h-[70vh] flex-col">

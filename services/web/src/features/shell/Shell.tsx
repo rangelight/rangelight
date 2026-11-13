@@ -8,6 +8,7 @@ import { Nav } from "./Nav";
 import { CheatSheet, Palette } from "./Palette";
 import { TopBar } from "./TopBar";
 import { Toaster } from "@/preview/toast";
+import { StoryBar } from "@/features/story/StoryBar";
 
 type Overlay = "fleet" | "palette" | "keys" | null;
 
@@ -79,6 +80,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <FleetColumn collapsed={collapsed} onCollapse={toggleFleet} />
             <main className="min-w-0 flex-1">{children}</main>
           </div>
+          <StoryBar />
         </div>
       </div>
       <FleetSheet open={overlay === "fleet"} onClose={close} />

@@ -13,7 +13,11 @@ export type Action =
   | { type: "resume"; lane: string }
   | { type: "fork"; lane: string }
   | { type: "rerun"; lane: string }
-  | { type: "undo" };
+  | { type: "undo" }
+  /** A waiting ticket gets a lane, at the Grill (the guided story's "Start from Up next"). */
+  | { type: "start"; key: string; title: string }
+  /** The sample world as it starts (leaving the guided story). */
+  | { type: "reset" };
 
 /** A sample lane's feed. A real session has none here: sample text never speaks for a real lane. */
 export const feedOf = (w: SampleWorld, lane: string): FeedEntry[] =>
@@ -91,6 +95,21 @@ function fork(w: SampleWorld, lane: string): SampleWorld {
   return { ...w, next: w.next + 1, lanes: [...w.lanes, second] };
 }
 
+/** A ticket's new lane, at the Grill. */
+const started = (key: string, title: string, id: string): SampleLane => ({
+  key,
+  title,
+  repos: [],
+  stage: "grill",
+  stages: { grill: "active", build: "todo", qa: "todo", review: "todo", verify: "todo" },
+  status: "running",
+  working: "Drafting the contract",
+  reran: false,
+  budget: { spent: 0, cap: 8 },
+  ticks: 0,
+  feed: [{ kind: "outcome", id, text: "Workspace ready · the Grill started", tone: "ok" }],
+});
+
 /** The sample world after `a`. */
 export function reduce(w: SampleWorld, a: Action): SampleWorld {
   const id = `n${String(w.next)}`;
@@ -143,6 +162,11 @@ export function reduce(w: SampleWorld, a: Action): SampleWorld {
       );
     case "undo":
       return { ...w, undone: !w.undone };
+    case "start":
+      if (w.lanes.some((l) => l.key === a.key)) return w;
+      return { ...next, lanes: [...next.lanes, started(a.key, a.title, id)] };
+    case "reset":
+      return initial();
   }
 }
 

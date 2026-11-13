@@ -48,3 +48,14 @@ test("say, approve, fork and undo each change the sample world once", () => {
   expect(laneOf(w, "ACME-42·b")?.status).toBe("running");
   expect(reduce(w, { type: "undo" }).undone).toBe(true);
 });
+
+test("RAN-85 a waiting ticket starts a lane at the Grill, once; reset is the world as it starts", () => {
+  const w = reduce(initial(), { type: "start", key: "ACME-45", title: "Webhook retries" });
+  expect(laneOf(w, "ACME-45")).toMatchObject({
+    stage: "grill",
+    status: "running",
+    stages: { grill: "active", build: "todo" },
+  });
+  expect(reduce(w, { type: "start", key: "ACME-45", title: "again" })).toBe(w);
+  expect(reduce(w, { type: "reset" })).toEqual(initial());
+});

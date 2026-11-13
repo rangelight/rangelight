@@ -11,6 +11,7 @@ const phone = (width: number, height: number) => ({
     "views.spec.ts",
     "preview.spec.ts",
     "panels.spec.ts",
+    "story.spec.ts",
   ],
   use: { viewport: { width, height }, isMobile: true, hasTouch: true },
 });

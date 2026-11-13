@@ -17,6 +17,9 @@ import { elapsed, useNow } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Feed } from "./Feed";
 import { ArchitectStrip } from "@/features/architect/ArchitectStrip";
+import { EXAMPLE } from "@/preview/panels/lane";
+import { LaneStrip } from "./panels/LaneStrip";
+import { PanelHost } from "./panels/PanelHost";
 import { StageStrip } from "./StageStrip";
 import { useSession } from "./store";
 import { Terminal } from "./Terminal";
@@ -61,11 +64,15 @@ export function SessionView({ id }: { id: string }) {
               </Header>
               <ArchitectStrip />
               <StageStrip phase={state.session.phase} />
+              <LaneStrip lane={EXAMPLE} example />
             </>
           ) : (
             <LoadingHeader />
           )}
-          <Panes feed={<Feed events={feed} />} terminal={<Terminal sessionId={id} />} />
+          <Panes
+            feed={<PanelHost feed={<Feed events={feed} />} lane={EXAMPLE} example />}
+            terminal={<Terminal sessionId={id} />}
+          />
         </div>
       );
   }

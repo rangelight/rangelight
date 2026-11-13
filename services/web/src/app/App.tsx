@@ -1,7 +1,14 @@
 import { SearchX } from "lucide-react";
 import { AppLink } from "@/components/rl/app-link";
 import { Notice } from "@/components/rl/notice";
+import { ClaudeAccess } from "@/features/access/ClaudeAccess";
 import { ArchitectHome } from "@/features/architect/ArchitectHome";
+import { ForkCompare } from "@/features/fork/ForkCompare";
+import { RoleHome } from "@/features/home/RoleHome";
+import { LaneView } from "@/features/lane/LaneView";
+import { Repos } from "@/features/repos/Repos";
+import { RetroCard } from "@/features/retro/RetroCard";
+import { Settings } from "@/features/settings/Settings";
 import { Coordinator } from "@/features/coordinator/Coordinator";
 import { DecisionsInbox } from "@/features/decisions/DecisionsInbox";
 import { FleetWall } from "@/features/fleet-wall/FleetWall";
@@ -22,6 +29,13 @@ export function App() {
       {route.page === "reviews" && <Reviews />}
       {route.page === "coordinator" && <Coordinator />}
       {route.page === "wall" && <FleetWall />}
+      {route.page === "home" && <RoleHome />}
+      {route.page === "fork" && <ForkCompare />}
+      {route.page === "repos" && <Repos />}
+      {route.page === "settings" && <Settings />}
+      {route.page === "access" && <ClaudeAccess />}
+      {route.page === "retro" && <RetroCard />}
+      {route.page === "lane" && <LaneView key={route.key} laneKey={route.key} />}
       {route.page === "upnext" && <UpNext />}
       {route.page === "session" && <SessionView key={route.id} id={route.id} />}
       {route.page === "missing" && (

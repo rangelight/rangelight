@@ -1,7 +1,8 @@
 // The command palette (jump to a view or a session) and the cheat sheet of the keys there are.
 import { Search, SquareTerminal, PanelsTopLeft } from "lucide-react";
 import { useState } from "react";
-import { navigate, sessionPath, VIEWS } from "@/app/route";
+import { lanePath, navigate, sessionPath, VIEWS } from "@/app/route";
+import { useSample } from "@/preview/engine";
 import { Dialog } from "@/components/ui/dialog";
 import { useSessions } from "@/features/sessions/store";
 
@@ -33,9 +34,16 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
 /** Mounted with the dialog, so each opening starts with an empty query. */
 function Targets({ onClose }: { onClose: () => void }) {
   const { state } = useSessions();
+  const { lanes } = useSample();
   const [query, setQuery] = useState("");
   const all: Target[] = [
     ...VIEWS.map((v) => ({ label: v.label, detail: "View", href: v.path, session: false })),
+    ...lanes.map((l) => ({
+      label: `${l.key} ${l.title}`,
+      detail: "Sample lane",
+      href: lanePath(l.key),
+      session: true,
+    })),
     ...(state.status === "ready" ? state.sessions : []).map((s) => ({
       label: `${s.ticketKey} ${s.title}`,
       detail: s.repo || "Session",

@@ -1,18 +1,23 @@
 // The Workbench's views: a rail on wider screens, a bottom bar on phones. A view gets an icon here
-// when it exists, never before: the Sessions list, the Fleet wall, Up next, and the session last
-// opened.
+// when it exists, never before: the views of route.ts's VIEWS, and the session last opened.
 import {
+  Bot,
+  Ellipsis,
+  GitPullRequest,
   Keyboard,
   LayoutGrid,
   List,
   ListTodo,
+  type LucideIcon,
   Moon,
+  Network,
   PanelsTopLeft,
+  Signpost,
   SquareTerminal,
   Sun,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { sessionPath, UP_NEXT, useRoute, WALL } from "@/app/route";
+import { sessionPath, useRoute, type View, VIEWS } from "@/app/route";
 import { AppLink } from "@/components/rl/app-link";
 import { cn } from "@/lib/utils";
 import { toggleTheme, useTheme } from "@/theme/theme";
@@ -22,15 +27,17 @@ export const item =
 const idle = "text-dim hover:bg-hover hover:text-foreground";
 const here = "bg-raised text-foreground ring-1 ring-line-2";
 
-function View({
+function ViewLink({
   href,
   label,
   current,
+  className,
   children,
 }: {
   href: string;
   label: string;
   current: boolean;
+  className?: string | undefined;
   children: ReactNode;
 }) {
   return (
@@ -39,7 +46,7 @@ function View({
       aria-label={label}
       aria-current={current ? "page" : undefined}
       title={label}
-      className={cn(item, current ? here : idle)}
+      className={cn(item, current ? here : idle, className)}
     >
       {children}
     </AppLink>
@@ -70,16 +77,29 @@ function Action({
   );
 }
 
+/** Each view's icon. */
+const ICONS: Record<View, LucideIcon> = {
+  sessions: PanelsTopLeft,
+  architect: Network,
+  decisions: Signpost,
+  reviews: GitPullRequest,
+  coordinator: Bot,
+  wall: LayoutGrid,
+  upnext: ListTodo,
+};
+
 /** `session`: the session last opened, which gets its own icon; `onFleet` opens the fleet sheet
- * where there is no fleet column; `onKeys` the cheat sheet. */
+ * where there is no fleet column; `onKeys` the cheat sheet; `onMore` the palette, with every view. */
 export function Nav({
   session,
   onFleet,
   onKeys,
+  onMore,
 }: {
   session: string | null;
   onFleet: () => void;
   onKeys: () => void;
+  onMore: () => void;
 }) {
   const route = useRoute();
   const theme = useTheme();
@@ -90,24 +110,32 @@ export function Nav({
       data-chrome
       className="flex shrink-0 gap-1.5 border-line bg-rail max-sm:order-last max-sm:justify-around max-sm:border-t max-sm:px-2 max-sm:py-1 sm:h-full sm:w-[52px] sm:flex-col sm:items-center sm:border-r sm:py-2.5"
     >
-      <View href="/" label="Sessions" current={route.page === "sessions"}>
-        <PanelsTopLeft aria-hidden />
-      </View>
-      <View href={WALL} label="Fleet wall" current={route.page === "wall"}>
-        <LayoutGrid aria-hidden />
-      </View>
-      <View href={UP_NEXT} label="Up next" current={route.page === "upnext"}>
-        <ListTodo aria-hidden />
-      </View>
+      {VIEWS.map((v) => {
+        const Icon = ICONS[v.page];
+        return (
+          <ViewLink
+            key={v.page}
+            href={v.path}
+            label={v.label}
+            current={route.page === v.page}
+            className={v.phone ? undefined : "max-sm:hidden"}
+          >
+            <Icon aria-hidden />
+          </ViewLink>
+        );
+      })}
       {session && (
-        <View
+        <ViewLink
           href={sessionPath(session)}
           label="Current session"
           current={route.page === "session"}
         >
           <SquareTerminal aria-hidden />
-        </View>
+        </ViewLink>
       )}
+      <Action label="More views" onClick={onMore} className="sm:hidden">
+        <Ellipsis aria-hidden />
+      </Action>
       <Action label="Fleet" onClick={onFleet} className="lg:hidden">
         <List aria-hidden />
       </Action>

@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { elapsed, useNow } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Feed } from "./Feed";
+import { ArchitectStrip } from "@/features/architect/ArchitectStrip";
 import { StageStrip } from "./StageStrip";
 import { useSession } from "./store";
 import { Terminal } from "./Terminal";
@@ -58,6 +59,7 @@ export function SessionView({ id }: { id: string }) {
               <Header session={state.session}>
                 <LiveStatus paused={watch === "watching" ? null : watch} onReconnect={reconnect} />
               </Header>
+              <ArchitectStrip />
               <StageStrip phase={state.session.phase} />
             </>
           ) : (

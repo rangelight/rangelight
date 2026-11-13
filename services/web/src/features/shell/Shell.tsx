@@ -7,6 +7,7 @@ import { FleetColumn, FleetSheet, useFleetCollapsed } from "./Fleet";
 import { Nav } from "./Nav";
 import { CheatSheet, Palette } from "./Palette";
 import { TopBar } from "./TopBar";
+import { Toaster } from "@/preview/toast";
 
 type Overlay = "fleet" | "palette" | "keys" | null;
 
@@ -66,7 +67,12 @@ export function Shell({ children }: { children: ReactNode }) {
       {/* A narrow touch screen with the terminal focused (the soft keyboard up): the shell's chrome
           yields its rows to the terminal, as the session's header does. */}
       <div className="flex h-full max-sm:flex-col max-lg:pointer-coarse:[&:has(.xterm:focus-within)_[data-chrome]]:hidden">
-        <Nav session={session} onFleet={show("fleet")} onKeys={show("keys")} />
+        <Nav
+          session={session}
+          onFleet={show("fleet")}
+          onKeys={show("keys")}
+          onMore={show("palette")}
+        />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <TopBar fleetCollapsed={collapsed} onFleet={toggleFleet} onPalette={show("palette")} />
           <div className="flex min-h-0 flex-1">
@@ -78,6 +84,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <FleetSheet open={overlay === "fleet"} onClose={close} />
       <Palette open={overlay === "palette"} onClose={close} />
       <CheatSheet open={overlay === "keys"} onClose={close} />
+      <Toaster />
     </SessionsProvider>
   );
 }

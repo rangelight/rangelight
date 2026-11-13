@@ -1,15 +1,16 @@
 // The fleet: every session not torn down, with its state and whether it waits for you. A
 // column on wide screens, which collapses (remembered in this browser); a sheet on narrow ones.
 import { DesiredState } from "@gen/proto/rangelight/runner/v1alpha1/runner_pb.ts";
-import { PanelLeftClose } from "lucide-react";
+import { Network, PanelLeftClose } from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
-import { sessionPath, useRoute } from "@/app/route";
+import { ARCHITECT, sessionPath, useRoute } from "@/app/route";
 import { AppLink } from "@/components/rl/app-link";
 import { StateBadge } from "@/components/rl/state-badge";
 import { WaitingBadge } from "@/components/rl/waiting";
 import { Dialog } from "@/components/ui/dialog";
 import { useSessions } from "@/features/sessions/store";
 import { cn } from "@/lib/utils";
+import { useQuestions } from "@/preview/decisions";
 import { item } from "./Nav";
 
 const KEY = "rl-fleet-collapsed";
@@ -93,6 +94,31 @@ function Title({ children }: { children?: ReactNode }) {
   );
 }
 
+/** The architect lane, pinned above the others: every lane reports to it. Its count is the real
+ * open questions only. */
+function ArchitectRow({ onPick }: { onPick?: (() => void) | undefined }) {
+  const route = useRoute();
+  const needs = useQuestions().length;
+  return (
+    <AppLink
+      href={ARCHITECT}
+      onClick={onPick}
+      aria-current={route.page === "architect" ? "page" : undefined}
+      className="flex min-h-11 shrink-0 items-center gap-2 border-b border-line px-3 hover:bg-hover/70"
+    >
+      <span className="grid size-5 place-items-center rounded-md bg-claude-soft text-claude">
+        <Network className="size-3.5" aria-hidden />
+      </span>
+      <span className="text-[12.5px] font-semibold text-foreground">Architect</span>
+      {needs > 0 && (
+        <span className="ml-auto rounded-[5px] border border-warn/45 bg-warn-soft px-1.5 font-mono text-[11px] font-semibold text-warn">
+          {needs} need you
+        </span>
+      )}
+    </AppLink>
+  );
+}
+
 /** The column, at lg and up, unless collapsed. */
 export function FleetColumn({
   collapsed,
@@ -118,6 +144,7 @@ export function FleetColumn({
           <PanelLeftClose aria-hidden />
         </button>
       </Title>
+      <ArchitectRow />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <List />
       </div>
@@ -135,6 +162,7 @@ export function FleetSheet({ open, onClose }: { open: boolean; onClose: () => vo
       className="mb-0 w-full max-w-none rounded-b-none sm:mb-auto sm:max-w-md sm:rounded-xl"
     >
       <Title />
+      <ArchitectRow onPick={onClose} />
       <div className="max-h-[70vh] overflow-y-auto">
         <List onPick={onClose} />
       </div>

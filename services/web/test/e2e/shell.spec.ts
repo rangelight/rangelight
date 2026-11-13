@@ -22,8 +22,9 @@ test("AC1 the rail has Sessions and the session last opened, and no dead links",
   isMobile,
 }) => {
   await page.goto("/");
-  // Sessions, the Fleet wall and Up next (RAN-75); no session opened yet.
-  await expect(nav(page).getByRole("link")).toHaveCount(3);
+  // Every view of route.ts's VIEWS (a phone keeps 3; the rest are behind More); no session yet.
+  const views = isMobile ? 3 : 7;
+  await expect(nav(page).getByRole("link")).toHaveCount(views);
   await expect(nav(page).getByRole("link", { name: "Sessions" })).toHaveAttribute(
     "aria-current",
     "page",
@@ -40,7 +41,7 @@ test("AC1 the rail has Sessions and the session last opened, and no dead links",
   // Back to it from the rail.
   await press(page, current, isMobile);
   await expect(page).toHaveURL(new RegExp(`${SESSION}$`));
-  await expect(nav(page).getByRole("link")).toHaveCount(4);
+  await expect(nav(page).getByRole("link")).toHaveCount(views + 1);
 });
 
 test("AC2 the top bar: the view, the live status, who is signed in, and sign-out", async ({
@@ -124,7 +125,8 @@ test("AC3 the fleet lists live sessions with their state and who waits; it colla
   const fleet = isMobile
     ? page.getByRole("dialog", { name: "Fleet" })
     : page.getByRole("complementary", { name: "Fleet" });
-  const listed = fleet.getByRole("link");
+  // The sessions' links: the Architect row above them is the architect lane's (RAN-83).
+  const listed = fleet.getByRole("list").getByRole("link");
   await expect(listed).toHaveCount(2); // RAN-103 is cold: torn down, not live.
   await expect(listed.filter({ hasText: "RAN-101" })).toContainText("Hot");
   await expect(listed.filter({ hasText: "RAN-101" })).toContainText("Waiting for you");
